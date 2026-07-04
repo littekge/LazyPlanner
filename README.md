@@ -2,7 +2,7 @@
 
 A terminal-based todo-list and calendar manager with offline-first CalDAV sync — a full-screen interactive TUI in the style of [lazygit](https://github.com/jesseduffield/lazygit), written in Go.
 
-> **Status: pre-build.** The spec is complete (see [`main.md`](main.md)); implementation has not started. This README is kept current as features land — sections marked *not yet built* fill in as the build progresses.
+> **Status: scaffolding.** The spec is complete (see [`main.md`](main.md)). Build step 1 is done: the Go module, package skeleton, vendored dependencies, and CI are in place, and the program builds and launches a placeholder TUI window. Features fill in from here — sections marked *not yet built* land as the build progresses.
 
 ## What it does
 
@@ -18,11 +18,14 @@ A terminal-based todo-list and calendar manager with offline-first CalDAV sync �
 
 ## Build & Install
 
-*Not yet built.* Planned:
+Requires [Go](https://go.dev/dl/) (the stable release current at scaffold time or newer; see the `go` directive in `go.mod`). Dependencies are vendored, so no network is needed to build.
 
-- **Linux** (primary): `go build ./cmd/lazyplanner` — a single static binary, no runtime dependencies.
-- **Windows** (secondary): `GOOS=windows go build ./cmd/lazyplanner`.
-- Config lives at `~/.config/lazyplanner/config.toml` (Linux) / `%APPDATA%\lazyplanner\` (Windows); a commented default is generated on first run.
+- **Linux** (primary): `go build -o lazyplanner ./cmd/lazyplanner` — a single static binary, no runtime dependencies. Run `./lazyplanner`.
+- **Windows** (secondary): `GOOS=windows go build -o lazyplanner.exe ./cmd/lazyplanner`.
+
+Today the program opens a placeholder window; press `q` or `Ctrl-C` to quit. Real functionality lands over the build steps in [`main.md`](main.md).
+
+Config will live at `~/.config/lazyplanner/config.toml` (Linux) / `%APPDATA%\lazyplanner\` (Windows), with a commented default generated on first run — *not yet built*.
 
 ## Development
 

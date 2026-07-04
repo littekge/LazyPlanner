@@ -1,0 +1,16 @@
+# Build output — `go build` emits binaries; keep them out of the repo.
+/lazyplanner
+/cmd/lazyplanner/lazyplanner
+
+# Go workspace files (machine-local, never committed)
+go.work
+go.work.sum
+
+# Test / coverage output
+*.out
+coverage.txt
+
+# Editor and OS cruft
+*.swp
+*~
+.DS_Store
