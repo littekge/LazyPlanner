@@ -4,7 +4,13 @@
 
 ---
 
-## 2026-07-04 — Final pre-build pass: handoff readiness audit
+## 2026-07-04 — Git branching rules for the build
+
+- `CLAUDE.md`: new Git Branching Rules section — all Claude work happens on **`ai-workspace`** (or branches off it, merged back into it); **never merge or commit to `main`** (owner-only, after review); **`ai-init`** is a frozen branch preserving the pre-build-step-1 state (spec complete, no code) as a permanent reference/reset point
+- Workflow commit step updated to name the branch
+- Branches created: `ai-init` (frozen at this commit) and `ai-workspace` (checked out, ready for build step 1)
+
+---
 
 - Audited all spec files with fresh eyes ahead of a new build session; fixed staleness that would mislead a fresh reader:
   - `main.md` header status ("early skeleton" → "spec complete and code-ready, begin at Build Plan step 1"), Current State updated, leftover "TBD — more goals" design-goal bullet replaced with the well-behaved-CalDAV-citizen goal

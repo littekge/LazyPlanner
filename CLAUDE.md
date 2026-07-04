@@ -28,7 +28,16 @@
 4. **Run tests and lints** after every code change: `go test ./...`, then `go vet ./...` and `staticcheck ./...`
 5. **Run the program** to verify it still builds and launches: `go build ./...` (and `go run ./cmd/lazyplanner` for manual checks).
 6. **Keep `README.md` current** — if the change altered user-visible behavior, usage, or build steps, update the README in the same increment.
-7. **Commit often** with descriptive messages: `git add . && git commit -m "feat: ..."`
+7. **Commit often** with descriptive messages: `git add . && git commit -m "feat: ..."` — on `ai-workspace`, never `main` (see Git Branching Rules).
+
+---
+
+## Git Branching Rules
+
+- **`ai-workspace` is Claude's branch.** All Claude work — commits, experiments, build steps — happens on `ai-workspace` or on branches created off it. Feature/experiment branches off `ai-workspace` are fine; merge them back into `ai-workspace` when done.
+- **NEVER merge to `main`. NEVER commit to `main`.** Merging `ai-workspace` into `main` is the owner's action, done by the owner after review — no exceptions, even if asked to "finish up" or "ship it."
+- **`ai-init` is frozen.** It preserves the state of the workspace immediately before build step 1 (spec complete, no code). Never commit to it — it exists as a permanent reference point / reset target.
+- Before starting work, confirm the current branch is `ai-workspace` (or a branch off it): `git branch --show-current`.
 
 ---
 
