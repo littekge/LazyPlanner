@@ -97,6 +97,74 @@ The vdir data lives under *data* paths, **not** `~/.cache` — it can hold offli
 
 ---
 
+## UI Design (v1 draft — refine during build steps 6–8)
+
+### Layout: lazygit-style three-region screen
+
+```
+┌─1 Calendars──┐┌─Main──────────────────────────┐┌─Detail─────────┐
+│ Personal     ││                               ││                │
+│ School       ││  Content follows the focused  ││  Selected      │
+│ Work         ││  left panel:                  ││  event or      │
+├─2 Tasks──────┤│                               ││  task:         │
+│ ▾ School     ││  focus 1 → calendar grid      ││  title, when,  │
+│   ▾ ECE384   ││            (month/week/day)   ││  location,     │
+│     ☐ Lab 3  ││  focus 2 → zoomed task tree   ││  priority,     │
+│   ▸ Thesis   ││  focus 3 → day agenda         ││  tags, ⏰,     │
+├─3 Agenda─────┤│                               ││  notes         │
+│ 2:30p Standup││                               ││                │
+│ ☐ Grade labs ││                               ││                │
+└──────────────┘└───────────────────────────────┘└────────────────┘
+ a:add  e:edit  space:done  ::cmd  ?:help       ✓ synced 2m ago
+```
+
+- **Left column** — three small focusable panels: **Calendars** (list, with visibility toggles), **Tasks** (the subtask tree), **Agenda** (today's events + due tasks). Number keys jump focus; the Main pane's content follows focus.
+- **Main pane** — the large workspace: calendar grid (month default, week/day switchable), the task tree zoomed view, or the day agenda.
+- **Detail pane** — always shows the selected item's full fields (event: time/location/reminders/notes; task: due/priority/tags/notes).
+- **Status bar** — contextual key hints + sync status (`✓ synced 2m ago`, `↻ syncing`, `⚠ 2 conflicts`, `⚠ offline`).
+
+### Task tree: full tree + zoom
+
+The whole hierarchy renders as a collapsible tree (`→`/`←` expand/collapse). `>` **zooms** — re-roots the view at the selected task like `cd`-ing into a directory (breadcrumb shows `School / ECE384`); `<` zooms back out. Lists (CalDAV calendars) are the root level; a "folder" is any task with children.
+
+### Creation: quick-add with smart date parsing
+
+`a` opens a one-line input scoped to the current context (task under the selected tree node; event on the selected day). Tokens parsed from the text: dates ("fri", "jul 20", "tomorrow"), times ("5pm"), `!high`/`!1`–`!9` priority, `#tag`. Everything unparsed becomes the title. `e` on any item opens the full form for detailed editing. Parsing rules must be predictable and documented in `:help` — when in doubt, leave text in the title rather than guess.
+
+### Keybindings (draft — hardcoded v1; config `[keys]` section possible later)
+
+| Key | Action |
+|---|---|
+| `↑↓←→` / `hjkl` | Move within pane / expand-collapse tree nodes |
+| `1` `2` `3` | Focus Calendars / Tasks / Agenda panel |
+| `Tab` / `Shift-Tab` | Cycle pane focus |
+| `Enter` | Select / open in Main |
+| `a` | Quick-add (contextual) |
+| `e` | Edit selected (full form) |
+| `Space` | Toggle task done |
+| `d` | Delete selected (with confirm) |
+| `>` / `<` | Zoom into / out of task subtree |
+| `H` / `L` | Outdent / indent task (re-parent) |
+| `v` | Cycle calendar view: month → week → day |
+| `n` / `p` | Next / previous month(/week/day) |
+| `t` | Jump to today |
+| `g` | Go to date (smart-parsed input) |
+| `/` | Filter/search current pane |
+| `S` | Sync now |
+| `:` | Command mode |
+| `?` | Help overlay |
+| `q` / `Esc` | Quit / back out (zoom, dialogs) |
+
+### `:` commands (draft)
+
+`:sync` · `:config` (open in `$EDITOR`, reload on exit) · `:view month|week|day` · `:goto <date>` (smart-parsed) · `:search <text>` · `:calendar new|rename|color|hide|show` (server-side via sync where applicable) · `:conflicts` (list/resolve conflicted items) · `:help` · `:q`
+
+### Mouse
+
+Click focuses panes and selects items; click `▸`/`▾` expands/collapses; double-click opens the edit form; scroll wheel scrolls panes and pages the calendar grid.
+
+---
+
 ## Build Plan
 
 Incremental steps; each ends with passing tests (`go test ./...`, vet, staticcheck) and a buildable program. Log every step in `log.md`.
@@ -138,8 +206,4 @@ Incremental steps; each ends with passing tests (`go test ./...`, vet, staticche
 
 ## Open Decisions
 
-One remaining:
-
-1. **UI design** — pane layout, views (day/week/month/todo tree), keybinding scheme, `:` command set. The todo pane must be designed around the file-explorer-style subtask tree.
-
-Settled (drafted 2026-07-04, pending review): architecture & package layout, build plan, config file (TOML, moderate scope), runtime file locations, sync design (credentials, conflicts, triggers), data model (fields, subtask hierarchy, preservation rule, timezones, recurrence scopes), module path (`github.com/littekge/LazyPlanner`), Go version policy, license (MIT proposed).
+**None — the spec is code-ready.** All major decisions are settled (see Settled Decisions); the UI Design section is a v1 draft expected to be refined against real screens during build steps 6–8. Remaining loose ends are small and non-blocking: confirm the MIT license, and verify at build time whether `go-webdav` supports client-side calendar creation.
