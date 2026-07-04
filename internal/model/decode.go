@@ -42,14 +42,22 @@ func (p *Parsed) Encode() ([]byte, error) {
 // that need per-item resilience (skip the bad one, keep the rest) should
 // iterate the calendar's children and call ParseEvent / ParseTodo directly.
 func Decode(data []byte, loc *time.Location) (*Parsed, error) {
-	if loc == nil {
-		loc = time.Local
-	}
 	cal, err := ical.NewDecoder(bytes.NewReader(data)).Decode()
 	if err != nil {
 		return nil, fmt.Errorf("decoding icalendar: %w", err)
 	}
+	return Parse(cal, loc)
+}
 
+// Parse builds typed events and todos from an already-decoded calendar,
+// retaining it for re-encode. It is the shared core of Decode and is also used
+// directly by the sync layer, which receives decoded calendars from the CalDAV
+// client. loc and the error semantics match Decode; a nil loc defaults to
+// time.Local.
+func Parse(cal *ical.Calendar, loc *time.Location) (*Parsed, error) {
+	if loc == nil {
+		loc = time.Local
+	}
 	p := &Parsed{Calendar: cal}
 	for _, child := range cal.Children {
 		switch child.Name {

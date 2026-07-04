@@ -22,14 +22,30 @@ import (
 // ResourceName; when rewriting a resource loaded from disk or the server, reuse
 // its existing Name so the file maps back to the same server resource.
 func (s *Store) Put(ctx context.Context, calID, name string, obj *model.Parsed) (*Resource, error) {
+	return s.writeResource(ctx, calID, name, obj, func(prev *Resource) *Resource {
+		res := &Resource{Name: name, Object: obj, Dirty: true}
+		if prev != nil {
+			// Keep the server identity so the next sync sees a local edit.
+			res.ETag = prev.ETag
+			res.Href = prev.Href
+		}
+		return res
+	})
+}
+
+// writeResource is the shared write path for Put and PutRemote: encode, write
+// the .ics atomically, then update the index and sidecar. build produces the
+// new resource snapshot from the previous one (nil if new), letting callers set
+// dirty/ETag/Href appropriately.
+func (s *Store) writeResource(ctx context.Context, calID, name string, obj *model.Parsed, build func(prev *Resource) *Resource) (*Resource, error) {
 	if err := ctx.Err(); err != nil {
 		return nil, err
 	}
 	if calID == "" || name == "" {
-		return nil, errors.New("store: Put requires a calendar id and resource name")
+		return nil, errors.New("store: write requires a calendar id and resource name")
 	}
 	if obj == nil || obj.Calendar == nil {
-		return nil, errors.New("store: Put requires a decoded object")
+		return nil, errors.New("store: write requires a decoded object")
 	}
 
 	data, err := obj.Encode()
@@ -40,6 +56,27 @@ func (s *Store) Put(ctx context.Context, calID, name string, obj *model.Parsed) 
 	s.mu.Lock()
 	defer s.mu.Unlock()
 
+	cs, err := s.ensureCalendar(calID)
+	if err != nil {
+		return nil, err
+	}
+
+	if err := writeFileAtomic(filepath.Join(s.root, calID, name), data, filePerm); err != nil {
+		return nil, fmt.Errorf("writing %s/%s: %w", calID, name, err)
+	}
+
+	res := build(cs.resources[name])
+	cs.resources[name] = res
+
+	if err := writeSidecar(s.root, cs); err != nil {
+		return nil, fmt.Errorf("updating sidecar for %q: %w", calID, err)
+	}
+	return res, nil
+}
+
+// ensureCalendar returns the calendar state for calID, creating the directory
+// and index entry on first use. Callers must hold s.mu.
+func (s *Store) ensureCalendar(calID string) (*calState, error) {
 	cs := s.cals[calID]
 	if cs == nil {
 		if err := os.MkdirAll(filepath.Join(s.root, calID), dirPerm); err != nil {
@@ -48,22 +85,7 @@ func (s *Store) Put(ctx context.Context, calID, name string, obj *model.Parsed) 
 		cs = &calState{id: calID, resources: map[string]*Resource{}}
 		s.cals[calID] = cs
 	}
-
-	if err := writeFileAtomic(filepath.Join(s.root, calID, name), data, filePerm); err != nil {
-		return nil, fmt.Errorf("writing %s/%s: %w", calID, name, err)
-	}
-
-	res := &Resource{Name: name, Object: obj, Dirty: true}
-	if prev := cs.resources[name]; prev != nil {
-		res.ETag = prev.ETag
-		res.Href = prev.Href
-	}
-	cs.resources[name] = res
-
-	if err := writeSidecar(s.root, cs); err != nil {
-		return nil, fmt.Errorf("updating sidecar for %q: %w", calID, err)
-	}
-	return res, nil
+	return cs, nil
 }
 
 // Delete removes calID/name from disk and the in-memory index. This is a local
@@ -100,19 +122,21 @@ func (s *Store) Delete(ctx context.Context, calID, name string) error {
 // exists on disk or the server, reuse its existing Name instead so it maps back
 // to the same file/server resource.
 func ResourceName(uid string) string {
-	return sanitize(uid) + icsExt
+	return SafeName(uid) + icsExt
 }
 
-// sanitize maps a UID to a safe file base name, replacing any character outside
-// [A-Za-z0-9._-] with '_'. Distinct UIDs can in principle collide after
-// sanitizing; that is acceptable at personal-calendar scale.
-func sanitize(uid string) string {
-	if uid == "" {
+// SafeName maps an arbitrary string (a UID or a server path segment) to a safe
+// file base name, replacing any character outside [A-Za-z0-9._-] with '_'.
+// Distinct inputs can in principle collide after sanitizing; that is acceptable
+// at personal-calendar scale, and the server identity is tracked separately via
+// the resource Href.
+func SafeName(s string) string {
+	if s == "" {
 		return "unnamed"
 	}
 	var b strings.Builder
-	b.Grow(len(uid))
-	for _, r := range uid {
+	b.Grow(len(s))
+	for _, r := range s {
 		switch {
 		case r >= 'a' && r <= 'z', r >= 'A' && r <= 'Z', r >= '0' && r <= '9',
 			r == '.', r == '-', r == '_':

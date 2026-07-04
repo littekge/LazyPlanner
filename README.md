@@ -2,7 +2,7 @@
 
 A terminal-based todo-list and calendar manager with offline-first CalDAV sync — a full-screen interactive TUI in the style of [lazygit](https://github.com/jesseduffield/lazygit), written in Go.
 
-> **Status: early build.** The spec is complete (see [`main.md`](main.md)). Done so far: build steps 1–4 — the Go module, package skeleton, vendored dependencies, CI, and a placeholder TUI window (step 1); the core `model` layer parsing events and todos from iCalendar data (step 2); timezone-aware recurrence expansion (step 3); and the local vdir cache — reading/writing `.ics` files with an in-memory index and atomic writes (step 4). No interactive features yet — sections marked *not yet built* land as the build progresses.
+> **Status: early build.** The spec is complete (see [`main.md`](main.md)). Done so far: build steps 1–5 — the Go module, package skeleton, vendored dependencies, CI, and a placeholder TUI window (step 1); the core `model` layer parsing events and todos from iCalendar data (step 2); timezone-aware recurrence expansion (step 3); the local vdir cache with an in-memory index and atomic writes (step 4); and one-way CalDAV import — discovering NextCloud calendars and downloading them into the cache (step 5). The interactive UI is *not yet built*, but the `import` command below already works against a real server.
 
 ## What it does
 
@@ -14,7 +14,22 @@ A terminal-based todo-list and calendar manager with offline-first CalDAV sync �
 
 ## Usage
 
-*Not yet built.* Keybindings and commands will be documented here (and in the in-app `?` help) as they land.
+The interactive TUI is *not yet built* — keybindings and commands will be documented here (and in the in-app `?` help) as they land.
+
+### Importing your calendars (early, one-way)
+
+You can already pull your NextCloud calendars into the local cache. Use a NextCloud **app password** (Settings → Security → Devices & sessions), never your account password:
+
+```sh
+lazyplanner import \
+  --url https://cloud.example.com/remote.php/dav \
+  --username you \
+  --password <app-password>
+```
+
+Credentials can also come from the `LAZYPLANNER_CALDAV_URL`, `LAZYPLANNER_CALDAV_USERNAME`, and `LAZYPLANNER_CALDAV_PASSWORD` environment variables. Data is written to the OS data directory (`~/.local/share/lazyplanner/` on Linux), overridable with `--data`.
+
+This is a one-way download (server → local) for validating against real data; it does not yet push local changes or delete anything — two-way sync comes later.
 
 ## Build & Install
 

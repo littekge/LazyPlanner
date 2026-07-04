@@ -1,6 +1,11 @@
 # github.com/emersion/go-ical v0.0.0-20250609112844-439c63cef608
 ## explicit; go 1.13
 github.com/emersion/go-ical
+# github.com/emersion/go-webdav v0.7.0
+## explicit; go 1.13
+github.com/emersion/go-webdav
+github.com/emersion/go-webdav/caldav
+github.com/emersion/go-webdav/internal
 # github.com/gdamore/encoding v1.0.1
 ## explicit; go 1.9
 github.com/gdamore/encoding
