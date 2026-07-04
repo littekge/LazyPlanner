@@ -2,7 +2,7 @@
 
 > **Purpose**: This document is the single source of truth for LazyPlanner. It defines the project identity, current state, architecture, and the incremental build plan.
 >
-> **Status**: Early skeleton. A full spec will be developed collaboratively; sections marked **TBD** are open decisions.
+> **Status**: Spec complete and code-ready (2026-07-04). Implementation has not started — begin at Build Plan step 1. The UI Design section is a v1 draft to refine against real screens during build steps 6–8.
 
 ---
 
@@ -17,7 +17,8 @@
   - **CalDAV/iCalendar**: `emersion/go-webdav` (CalDAV client), `emersion/go-ical` (iCalendar parsing), `teambition/rrule-go` (recurrence rules)
   - **Config**: `BurntSushi/toml` (pure Go, API-stable for a decade)
 - **Platform**: Terminal. **Linux is the primary target** (incl. a future Raspberry Pi dedicated terminal); Windows is a secondary compatibility build — features are tailored to Linux, and OS-specific paths go through one resolver (`os.UserConfigDir` + a data-dir helper) so the Windows build comes nearly free.
-- **License**: MIT (proposed — simple and permissive; swap for GPL if copyleft is preferred)
+- **License**: MIT (confirmed; see `LICENSE`)
+- **Docs**: `README.md` — user-facing docs (what it does, usage, build/install for Linux and Windows), **kept current as features land during the build**
 - **Change Log**: `log.md`
 
 ---
@@ -39,13 +40,13 @@ LazyPlanner is a terminal-based todo-list and calendar management program. It is
 - Fast to open, fast to use — managing your day should take seconds, not minutes
 - Robust and long-lasting: a single static binary with no interpreter or runtime dependencies, so OS and dependency updates don't break the program
 - Fast on modest hardware — a future goal is a dedicated Raspberry Pi terminal running LazyPlanner
-- TBD — more goals to be defined during spec development
+- A well-behaved CalDAV citizen: never corrupts or drops data it doesn't understand; other clients (phone, NextCloud web) keep working alongside it
 
 ---
 
 ## Current State
 
-- Nothing built yet. Spec and project rules are being established.
+- **Spec complete (2026-07-04); no code exists yet.** The next action is Build Plan step 1 (scaffold). `log.md` records every decision made during spec development.
 
 ---
 
@@ -178,7 +179,7 @@ Click focuses panes and selects items; click `▸`/`▾` expands/collapses; doub
 
 Incremental steps; each ends with passing tests (`go test ./...`, vet, staticcheck) and a buildable program. Log every step in `log.md`.
 
-1. **Scaffold** — `go mod init github.com/littekge/LazyPlanner`, directory skeleton, vendor setup, and a hello-world tview window that opens and quits cleanly (`q` / `Ctrl-C`). Proves the toolchain end to end.
+1. **Scaffold** — `go mod init github.com/littekge/LazyPlanner`, directory skeleton, vendor setup, `.gitignore`, CI (GitHub Actions running test/vet/staticcheck on push), and a hello-world tview window that opens and quits cleanly (`q` / `Ctrl-C`). Proves the toolchain end to end.
 2. **Core model** — `internal/model` types (Event, Todo, Calendar) parsed from `.ics` via go-ical; tests against fixture files covering the basics (all-day vs timed events, todos with due dates, timezones).
 3. **Recurrence** — RRULE expansion via rrule-go wrapped behind a model API ("occurrences of X between dates A–B"); timezone-aware; heavily tested (recurrence is a classic bug farm).
 4. **vdir store** — `internal/store`: read a vdir tree into the in-memory index, atomic writes back to disk (write-temp-then-rename), sync-state sidecar read/write; tests against fixture vdir trees.
@@ -215,4 +216,4 @@ Incremental steps; each ends with passing tests (`go test ./...`, vet, staticche
 
 ## Open Decisions
 
-**None — the spec is code-ready.** All major decisions are settled (see Settled Decisions); the UI Design section is a v1 draft expected to be refined against real screens during build steps 6–8. Remaining loose ends are small and non-blocking: confirm the MIT license, and verify at build time whether `go-webdav` supports client-side calendar creation.
+**None — the spec is code-ready.** All major decisions are settled (see Settled Decisions); the UI Design section is a v1 draft expected to be refined against real screens during build steps 6–8. One build-time verification is flagged: whether `go-webdav` supports client-side calendar creation (fallback: create calendars in NextCloud web; they appear on next sync).

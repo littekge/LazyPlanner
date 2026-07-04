@@ -4,7 +4,19 @@
 
 ---
 
-## 2026-07-04 — UI follow-up decisions: colors, completed tasks, sorting, undo
+## 2026-07-04 — Final pre-build pass: handoff readiness audit
+
+- Audited all spec files with fresh eyes ahead of a new build session; fixed staleness that would mislead a fresh reader:
+  - `main.md` header status ("early skeleton" → "spec complete and code-ready, begin at Build Plan step 1"), Current State updated, leftover "TBD — more goals" design-goal bullet replaced with the well-behaved-CalDAV-citizen goal
+  - `CLAUDE.md`: removed stale "will be expanded once language decided" note, fixed run command for the cmd/ layout (`go run ./cmd/lazyplanner`), added staticcheck install command (dev tool, not vendored), "config format TBD" → TOML
+- Final decisions closed:
+  - **License: MIT confirmed** — `LICENSE` (MIT, Gabriel Litteken) already existed from the initial commit and matches
+  - **examples/ committed** — reference specs kept in the repo
+  - **README.md is a living document**: what the program does, usage docs, build/install for Linux + Windows; updated in the same increment as any user-visible change. Rule added to CLAUDE.md workflow (step 6); starter README written (pre-build status, planned sections stubbed)
+  - **CI: deferred to scaffold** — GitHub Actions (test/vet/staticcheck) added to Build Plan step 1, alongside `.gitignore`
+- Spec is handoff-ready for the build session
+
+---
 
 - **Colors**: terminal 16-color palette (inherits terminal theme, works on TTY/Pi); server calendar colors mapped to nearest palette color. Truecolor theme rejected
 - **Completed tasks**: hidden by default, `.` toggles struck-through display (dotfiles gesture)
