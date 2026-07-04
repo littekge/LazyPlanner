@@ -4,9 +4,12 @@
 package main
 
 import (
+	"context"
 	"fmt"
 	"os"
 
+	"github.com/littekge/LazyPlanner/internal/config"
+	"github.com/littekge/LazyPlanner/internal/store"
 	"github.com/littekge/LazyPlanner/internal/ui"
 )
 
@@ -26,9 +29,23 @@ func main() {
 		return
 	}
 
-	title := fmt.Sprintf("%s %s", appName, appVersion)
-	if err := ui.Run(title); err != nil {
+	if err := runTUI(); err != nil {
 		fmt.Fprintln(os.Stderr, "lazyplanner:", err)
 		os.Exit(1)
 	}
+}
+
+// runTUI opens the local cache and hands it to the UI. It is thin wiring: the
+// UI reads everything through the store.
+func runTUI() error {
+	dataDir, err := config.DataDir()
+	if err != nil {
+		return err
+	}
+	s, err := store.Open(context.Background(), dataDir)
+	if err != nil {
+		return err
+	}
+	title := fmt.Sprintf("%s %s", appName, appVersion)
+	return ui.Run(s, title)
 }
