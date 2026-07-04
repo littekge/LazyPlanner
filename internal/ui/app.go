@@ -55,7 +55,7 @@ type app struct {
 	tree      *tview.TreeView
 	agenda    *tview.List
 	main      *tview.Pages
-	grid      *tview.Table    // month / week grid
+	cal       *calendarView   // month / week grid
 	dayView   *tview.TextView // day view
 	detail    *tview.TextView
 	status    *tview.TextView
@@ -64,8 +64,7 @@ type app struct {
 	agendaItems []model.AgendaItem
 
 	viewMode        int
-	anchor          time.Time     // the focused day in the calendar
-	gridWeeks       [][]time.Time // dates currently shown in the grid (row→day)
+	anchor          time.Time // the focused/selected day in the calendar
 	weekStartMonday bool
 	showCompleted   bool
 }
@@ -84,7 +83,7 @@ func Run(s *store.Store, title string) error {
 		tree:            tview.NewTreeView(),
 		agenda:          tview.NewList(),
 		main:            tview.NewPages(),
-		grid:            tview.NewTable(),
+		cal:             newCalendarView(),
 		dayView:         tview.NewTextView(),
 		detail:          tview.NewTextView(),
 		status:          tview.NewTextView(),
@@ -109,24 +108,21 @@ func (a *app) build() {
 	a.dayView.SetDynamicColors(true).SetWrap(true)
 	a.status.SetDynamicColors(true)
 
-	a.grid.SetSelectable(true, true).SetFixed(1, 0)
-	a.grid.SetSelectedStyle(tcell.StyleDefault.Background(borderFocused).Foreground(tcell.ColorBlack))
-
 	decorate(a.calendars.Box, "1 Calendars")
 	decorate(a.tree.Box, "2 Tasks")
 	decorate(a.agenda.Box, "3 Agenda")
-	decorate(a.grid.Box, "Calendar")
+	decorate(a.cal.Box, "Calendar")
 	decorate(a.dayView.Box, "Calendar")
 	decorate(a.detail.Box, "Detail")
 
-	a.main.AddPage("grid", a.grid, true, true)
+	a.main.AddPage("grid", a.cal, true, true)
 	a.main.AddPage("day", a.dayView, true, false)
 
 	a.calendars.SetChangedFunc(func(i int, _, _ string, _ rune) { a.showCalendarAt(i) })
 	a.agenda.SetChangedFunc(func(i int, _, _ string, _ rune) { a.showAgendaAt(i) })
 	a.tree.SetChangedFunc(func(node *tview.TreeNode) { a.showTreeNode(node) })
 	a.tree.SetSelectedFunc(func(node *tview.TreeNode) { node.SetExpanded(!node.IsExpanded()) })
-	a.grid.SetSelectionChangedFunc(func(row, col int) { a.onDaySelected(row, col) })
+	a.cal.onSelect = a.onCalSelect
 }
 
 func (a *app) layout() tview.Primitive {
@@ -136,8 +132,8 @@ func (a *app) layout() tview.Primitive {
 		AddItem(a.agenda, 0, 1, false)
 
 	body := tview.NewFlex(). // default FlexColumn: side by side
-					AddItem(left, 30, 0, false).
-					AddItem(a.main, 0, 2, true).
+					AddItem(left, 26, 0, false).
+					AddItem(a.main, 0, 3, true).
 					AddItem(a.detail, 0, 1, false)
 
 	return tview.NewFlex().SetDirection(tview.FlexRow).
@@ -156,7 +152,7 @@ func (a *app) mainBox() *tview.Box {
 	if a.viewMode == viewDay {
 		return a.dayView.Box
 	}
-	return a.grid.Box
+	return a.cal.Box
 }
 
 // focusTarget returns the primitive to focus for a pane index.
@@ -172,7 +168,7 @@ func (a *app) focusTarget(i int) tview.Primitive {
 		if a.viewMode == viewDay {
 			return a.dayView
 		}
-		return a.grid
+		return a.cal
 	}
 }
 

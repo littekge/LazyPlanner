@@ -227,69 +227,72 @@ func (a *app) updateStatus() {
 func (a *app) buildCalendar() {
 	switch a.viewMode {
 	case viewMonth:
-		a.renderGrid(model.MonthGrid(a.anchor, a.weekStartMonday), a.anchor.Format("January 2006"))
+		weeks := model.MonthGrid(a.anchor, a.weekStartMonday)
+		a.cal.setData(weeks, a.calItems(weeks), a.anchor.Month(), a.anchor, a.now, a.weekStartMonday)
+		a.cal.Box.SetTitle(" " + a.anchor.Format("January 2006") + " ")
+		a.main.SwitchToPage("grid")
 	case viewWeek:
-		week := model.Week(a.anchor, a.weekStartMonday)
-		title := "Week of " + week[0].Format("Jan 2, 2006")
-		a.renderGrid([][]time.Time{week}, title)
+		weeks := [][]time.Time{model.Week(a.anchor, a.weekStartMonday)}
+		a.cal.setData(weeks, a.calItems(weeks), 0, a.anchor, a.now, a.weekStartMonday)
+		a.cal.Box.SetTitle(" Week of " + weeks[0][0].Format("Jan 2, 2006") + " ")
+		a.main.SwitchToPage("grid")
 	default:
 		a.renderDay()
 	}
+	a.paintBorders()
 }
 
-func (a *app) renderGrid(weeks [][]time.Time, title string) {
-	a.gridWeeks = weeks
-	a.main.SwitchToPage("grid")
-	a.grid.Box.SetTitle(" " + title + " ")
-	a.grid.Clear()
-
-	for c, name := range a.weekdayHeaders() {
-		a.grid.SetCell(0, c, tview.NewTableCell(name).
-			SetSelectable(false).
-			SetTextColor(accentColor).
-			SetAlign(tview.AlignCenter))
+// calItems builds each visible day's agenda for the grid from a single range
+// query (one EventOccurrences call), then filters per day with model helpers.
+func (a *app) calItems(weeks [][]time.Time) map[string][]model.AgendaItem {
+	m := map[string][]model.AgendaItem{}
+	if len(weeks) == 0 {
+		return m
 	}
-
-	counts := a.countsFor(weeks)
-	selRow, selCol := 1, 0
-	for r, week := range weeks {
-		for c, day := range week {
-			cell := tview.NewTableCell(dayCellLabel(day, counts)).
-				SetReference(day).
-				SetAlign(tview.AlignLeft)
-			if a.viewMode == viewMonth && day.Month() != a.anchor.Month() {
-				cell.SetTextColor(adjacentColor)
-			}
-			if model.SameDay(day, a.now) {
-				cell.SetTextColor(todayColor)
-			}
-			a.grid.SetCell(r+1, c, cell)
-			if model.SameDay(day, a.anchor) {
-				selRow, selCol = r+1, c
+	start := weeks[0][0]
+	end := weeks[len(weeks)-1][6].AddDate(0, 0, 1)
+	occs, _ := a.store.EventOccurrences(start, end)
+	todos := a.store.Todos()
+	for _, week := range weeks {
+		for _, day := range week {
+			dayStart := model.DayStart(day)
+			dayEnd := dayStart.AddDate(0, 0, 1)
+			if items := model.DayAgenda(model.OccurrencesOn(occs, day), todos, dayStart, dayEnd); len(items) > 0 {
+				m[dayKey(day)] = items
 			}
 		}
 	}
-	a.grid.Select(selRow, selCol)
-	a.paintBorders()
+	return m
+}
+
+// onCalSelect handles arrow-navigation in the calendar: it moves the selected
+// day and re-anchors the grid only when the day leaves the visible range, so the
+// displayed period stays put while navigating within it.
+func (a *app) onCalSelect(day time.Time) {
+	a.anchor = day
+	if a.dayInGrid(day) {
+		a.cal.selected = day
+	} else {
+		a.buildCalendar()
+	}
+	a.showDayDetail(day)
+	a.updateStatus()
+}
+
+func (a *app) dayInGrid(day time.Time) bool {
+	if len(a.cal.weeks) == 0 {
+		return false
+	}
+	first := a.cal.weeks[0][0]
+	last := a.cal.weeks[len(a.cal.weeks)-1][6]
+	d := model.DayStart(day)
+	return !d.Before(first) && !d.After(last)
 }
 
 func (a *app) renderDay() {
 	a.main.SwitchToPage("day")
 	a.dayView.Box.SetTitle(" " + a.anchor.Format("Monday, Jan 2 2006") + " ")
 	a.dayView.SetText(a.dayAgendaText(a.anchor))
-	a.paintBorders()
-}
-
-// onDaySelected fires when the grid selection moves; it updates the anchor and
-// the Detail pane with that day's agenda.
-func (a *app) onDaySelected(row, col int) {
-	r := row - 1 // row 0 is the weekday header
-	if r < 0 || r >= len(a.gridWeeks) || col < 0 || col >= len(a.gridWeeks[r]) {
-		return
-	}
-	a.anchor = a.gridWeeks[r][col]
-	a.showDayDetail(a.anchor)
-	a.updateStatus()
 }
 
 func (a *app) showDayDetail(day time.Time) {
@@ -339,53 +342,6 @@ func (a *app) dayItems(day time.Time) []model.AgendaItem {
 	end := start.AddDate(0, 0, 1)
 	occs, _ := a.store.EventOccurrences(start, end)
 	return model.DayAgenda(occs, a.store.Todos(), start, end)
-}
-
-// countsFor buckets events (by covered day) and due todos across the grid range
-// so each day cell can show how busy it is.
-func (a *app) countsFor(weeks [][]time.Time) map[string]int {
-	m := map[string]int{}
-	if len(weeks) == 0 {
-		return m
-	}
-	start := weeks[0][0]
-	gridEnd := weeks[len(weeks)-1][6].AddDate(0, 0, 1)
-
-	occs, _ := a.store.EventOccurrences(start, gridEnd)
-	for _, o := range occs {
-		end := o.End
-		if !end.After(o.Start) {
-			end = o.Start.Add(time.Nanosecond) // count a zero-length event on its start day
-		}
-		for d := model.DayStart(o.Start); d.Before(end); d = d.AddDate(0, 0, 1) {
-			if !d.Before(start) && d.Before(gridEnd) {
-				m[dayKey(d)]++
-			}
-		}
-	}
-	for _, t := range a.store.Todos() {
-		if t.HasDue {
-			d := model.DayStart(t.Due)
-			if !d.Before(start) && d.Before(gridEnd) {
-				m[dayKey(d)]++
-			}
-		}
-	}
-	return m
-}
-
-func (a *app) weekdayHeaders() []string {
-	if a.weekStartMonday {
-		return []string{"Mon", "Tue", "Wed", "Thu", "Fri", "Sat", "Sun"}
-	}
-	return []string{"Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat"}
-}
-
-func dayCellLabel(day time.Time, counts map[string]int) string {
-	if n := counts[dayKey(day)]; n > 0 {
-		return fmt.Sprintf("%2d *%d", day.Day(), n)
-	}
-	return fmt.Sprintf("%2d", day.Day())
 }
 
 func dayKey(t time.Time) string { return t.Format("2006-01-02") }

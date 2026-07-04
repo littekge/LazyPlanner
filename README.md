@@ -14,7 +14,7 @@ A terminal-based todo-list and calendar manager with offline-first CalDAV sync �
 
 ## Usage
 
-Run `lazyplanner` with no arguments to open the TUI. It reads the local cache (populate it with `import` first — see below). A left column holds three panes — **Calendars**, **Tasks** (the subtask tree, each calendar a top-level folder), and **Agenda** (today's events and due tasks) — with a **calendar grid** in the center (month/week/day) and a **Detail** pane on the right showing the selected item or day.
+Run `lazyplanner` with no arguments to open the TUI. It reads the local cache (populate it with `import` first — see below). A left column holds three panes — **Calendars**, **Tasks** (the subtask tree, each calendar a top-level folder), and **Agenda** (today's events and due tasks) — with a **calendar grid** in the center (month/week/day, each day cell listing its events and due tasks) and a **Detail** pane on the right showing the selected item or day. (The month grid shows the most detail on a wide terminal; interactive resizing to give it more room lands in a later step.)
 
 This is **read-only** for now (editing lands in a later step). Keys available today:
 
