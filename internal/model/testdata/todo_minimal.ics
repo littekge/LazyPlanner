@@ -1,0 +1,10 @@
+BEGIN:VCALENDAR
+VERSION:2.0
+PRODID:-//LazyPlanner//Test Fixtures//EN
+BEGIN:VTODO
+UID:todo-min-1@lazyplanner.test
+DTSTAMP:20260701T120000Z
+SUMMARY:Someday task
+RELATED-TO:todo-parent-2@lazyplanner.test
+END:VTODO
+END:VCALENDAR
