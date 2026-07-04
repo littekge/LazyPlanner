@@ -1,0 +1,12 @@
+{
+  "display_name": "Personal",
+  "color": "#3366cc",
+  "sync_token": "http://sabre.io/ns/sync/42",
+  "href": "/remote.php/dav/calendars/gabriel/personal/",
+  "resources": {
+    "standup.ics": {
+      "etag": "\"etag-standup-1\"",
+      "href": "/remote.php/dav/calendars/gabriel/personal/standup.ics"
+    }
+  }
+}

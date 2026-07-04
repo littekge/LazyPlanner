@@ -21,6 +21,17 @@ type Parsed struct {
 	Todos    []*Todo
 }
 
+// Encode serializes the underlying calendar back to iCalendar bytes. Because
+// Decode retained the whole calendar, this round-trips every property the model
+// does not itself understand — the property-preservation iron rule.
+func (p *Parsed) Encode() ([]byte, error) {
+	var buf bytes.Buffer
+	if err := ical.NewEncoder(&buf).Encode(p.Calendar); err != nil {
+		return nil, fmt.Errorf("encoding icalendar: %w", err)
+	}
+	return buf.Bytes(), nil
+}
+
 // Decode parses an iCalendar stream (a single CalDAV resource may hold several
 // components) into typed events and todos. Floating times — those with neither
 // a TZID parameter nor a UTC marker — are interpreted in loc; callers pass
