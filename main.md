@@ -29,7 +29,7 @@ LazyPlanner is a terminal-based todo-list and calendar management program. It is
 **Core Features (initial scope):**
 
 - **CalDAV sync** — the must-have feature. Offline-first: a local cache is the working copy; syncs with a NextCloud CalDAV server in the background or on demand, so the app opens instantly and works without network. Existing calendars and todo lists on the server are imported, and changes remain accessible from the web via NextCloud.
-- **Todo management** — create, edit, complete, and organize tasks (priorities, due dates, tags/projects — details TBD)
+- **Todo management** — create, edit, complete, and organize tasks. **Deep subtask hierarchy is the centerpiece feature**: arbitrary-depth nesting rendered as a collapsible tree and navigated like a file explorer, where a "folder" is simply a task with children. Fields surfaced: title, due date, status, priority, tags, notes, subtasks.
 - **Calendar views** — day/week/month views showing tasks and events on a timeline
 - **Recurring tasks/events** — repeat rules (daily, weekly, custom) for tasks and calendar entries
 
@@ -129,13 +129,17 @@ Incremental steps; each ends with passing tests (`go test ./...`, vet, staticche
 - **Credentials**: always a NextCloud **app password** (Settings → Security), never the real account password — revocable per-app. Stored in `config.toml`, which must be `0600` (the app warns on looser permissions). Escape hatch: an optional `password_command` whose stdout is the secret — with the owner's Vaultwarden server, that's `password_command = "bw get password lazyplanner"` (Vaultwarden speaks the Bitwarden API, so the standard `bw` CLI works). OS keyring rejected: daemon requirement breaks headless Pi, extra dependency, extra failure modes.
 - **Conflict resolution**: ETag-based detection (conditional writes) — the app **never silently overwrites** in either direction. On a true conflict (same item edited locally and remotely between syncs), keep both versions, mark the item conflicted, and show a UI indicator; the owner resolves at leisure (pick a winner or keep both as separate items). Sync never blocks waiting for resolution. "Newest wins" and "server wins" rejected as silent data-loss paths.
 - **Sync triggers**: manual `:sync` always available, plus all three automatic triggers — background sync on startup (UI opens instantly from cache, refreshes when sync lands), periodic while open (default 15 min, configurable, 0 = off), and debounced push a few seconds after local edits (other devices see changes fast; shrinks the conflict window).
+- **Data model — surfaced fields**: tasks show title, due date, status, **priority** (iCal 1–9), **tags** (CATEGORIES), **notes**, and **subtasks**; events show title, start/end, all-day flag, recurrence, **location**, **notes**, and a **reminder indicator** (shows that alarms exist; LazyPlanner does not fire notifications itself — phone/NextCloud handle that). Everything else in the `.ics` round-trips untouched.
+- **Subtask hierarchy**: arbitrary-depth nesting via `RELATED-TO` (RELTYPE=PARENT) — the same mechanism NextCloud Tasks uses, so existing nested tasks import as-is. The owner's most-used feature: the UI treats the task tree like a file explorer (collapsible nodes, indent/outdent, drill-in), and "folders" are just tasks with children — no new storage concept needed.
+- **Property preservation (iron rule)**: LazyPlanner never drops or mangles iCal properties it doesn't understand (X- properties, VALARMs, other clients' metadata). Editing a known field preserves everything else byte-for-byte-equivalent. This is what keeps LazyPlanner a well-behaved CalDAV citizen.
+- **Timezones**: store what the server has; always display in the system's local timezone; create new items in the local timezone; all-day items stay date-only with no timezone math.
+- **Recurrence editing**: all three scopes — "only this occurrence" (RECURRENCE-ID override), "this and future" (series split), "all occurrences" (edit master) — so LazyPlanner never forces a reach for another client.
 - **Local cache storage**: vdir-style raw `.ics` files (one file per event/todo, one directory per calendar — the vdirsyncer/khal convention), with a JSON sidecar for sync state (ETags, sync tokens) and an in-memory index built at startup. Chosen for the 1:1 mapping onto CalDAV resources (simplest possible sync logic), zero extra dependencies, and human-readable/debuggable storage. SQLite rejected (cgo vs huge pure-Go dep; query speed unneeded at personal-calendar scale); custom JSON rejected (lossy translation away from the data's native iCalendar format).
 
 ## Open Decisions
 
-Roughly in the order they should be tackled:
+One remaining:
 
-1. **Data model details** — task fields (priority, tags, due/start dates), recurrence editing semantics ("this event" vs "this and future" vs "all"), timezone handling
-2. **UI design** — pane layout, views (day/week/month/todo), keybinding scheme, `:` command set
+1. **UI design** — pane layout, views (day/week/month/todo tree), keybinding scheme, `:` command set. The todo pane must be designed around the file-explorer-style subtask tree.
 
-Settled (drafted 2026-07-04, pending review): architecture & package layout, build plan, config file (TOML, moderate scope), runtime file locations, sync design (credentials, conflicts, triggers), module path (`github.com/littekge/LazyPlanner`), Go version policy, license (MIT proposed).
+Settled (drafted 2026-07-04, pending review): architecture & package layout, build plan, config file (TOML, moderate scope), runtime file locations, sync design (credentials, conflicts, triggers), data model (fields, subtask hierarchy, preservation rule, timezones, recurrence scopes), module path (`github.com/littekge/LazyPlanner`), Go version policy, license (MIT proposed).
