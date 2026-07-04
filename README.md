@@ -48,6 +48,20 @@ Credentials can also come from the `LAZYPLANNER_CALDAV_URL`, `LAZYPLANNER_CALDAV
 
 This is a one-way download (server → local) for validating against real data; it does not yet push local changes or delete anything — two-way sync comes later.
 
+### Managing calendars (early)
+
+LazyPlanner can create and delete calendars/task lists directly on the server (via CalDAV `MKCALENDAR`), so you never have to use the NextCloud web UI. Connection flags/env vars are the same as `import`.
+
+```sh
+lazyplanner calendar list                          # show calendars + their server paths
+lazyplanner calendar create --name "Projects"      # an event calendar
+lazyplanner calendar create --name "Errands" --tasks   # a task list (VTODO)
+lazyplanner calendar create --name "Home" --both --color "#3366cc"
+lazyplanner calendar delete --path "/remote.php/dav/calendars/you/errands/"
+```
+
+After creating a calendar, run `lazyplanner import` to pull it into the local cache.
+
 ## Build & Install
 
 Requires [Go](https://go.dev/dl/) (the stable release current at scaffold time or newer; see the `go` directive in `go.mod`). Dependencies are vendored, so no network is needed to build.

@@ -2,13 +2,11 @@ package main
 
 import (
 	"context"
-	"errors"
 	"flag"
 	"fmt"
 	"os"
 	"os/signal"
 
-	"github.com/littekge/LazyPlanner/internal/caldav"
 	"github.com/littekge/LazyPlanner/internal/config"
 	"github.com/littekge/LazyPlanner/internal/store"
 	"github.com/littekge/LazyPlanner/internal/sync"
@@ -20,19 +18,15 @@ import (
 // LAZYPLANNER_CALDAV_* environment variables.
 func runImport(args []string) error {
 	fs := flag.NewFlagSet("import", flag.ContinueOnError)
-	url := fs.String("url", os.Getenv("LAZYPLANNER_CALDAV_URL"),
-		"CalDAV base URL, e.g. https://host/remote.php/dav (or $LAZYPLANNER_CALDAV_URL)")
-	user := fs.String("username", os.Getenv("LAZYPLANNER_CALDAV_USERNAME"),
-		"CalDAV username (or $LAZYPLANNER_CALDAV_USERNAME)")
-	pass := fs.String("password", os.Getenv("LAZYPLANNER_CALDAV_PASSWORD"),
-		"CalDAV app password (or $LAZYPLANNER_CALDAV_PASSWORD)")
+	conn := addConnFlags(fs)
 	data := fs.String("data", "", "data directory (default: OS data dir)")
 	if err := fs.Parse(args); err != nil {
 		return err
 	}
 
-	if *url == "" || *user == "" || *pass == "" {
-		return errors.New("import requires url, username, and password (flags or LAZYPLANNER_CALDAV_* env vars)")
+	client, err := conn.client()
+	if err != nil {
+		return err
 	}
 
 	dataDir := *data
@@ -48,10 +42,6 @@ func runImport(args []string) error {
 	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt)
 	defer stop()
 
-	client, err := caldav.NewClient(caldav.Config{Endpoint: *url, Username: *user, Password: *pass})
-	if err != nil {
-		return err
-	}
 	st, err := store.Open(ctx, dataDir)
 	if err != nil {
 		return err

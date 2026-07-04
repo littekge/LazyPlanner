@@ -21,15 +21,22 @@ const (
 
 func main() {
 	// Subcommands stay minimal wiring; all logic lives in the internal packages.
-	if len(os.Args) > 1 && os.Args[1] == "import" {
-		if err := runImport(os.Args[2:]); err != nil {
-			fmt.Fprintln(os.Stderr, "lazyplanner:", err)
-			os.Exit(1)
+	if len(os.Args) > 1 {
+		switch os.Args[1] {
+		case "import":
+			exitOnError(runImport(os.Args[2:]))
+			return
+		case "calendar":
+			exitOnError(runCalendar(os.Args[2:]))
+			return
 		}
-		return
 	}
 
-	if err := runTUI(); err != nil {
+	exitOnError(runTUI())
+}
+
+func exitOnError(err error) {
+	if err != nil {
 		fmt.Fprintln(os.Stderr, "lazyplanner:", err)
 		os.Exit(1)
 	}

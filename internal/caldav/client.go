@@ -5,6 +5,7 @@ import (
 	"errors"
 	"fmt"
 	"net/http"
+	"net/url"
 	"time"
 
 	"github.com/emersion/go-ical"
@@ -33,9 +34,13 @@ type Config struct {
 
 // Client is LazyPlanner's CalDAV client: server discovery plus bulk download,
 // wrapping emersion/go-webdav. It is the only type in the application that
-// speaks HTTP to the server.
+// speaks HTTP to the server. It also holds the authenticated HTTP client and
+// endpoint so it can issue verbs go-webdav's client does not expose (e.g.
+// MKCALENDAR for calendar creation).
 type Client struct {
-	dav *dav.Client
+	dav        *dav.Client
+	httpClient webdav.HTTPClient
+	endpoint   *url.URL
 }
 
 // Calendar is a discovered CalDAV collection.
@@ -61,6 +66,10 @@ func NewClient(cfg Config) (*Client, error) {
 	if cfg.Endpoint == "" {
 		return nil, errors.New("caldav: endpoint is required")
 	}
+	endpoint, err := url.Parse(cfg.Endpoint)
+	if err != nil {
+		return nil, fmt.Errorf("caldav: invalid endpoint %q: %w", cfg.Endpoint, err)
+	}
 
 	base := cfg.HTTPClient
 	if base == nil {
@@ -76,19 +85,29 @@ func NewClient(cfg Config) (*Client, error) {
 	if err != nil {
 		return nil, fmt.Errorf("caldav: creating client: %w", err)
 	}
-	return &Client{dav: dc}, nil
+	return &Client{dav: dc, httpClient: httpClient, endpoint: endpoint}, nil
+}
+
+// CalendarHomeSet returns the account's calendar home set path (the collection
+// under which calendars live), walking current-user-principal → home-set.
+func (c *Client) CalendarHomeSet(ctx context.Context) (string, error) {
+	principal, err := c.dav.FindCurrentUserPrincipal(ctx)
+	if err != nil {
+		return "", fmt.Errorf("caldav: finding current user principal: %w", err)
+	}
+	homeSet, err := c.dav.FindCalendarHomeSet(ctx, principal)
+	if err != nil {
+		return "", fmt.Errorf("caldav: finding calendar home set: %w", err)
+	}
+	return homeSet, nil
 }
 
 // DiscoverCalendars walks current-user-principal → calendar-home-set →
 // calendars and returns the account's collections.
 func (c *Client) DiscoverCalendars(ctx context.Context) ([]Calendar, error) {
-	principal, err := c.dav.FindCurrentUserPrincipal(ctx)
+	homeSet, err := c.CalendarHomeSet(ctx)
 	if err != nil {
-		return nil, fmt.Errorf("caldav: finding current user principal: %w", err)
-	}
-	homeSet, err := c.dav.FindCalendarHomeSet(ctx, principal)
-	if err != nil {
-		return nil, fmt.Errorf("caldav: finding calendar home set: %w", err)
+		return nil, err
 	}
 	davCals, err := c.dav.FindCalendars(ctx, homeSet)
 	if err != nil {
