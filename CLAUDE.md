@@ -87,6 +87,12 @@ When appending to `log.md`, use this format:
 - Any issues encountered
 ```
 
+**Every entry gets its own `## YYYY-MM-DD — Title` heading — no exceptions.**
+
+- One entry per distinct group of changes, each with its own heading, even when several entries land on the same day or in the same session. Never append bullets under an existing entry's heading and never let an entry exist as a bare `---`-separated block without a heading.
+- New entries are inserted at the top, directly below the file's intro blockquote. When inserting, do not touch the previous entry — its heading and content must remain intact and byte-identical.
+- After editing `log.md`, verify the result: the number of `## ` headings must equal the number of entries.
+
 ---
 
 ## Architecture Rules
