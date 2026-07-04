@@ -131,6 +131,13 @@ The whole hierarchy renders as a collapsible tree (`→`/`←` expand/collapse).
 
 `a` opens a one-line input scoped to the current context (task under the selected tree node; event on the selected day). Tokens parsed from the text: dates ("fri", "jul 20", "tomorrow"), times ("5pm"), `!high`/`!1`–`!9` priority, `#tag`. Everything unparsed becomes the title. `e` on any item opens the full form for detailed editing. Parsing rules must be predictable and documented in `:help` — when in doubt, leave text in the title rather than guess.
 
+### Colors, completed tasks, sorting, undo
+
+- **Colors**: draw with the terminal's standard 16-color palette so LazyPlanner inherits the terminal theme and renders correctly everywhere (including a bare Pi console/TTY) — lazygit's approach. Server calendar colors are mapped to the nearest palette color.
+- **Completed tasks**: hidden from the tree by default (keeps deep trees clean); `.` toggles showing them struck-through in place — the dotfiles gesture, fitting the file-explorer metaphor. Completion state always remains in the data and on the server.
+- **Sibling task order**: smart sort — due date (soonest first), then priority, then title. Predictable and zero-maintenance; the sort key can become configurable later. Manual ordering rejected: iCal has no standard order field, so hand-arranged order wouldn't reliably survive other clients.
+- **Undo**: session-scoped undo stack on the `u` key — every local mutation (edit, delete, complete, re-parent) pushes the prior `.ics` version onto an in-memory stack. Cheap on this storage model, and the safety net that makes single-key actions trustworthy. Persistent trash deferred unless it proves needed.
+
 ### Keybindings (draft — hardcoded v1; config `[keys]` section possible later)
 
 | Key | Action |
@@ -145,6 +152,8 @@ The whole hierarchy renders as a collapsible tree (`→`/`←` expand/collapse).
 | `d` | Delete selected (with confirm) |
 | `>` / `<` | Zoom into / out of task subtree |
 | `H` / `L` | Outdent / indent task (re-parent) |
+| `u` | Undo last local change (session stack) |
+| `.` | Show/hide completed tasks |
 | `v` | Cycle calendar view: month → week → day |
 | `n` / `p` | Next / previous month(/week/day) |
 | `t` | Jump to today |
