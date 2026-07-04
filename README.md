@@ -2,7 +2,7 @@
 
 A terminal-based todo-list and calendar manager with offline-first CalDAV sync — a full-screen interactive TUI in the style of [lazygit](https://github.com/jesseduffield/lazygit), written in Go.
 
-> **Status: early build.** The spec is complete (see [`main.md`](main.md)). Done so far: build step 1 (Go module, package skeleton, vendored dependencies, CI, and a placeholder TUI window) and build step 2 (the core `model` layer — parsing events and todos from iCalendar data). No interactive features yet — sections marked *not yet built* land as the build progresses.
+> **Status: early build.** The spec is complete (see [`main.md`](main.md)). Done so far: build steps 1–3 — the Go module, package skeleton, vendored dependencies, CI, and a placeholder TUI window (step 1); the core `model` layer parsing events and todos from iCalendar data (step 2); and timezone-aware recurrence expansion (step 3). No interactive features yet — sections marked *not yet built* land as the build progresses.
 
 ## What it does
 
