@@ -4,6 +4,16 @@
 
 ---
 
+## 2026-07-04 — Spec: interactive pane sizing added to step 10
+
+- Owner requested interactive pane resizing; agreed to build it in **step 10** (keybinding polish). Recorded in the spec:
+  - `main.md`: new **Pane sizing** subsection under UI Design — (A) **accordion expand** (`+`/`-`, lazygit idiom) collapses side panels/Detail so the Main view fills the screen; (B) **keyboard resize** (`Ctrl-←`/`Ctrl-→`) grows/shrinks left-column & Detail widths via `Flex.ResizeItem`, clamped. Sizes remembered in the state file (not config). Mouse drag-to-resize declared out of scope (keyboard-first). Two keymap rows added; Build Plan step 10 updated
+  - `CLAUDE.md`: UI Project Context line notes pane sizing lands in step 10
+- Feasibility confirmed in tview: `Flex.ResizeItem` (runtime resize), `Application.SetMouseCapture` + `Box.GetRect` (would enable mouse drag, but that's out of scope). No code yet — spec change only
+- Also: terminal-resize reflow already works automatically (tview redraws the Flex tree on resize)
+
+---
+
 ## 2026-07-04 — Build step 7: calendar views (month/week/day)
 
 - **Build Plan step 7 complete.** Added the center "Main" pane with month/week/day calendar grids and movement keys, moving to the spec's four-region layout (left panels · calendar · detail · status).

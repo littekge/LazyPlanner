@@ -139,6 +139,15 @@ The whole hierarchy renders as a collapsible tree (`→`/`←` expand/collapse).
 - **Sibling task order**: smart sort — due date (soonest first), then priority, then title. Predictable and zero-maintenance; the sort key can become configurable later. Manual ordering rejected: iCal has no standard order field, so hand-arranged order wouldn't reliably survive other clients.
 - **Undo**: session-scoped undo stack on the `u` key — every local mutation (edit, delete, complete, re-parent) pushes the prior `.ics` version onto an in-memory stack. Cheap on this storage model, and the safety net that makes single-key actions trustworthy. Persistent trash deferred unless it proves needed.
 
+### Pane sizing
+
+Layout proportions adapt automatically to terminal size (tview reflows the `Flex` tree on every resize). On top of that, two interactive controls are planned for build step 10:
+
+- **Accordion expand** (`+` / `-`): collapse the side panels and Detail so the focused Main view (calendar grid or task tree) fills the screen, then restore them — the lazygit `+`/`_` idiom.
+- **Keyboard resize** (`Ctrl-←` / `Ctrl-→`): grow/shrink the left-column and Detail widths in steps, clamped to sane minimums, via tview's `Flex.ResizeItem`.
+
+Chosen sizes are remembered across launches in the state file under the data dir (never the config file). Mouse drag-to-resize is intentionally out of scope — LazyPlanner is keyboard-first.
+
 ### Keybindings (draft — hardcoded v1; config `[keys]` section possible later)
 
 | Key | Action |
@@ -146,6 +155,8 @@ The whole hierarchy renders as a collapsible tree (`→`/`←` expand/collapse).
 | `↑↓←→` / `hjkl` | Move within pane / expand-collapse tree nodes |
 | `1` `2` `3` | Focus Calendars / Tasks / Agenda panel |
 | `Tab` / `Shift-Tab` | Cycle pane focus |
+| `+` / `-` | Expand / restore the Main pane (accordion) |
+| `Ctrl-←` / `Ctrl-→` | Widen / narrow the focused side pane (keyboard resize) |
 | `Enter` | Select / open in Main |
 | `a` | Quick-add (contextual) |
 | `e` | Edit selected (full form) |
@@ -188,7 +199,7 @@ Incremental steps; each ends with passing tests (`go test ./...`, vet, staticche
 7. **Calendar views** — month / week / day grids with movement keys.
 8. **Editing** — create / edit / complete / delete todos and events from the UI; writes go to the local vdir only.
 9. **Two-way sync** — ETag-based diff, push local changes, pull remote changes, conflict handling, manual sync trigger. **This completes the must-have feature.**
-10. **Command mode & keybinding polish** — `:` command line, single-key shortcut coverage, help screen, mouse support pass.
+10. **Command mode & keybinding polish** — `:` command line, single-key shortcut coverage, help screen, mouse support pass, and interactive pane sizing (accordion expand + keyboard resize; chosen sizes remembered in the state file).
 11. **Recurrence editing semantics** — "this occurrence / this and future / all" editing flows.
 12. **Background sync + polish** — periodic sync, sync status indicator, error surfacing in the UI.
 13. **Raspberry Pi target** — ARM cross-compile, performance check on hardware, dedicated-terminal (kiosk) setup notes.
