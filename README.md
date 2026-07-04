@@ -2,7 +2,7 @@
 
 A terminal-based todo-list and calendar manager with offline-first CalDAV sync — a full-screen interactive TUI in the style of [lazygit](https://github.com/jesseduffield/lazygit), written in Go.
 
-> **Status: early build.** The spec is complete (see [`main.md`](main.md)). Done so far: build steps 1–6 — the Go module, packages, vendored deps, and CI (step 1); the `model` layer parsing iCalendar events and todos (step 2); timezone-aware recurrence expansion (step 3); the local vdir cache with an in-memory index and atomic writes (step 4); one-way CalDAV import from NextCloud (step 5); and a **read-only TUI shell** that displays your imported calendars, subtask tree, and today's agenda (step 6). Editing, calendar grids, and two-way sync are *not yet built*.
+> **Status: early build.** The spec is complete (see [`main.md`](main.md)). Done so far: build steps 1–7 — the Go module, packages, vendored deps, and CI (step 1); the `model` layer parsing iCalendar events and todos (step 2); timezone-aware recurrence expansion (step 3); the local vdir cache with an in-memory index and atomic writes (step 4); one-way CalDAV import from NextCloud (step 5); a **read-only TUI** with a calendar subtask tree and today's agenda (step 6); and **month/week/day calendar views** with movement keys (step 7). Editing and two-way sync are *not yet built*.
 
 ## What it does
 
@@ -14,19 +14,18 @@ A terminal-based todo-list and calendar manager with offline-first CalDAV sync �
 
 ## Usage
 
-Run `lazyplanner` with no arguments to open the TUI. It reads the local cache (populate it with `import` first — see below) and shows three panes plus a detail view:
+Run `lazyplanner` with no arguments to open the TUI. It reads the local cache (populate it with `import` first — see below). A left column holds three panes — **Calendars**, **Tasks** (the subtask tree, each calendar a top-level folder), and **Agenda** (today's events and due tasks) — with a **calendar grid** in the center (month/week/day) and a **Detail** pane on the right showing the selected item or day.
 
-- **Calendars** — your calendars with event/task counts
-- **Tasks** — the subtask tree, with each calendar as a top-level folder
-- **Agenda** — today's events and due tasks
-
-This shell is **read-only** for now (editing lands in a later step). Keys available today:
+This is **read-only** for now (editing lands in a later step). Keys available today:
 
 | Key | Action |
 |---|---|
 | `1` `2` `3` | Focus Calendars / Tasks / Agenda |
-| `Tab` / `Shift-Tab` | Cycle panes |
-| `↑` `↓` / `j` `k` | Move within a pane |
+| `Tab` / `Shift-Tab` | Cycle panes (including the calendar) |
+| `↑` `↓` `←` `→` / `j` `k` | Move within a pane / between days in the grid |
+| `v` | Cycle calendar view: month → week → day |
+| `n` / `p` | Next / previous month·week·day |
+| `t` | Jump to today |
 | `Enter` / `Space` | Expand or collapse a task |
 | `.` | Show/hide completed tasks |
 | `q` / `Ctrl-C` | Quit |

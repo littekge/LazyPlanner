@@ -84,12 +84,14 @@ func (a *app) buildAgenda() {
 // focused pane, so Detail always tracks where the user is.
 func (a *app) refreshDetailForFocus() {
 	switch a.focusIndex {
-	case 0:
+	case focusCalendars:
 		a.showCalendarAt(a.calendars.GetCurrentItem())
-	case 1:
+	case focusTree:
 		a.showTreeNode(a.tree.GetCurrentNode())
-	case 2:
+	case focusAgenda:
 		a.showAgendaAt(a.agenda.GetCurrentItem())
+	case focusMain:
+		a.showDayDetail(a.anchor)
 	}
 }
 
@@ -206,18 +208,187 @@ func (a *app) setCalendarDetail(cal store.Calendar) {
 
 // updateStatus repaints the bottom status bar: key hints and live counts.
 func (a *app) updateStatus() {
+	view := [...]string{"month", "week", "day"}[a.viewMode]
 	completed := "off"
 	if a.showCompleted {
 		completed = "on"
 	}
-	hints := fmt.Sprintf("[1]Calendars [2]Tasks [3]Agenda  Tab:cycle  Enter:expand  .:completed(%s)  q:quit", completed)
-	counts := fmt.Sprintf("%d calendars · %d tasks · %d today", len(a.store.Calendars()), len(a.store.Todos()), len(a.agendaItems))
+	hints := fmt.Sprintf("[1]Cal [2]Tasks [3]Agenda Tab:cycle | v:view(%s) n/p:prev/next t:today | .:done(%s) q:quit", view, completed)
+	counts := fmt.Sprintf("%s · %d cals · %d tasks", a.anchor.Format("Jan 2 2006"), len(a.store.Calendars()), len(a.store.Todos()))
 	line := fmt.Sprintf("%s   [gray]|[-]   %s", hints, counts)
 	if n := len(a.store.LoadErrors()); n > 0 {
-		line += fmt.Sprintf("   [red]⚠ %d load error(s)[-]", n)
+		line += fmt.Sprintf("   [red]!%d load error(s)[-]", n)
 	}
 	a.status.SetText(line)
 }
+
+// --- Calendar (Main pane) rendering ---
+
+func (a *app) buildCalendar() {
+	switch a.viewMode {
+	case viewMonth:
+		a.renderGrid(model.MonthGrid(a.anchor, a.weekStartMonday), a.anchor.Format("January 2006"))
+	case viewWeek:
+		week := model.Week(a.anchor, a.weekStartMonday)
+		title := "Week of " + week[0].Format("Jan 2, 2006")
+		a.renderGrid([][]time.Time{week}, title)
+	default:
+		a.renderDay()
+	}
+}
+
+func (a *app) renderGrid(weeks [][]time.Time, title string) {
+	a.gridWeeks = weeks
+	a.main.SwitchToPage("grid")
+	a.grid.Box.SetTitle(" " + title + " ")
+	a.grid.Clear()
+
+	for c, name := range a.weekdayHeaders() {
+		a.grid.SetCell(0, c, tview.NewTableCell(name).
+			SetSelectable(false).
+			SetTextColor(accentColor).
+			SetAlign(tview.AlignCenter))
+	}
+
+	counts := a.countsFor(weeks)
+	selRow, selCol := 1, 0
+	for r, week := range weeks {
+		for c, day := range week {
+			cell := tview.NewTableCell(dayCellLabel(day, counts)).
+				SetReference(day).
+				SetAlign(tview.AlignLeft)
+			if a.viewMode == viewMonth && day.Month() != a.anchor.Month() {
+				cell.SetTextColor(adjacentColor)
+			}
+			if model.SameDay(day, a.now) {
+				cell.SetTextColor(todayColor)
+			}
+			a.grid.SetCell(r+1, c, cell)
+			if model.SameDay(day, a.anchor) {
+				selRow, selCol = r+1, c
+			}
+		}
+	}
+	a.grid.Select(selRow, selCol)
+	a.paintBorders()
+}
+
+func (a *app) renderDay() {
+	a.main.SwitchToPage("day")
+	a.dayView.Box.SetTitle(" " + a.anchor.Format("Monday, Jan 2 2006") + " ")
+	a.dayView.SetText(a.dayAgendaText(a.anchor))
+	a.paintBorders()
+}
+
+// onDaySelected fires when the grid selection moves; it updates the anchor and
+// the Detail pane with that day's agenda.
+func (a *app) onDaySelected(row, col int) {
+	r := row - 1 // row 0 is the weekday header
+	if r < 0 || r >= len(a.gridWeeks) || col < 0 || col >= len(a.gridWeeks[r]) {
+		return
+	}
+	a.anchor = a.gridWeeks[r][col]
+	a.showDayDetail(a.anchor)
+	a.updateStatus()
+}
+
+func (a *app) showDayDetail(day time.Time) {
+	items := a.dayItems(day)
+	var b strings.Builder
+	fmt.Fprintf(&b, "[teal]%s[-]\n\n", day.Format("Monday, January 2, 2006"))
+	if len(items) == 0 {
+		b.WriteString("[gray]No events or due tasks.[-]\n")
+	}
+	for _, it := range items {
+		when := "all-day"
+		if !it.AllDay {
+			when = it.Start.Format("3:04pm")
+		}
+		kind := "event"
+		if it.IsTodo() {
+			kind = "task"
+		}
+		fmt.Fprintf(&b, "[gray]%-8s[-] %s  [gray](%s)[-]\n", when, nonEmpty(it.Title, "(untitled)"), kind)
+	}
+	a.setDetail(b.String())
+}
+
+func (a *app) dayAgendaText(day time.Time) string {
+	items := a.dayItems(day)
+	if len(items) == 0 {
+		return "[gray]No events or due tasks.[-]"
+	}
+	var b strings.Builder
+	for _, it := range items {
+		when := "all-day"
+		if !it.AllDay {
+			when = it.Start.Format("3:04pm")
+		}
+		mark := "   "
+		if it.IsTodo() {
+			mark = "[ ]"
+		}
+		fmt.Fprintf(&b, "%-8s %s %s\n", when, mark, nonEmpty(it.Title, "(untitled)"))
+	}
+	return b.String()
+}
+
+// dayItems returns the agenda (events + due todos) for a single day.
+func (a *app) dayItems(day time.Time) []model.AgendaItem {
+	start := model.DayStart(day)
+	end := start.AddDate(0, 0, 1)
+	occs, _ := a.store.EventOccurrences(start, end)
+	return model.DayAgenda(occs, a.store.Todos(), start, end)
+}
+
+// countsFor buckets events (by covered day) and due todos across the grid range
+// so each day cell can show how busy it is.
+func (a *app) countsFor(weeks [][]time.Time) map[string]int {
+	m := map[string]int{}
+	if len(weeks) == 0 {
+		return m
+	}
+	start := weeks[0][0]
+	gridEnd := weeks[len(weeks)-1][6].AddDate(0, 0, 1)
+
+	occs, _ := a.store.EventOccurrences(start, gridEnd)
+	for _, o := range occs {
+		end := o.End
+		if !end.After(o.Start) {
+			end = o.Start.Add(time.Nanosecond) // count a zero-length event on its start day
+		}
+		for d := model.DayStart(o.Start); d.Before(end); d = d.AddDate(0, 0, 1) {
+			if !d.Before(start) && d.Before(gridEnd) {
+				m[dayKey(d)]++
+			}
+		}
+	}
+	for _, t := range a.store.Todos() {
+		if t.HasDue {
+			d := model.DayStart(t.Due)
+			if !d.Before(start) && d.Before(gridEnd) {
+				m[dayKey(d)]++
+			}
+		}
+	}
+	return m
+}
+
+func (a *app) weekdayHeaders() []string {
+	if a.weekStartMonday {
+		return []string{"Mon", "Tue", "Wed", "Thu", "Fri", "Sat", "Sun"}
+	}
+	return []string{"Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat"}
+}
+
+func dayCellLabel(day time.Time, counts map[string]int) string {
+	if n := counts[dayKey(day)]; n > 0 {
+		return fmt.Sprintf("%2d *%d", day.Day(), n)
+	}
+	return fmt.Sprintf("%2d", day.Day())
+}
+
+func dayKey(t time.Time) string { return t.Format("2006-01-02") }
 
 // --- small helpers ---
 
