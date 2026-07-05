@@ -11,28 +11,32 @@ import (
 	"github.com/littekge/LazyPlanner/internal/model"
 )
 
-// calendarView is a custom-drawn month/week grid. Each day is a cell that fills
-// the available width and height and lists the day's events/tasks, unlike a
-// tview.Table (content-width, single-line cells). Arrow/hjkl keys move the
-// selected day and invoke onSelect; the app decides whether to re-anchor.
+// calendarView is the custom-drawn month grid. Each day is a cell that fills the
+// available space and lists the day's events/tasks. The selected day is marked
+// with an outline box (never a solid fill) so event text stays readable. Arrow
+// keys move the selection; Enter drops into "event mode" to cycle that day's
+// items, reporting the highlighted one so the Detail pane can show it.
 type calendarView struct {
 	*tview.Box
 
-	weeks       [][]time.Time                 // rows of 7 days to draw
-	items       map[string][]model.AgendaItem // dayKey -> that day's agenda
+	weeks       [][]time.Time
+	items       map[string][]model.AgendaItem
 	selected    time.Time
 	now         time.Time
-	month       time.Month // focused month for dimming adjacent days; 0 = don't dim (week view)
+	month       time.Month // for dimming adjacent-month days; 0 = don't dim (week)
 	mondayFirst bool
 
-	onSelect func(day time.Time)
+	eventMode  bool // cycling events within the selected day
+	eventIndex int
+
+	onSelectDay   func(day time.Time)
+	onSelectEvent func(item model.AgendaItem)
 }
 
 func newCalendarView() *calendarView {
 	return &calendarView{Box: tview.NewBox(), items: map[string][]model.AgendaItem{}}
 }
 
-// setData replaces what the grid draws.
 func (cv *calendarView) setData(weeks [][]time.Time, items map[string][]model.AgendaItem, month time.Month, selected, now time.Time, mondayFirst bool) {
 	cv.weeks = weeks
 	cv.items = items
@@ -40,36 +44,107 @@ func (cv *calendarView) setData(weeks [][]time.Time, items map[string][]model.Ag
 	cv.selected = selected
 	cv.now = now
 	cv.mondayFirst = mondayFirst
+	cv.eventMode = false
+	cv.eventIndex = 0
+}
+
+func (cv *calendarView) selectedItems() []model.AgendaItem {
+	return cv.items[dayKey(cv.selected)]
 }
 
 func (cv *calendarView) InputHandler() func(*tcell.EventKey, func(tview.Primitive)) {
 	return cv.WrapInputHandler(func(ev *tcell.EventKey, _ func(tview.Primitive)) {
-		delta := 0
-		switch ev.Key() {
-		case tcell.KeyLeft:
-			delta = -1
-		case tcell.KeyRight:
-			delta = 1
-		case tcell.KeyUp:
-			delta = -7
-		case tcell.KeyDown:
-			delta = 7
-		case tcell.KeyRune:
-			switch ev.Rune() {
-			case 'h':
-				delta = -1
-			case 'l':
-				delta = 1
-			case 'k':
-				delta = -7
-			case 'j':
-				delta = 7
+		if cv.eventMode {
+			cv.handleEventMode(ev)
+			return
+		}
+		cv.handleDayMode(ev)
+	})
+}
+
+func (cv *calendarView) handleDayMode(ev *tcell.EventKey) {
+	move := func(days int) {
+		if cv.onSelectDay != nil {
+			cv.onSelectDay(cv.selected.AddDate(0, 0, days))
+		}
+	}
+	switch ev.Key() {
+	case tcell.KeyLeft:
+		move(-1)
+	case tcell.KeyRight:
+		move(1)
+	case tcell.KeyUp:
+		move(-7)
+	case tcell.KeyDown:
+		move(7)
+	case tcell.KeyEnter:
+		if len(cv.selectedItems()) > 0 {
+			cv.eventMode = true
+			cv.eventIndex = 0
+			cv.emitEvent()
+		}
+	case tcell.KeyRune:
+		switch ev.Rune() {
+		case 'h':
+			move(-1)
+		case 'l':
+			move(1)
+		case 'k':
+			move(-7)
+		case 'j':
+			move(7)
+		}
+	}
+}
+
+func (cv *calendarView) handleEventMode(ev *tcell.EventKey) {
+	items := cv.selectedItems()
+	switch ev.Key() {
+	case tcell.KeyEscape:
+		cv.eventMode = false
+		if cv.onSelectDay != nil {
+			cv.onSelectDay(cv.selected)
+		}
+	case tcell.KeyUp:
+		if cv.eventIndex > 0 {
+			cv.eventIndex--
+			cv.emitEvent()
+		}
+	case tcell.KeyDown:
+		if cv.eventIndex < len(items)-1 {
+			cv.eventIndex++
+			cv.emitEvent()
+		}
+	case tcell.KeyLeft, tcell.KeyRight:
+		cv.eventMode = false
+		days := 1
+		if ev.Key() == tcell.KeyLeft {
+			days = -1
+		}
+		if cv.onSelectDay != nil {
+			cv.onSelectDay(cv.selected.AddDate(0, 0, days))
+		}
+	case tcell.KeyRune:
+		switch ev.Rune() {
+		case 'k':
+			if cv.eventIndex > 0 {
+				cv.eventIndex--
+				cv.emitEvent()
+			}
+		case 'j':
+			if cv.eventIndex < len(items)-1 {
+				cv.eventIndex++
+				cv.emitEvent()
 			}
 		}
-		if delta != 0 && cv.onSelect != nil {
-			cv.onSelect(cv.selected.AddDate(0, 0, delta))
-		}
-	})
+	}
+}
+
+func (cv *calendarView) emitEvent() {
+	items := cv.selectedItems()
+	if cv.eventIndex >= 0 && cv.eventIndex < len(items) && cv.onSelectEvent != nil {
+		cv.onSelectEvent(items[cv.eventIndex])
+	}
 }
 
 func (cv *calendarView) Draw(screen tcell.Screen) {
@@ -82,15 +157,12 @@ func (cv *calendarView) Draw(screen tcell.Screen) {
 
 	const cols = 7
 	colW := w / cols
-	names := weekdayHeaderNames(cv.mondayFirst)
 	sepStyle := tcell.StyleDefault.Foreground(borderIdle)
 
-	// Header row of weekday names.
-	for c := 0; c < cols; c++ {
-		printStyled(screen, x+c*colW+1, y, colW-1, names[c],
+	for c, name := range weekdayHeaderNames(cv.mondayFirst) {
+		printStyled(screen, x+c*colW+1, y, colW-1, name,
 			tcell.StyleDefault.Foreground(accentColor).Bold(true))
 	}
-	// Rule under the header.
 	for xx := x; xx < x+w; xx++ {
 		screen.SetContent(xx, y+1, tcell.RuneHLine, nil, sepStyle)
 	}
@@ -102,58 +174,51 @@ func (cv *calendarView) Draw(screen tcell.Screen) {
 	}
 	bottom := bodyY + rows*cellH
 
-	// Day cells.
-	for r := 0; r < rows; r++ {
-		for c := 0; c < cols; c++ {
-			cv.drawCell(screen, cv.weeks[r][c], x+c*colW+1, bodyY+r*cellH, colW-1, cellH)
-		}
-	}
-	// Vertical separators between columns.
+	// Column separators.
 	for c := 1; c < cols; c++ {
 		sx := x + c*colW
 		for yy := y; yy < bottom && yy < y+h; yy++ {
 			screen.SetContent(sx, yy, tcell.RuneVLine, nil, sepStyle)
 		}
 	}
+	// Day cells.
+	for r := 0; r < rows; r++ {
+		for c := 0; c < cols; c++ {
+			cv.drawCell(screen, cv.weeks[r][c], x+c*colW+1, bodyY+r*cellH, colW-1, cellH)
+		}
+	}
 }
 
-func (cv *calendarView) drawCell(screen tcell.Screen, day time.Time, cx, cy, cw, ch int) {
-	if cw < 1 {
+func (cv *calendarView) drawCell(screen tcell.Screen, day time.Time, cellX, cellY, cellW, cellH int) {
+	if cellW < 1 {
 		return
 	}
 	selected := model.SameDay(day, cv.selected)
 	today := model.SameDay(day, cv.now)
 	adjacent := cv.month != 0 && day.Month() != cv.month
 
-	bg := tcell.ColorDefault
+	cx, cy, cw, ch := cellX, cellY, cellW, cellH
 	if selected {
+		boxColor := borderIdle
 		if cv.HasFocus() {
-			bg = tcell.ColorTeal
-		} else {
-			bg = tcell.ColorDarkSlateGray
+			boxColor = borderFocused
 		}
+		drawBox(screen, cellX, cellY, cellW, cellH, tcell.StyleDefault.Foreground(boxColor))
+		cx, cy, cw, ch = cellX+1, cellY+1, cellW-2, cellH-2
 	}
-	base := tcell.StyleDefault.Background(bg)
-
-	// Fill the cell so the selection background is solid.
-	for yy := cy; yy < cy+ch; yy++ {
-		for xx := cx; xx < cx+cw; xx++ {
-			screen.SetContent(xx, yy, ' ', nil, base)
-		}
+	if cw < 1 || ch < 1 {
+		return
 	}
 
-	// Day number (with an event count when the cell is only one line tall).
 	items := cv.items[dayKey(day)]
 	numFg := tcell.ColorWhite
 	switch {
-	case selected:
-		numFg = tcell.ColorWhite
 	case today:
 		numFg = todayColor
 	case adjacent:
 		numFg = adjacentColor
 	}
-	numStyle := base.Foreground(numFg)
+	numStyle := tcell.StyleDefault.Foreground(numFg)
 	if today {
 		numStyle = numStyle.Bold(true)
 	}
@@ -163,43 +228,70 @@ func (cv *calendarView) drawCell(screen tcell.Screen, day time.Time, cx, cy, cw,
 	}
 	printStyled(screen, cx, cy, cw, num, numStyle)
 
-	// Event/task lines.
 	avail := ch - 1
 	if avail <= 0 || len(items) == 0 {
 		return
 	}
 	shown := len(items)
+	overflow := false
 	if shown > avail {
-		shown = avail - 1 // reserve the last line for the overflow note
+		shown = avail - 1
 		if shown < 0 {
 			shown = 0
 		}
+		overflow = true
 	}
 	for i := 0; i < shown; i++ {
-		it := items[i]
-		fg := eventColor
-		var label string
-		switch {
-		case it.IsTodo():
-			fg = tcell.ColorAqua
-			label = "[] " + nonEmpty(it.Title, "(untitled)")
-		case it.AllDay:
-			label = nonEmpty(it.Title, "(untitled)")
-		default:
-			label = it.Start.Format("3pm") + " " + nonEmpty(it.Title, "(untitled)")
+		style := itemStyle(items[i])
+		if selected && cv.eventMode && i == cv.eventIndex {
+			style = style.Reverse(true)
 		}
-		if selected {
-			fg = tcell.ColorWhite
-		}
-		printStyled(screen, cx, cy+1+i, cw, label, base.Foreground(fg))
+		printStyled(screen, cx, cy+1+i, cw, itemLabel(items[i]), style)
 	}
-	if len(items) > avail {
+	if overflow {
 		printStyled(screen, cx, cy+1+shown, cw, fmt.Sprintf("+%d more", len(items)-shown),
-			base.Foreground(adjacentColor))
+			tcell.StyleDefault.Foreground(adjacentColor))
 	}
 }
 
-// weekdayHeaderNames returns the weekday abbreviations in display order.
+// itemLabel and itemStyle format a day-cell agenda line.
+func itemLabel(it model.AgendaItem) string {
+	switch {
+	case it.IsTodo():
+		return "[] " + nonEmpty(it.Title, "(untitled)")
+	case it.AllDay:
+		return nonEmpty(it.Title, "(untitled)")
+	default:
+		return it.Start.Format("3pm") + " " + nonEmpty(it.Title, "(untitled)")
+	}
+}
+
+func itemStyle(it model.AgendaItem) tcell.Style {
+	if it.IsTodo() {
+		return tcell.StyleDefault.Foreground(tcell.ColorAqua)
+	}
+	return tcell.StyleDefault.Foreground(eventColor)
+}
+
+// drawBox draws a rectangle border of the given style.
+func drawBox(screen tcell.Screen, x, y, w, h int, style tcell.Style) {
+	if w < 2 || h < 2 {
+		return
+	}
+	for xx := x + 1; xx < x+w-1; xx++ {
+		screen.SetContent(xx, y, tcell.RuneHLine, nil, style)
+		screen.SetContent(xx, y+h-1, tcell.RuneHLine, nil, style)
+	}
+	for yy := y + 1; yy < y+h-1; yy++ {
+		screen.SetContent(x, yy, tcell.RuneVLine, nil, style)
+		screen.SetContent(x+w-1, yy, tcell.RuneVLine, nil, style)
+	}
+	screen.SetContent(x, y, tcell.RuneULCorner, nil, style)
+	screen.SetContent(x+w-1, y, tcell.RuneURCorner, nil, style)
+	screen.SetContent(x, y+h-1, tcell.RuneLLCorner, nil, style)
+	screen.SetContent(x+w-1, y+h-1, tcell.RuneLRCorner, nil, style)
+}
+
 func weekdayHeaderNames(mondayFirst bool) []string {
 	if mondayFirst {
 		return []string{"Mon", "Tue", "Wed", "Thu", "Fri", "Sat", "Sun"}
@@ -207,9 +299,7 @@ func weekdayHeaderNames(mondayFirst bool) []string {
 	return []string{"Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat"}
 }
 
-// printStyled draws text at (x,y) clipped to maxWidth using style, honoring
-// rune display widths. tview.Print only sets a foreground color, so this exists
-// for styled (background-aware) drawing.
+// printStyled draws text clipped to maxWidth using style, honoring rune widths.
 func printStyled(screen tcell.Screen, x, y, maxWidth int, text string, style tcell.Style) {
 	if maxWidth <= 0 {
 		return

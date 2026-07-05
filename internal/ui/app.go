@@ -15,8 +15,8 @@ import (
 	"github.com/littekge/LazyPlanner/internal/store"
 )
 
-// Border colors are drawn from the terminal's 16-color palette so LazyPlanner
-// inherits the terminal theme (see main.md).
+// Colors are drawn from the terminal's 16-color palette so LazyPlanner inherits
+// the terminal theme (see main.md).
 const (
 	borderIdle    = tcell.ColorGray
 	borderFocused = tcell.ColorYellow
@@ -26,21 +26,24 @@ const (
 	eventColor    = tcell.ColorGreen
 )
 
-// Calendar view modes for the Main pane.
+// Which overview panel is active; the center Main pane follows it.
+const (
+	modeCalendar = iota
+	modeTasks
+	modeAgenda
+)
+
+// Calendar sub-views (active in modeCalendar).
 const (
 	viewMonth = iota
 	viewWeek
 	viewDay
 )
 
-// Focus indices into the pane cycle.
-const (
-	focusCalendars = iota
-	focusTree
-	focusAgenda
-	focusMain
-	focusCount
-)
+type bordered struct {
+	prim tview.Primitive
+	box  *tview.Box
+}
 
 // app holds the widgets and state of the read-only TUI. It reads from the
 // store; it does not mutate data (editing arrives in a later step).
@@ -51,26 +54,33 @@ type app struct {
 	now   time.Time
 	loc   *time.Location
 
-	calendars *tview.List
-	tree      *tview.TreeView
-	agenda    *tview.List
-	main      *tview.Pages
-	cal       *calendarView   // month / week grid
-	dayView   *tview.TextView // day view
-	detail    *tview.TextView
-	status    *tview.TextView
+	// Left overview column.
+	calendars  *tview.List
+	tasklists  *tview.List
+	agendaList *tview.List
+	// Center Main pane (Pages: month, time, tree, agenda).
+	center     *tview.Pages
+	month      *calendarView
+	timegrid   *timeGridView
+	tree       *tview.TreeView
+	agendaView *tview.TextView
+	// Right + bottom.
+	detail *tview.TextView
+	status *tview.TextView
 
-	focusIndex  int
-	agendaItems []model.AgendaItem
+	body     *tview.Flex // holds left | center | detail; used to hide detail
+	borders  []bordered
+	detailOn bool
 
+	mode            int
 	viewMode        int
-	anchor          time.Time // the focused/selected day in the calendar
+	anchor          time.Time
 	weekStartMonday bool
 	showCompleted   bool
+	tasklistIDs     []string // calendar ids parallel to the tasklists panel
 }
 
-// Run builds the read-only TUI over the given store and blocks until the user
-// quits (q or Ctrl-C). title is shown in the status bar.
+// Run builds the read-only TUI over the given store and blocks until quit.
 func Run(s *store.Store, title string) error {
 	now := time.Now()
 	a := &app{
@@ -80,20 +90,23 @@ func Run(s *store.Store, title string) error {
 		now:             now,
 		loc:             time.Local,
 		calendars:       tview.NewList(),
+		tasklists:       tview.NewList(),
+		agendaList:      tview.NewList(),
+		center:          tview.NewPages(),
+		month:           newCalendarView(),
+		timegrid:        newTimeGridView(),
 		tree:            tview.NewTreeView(),
-		agenda:          tview.NewList(),
-		main:            tview.NewPages(),
-		cal:             newCalendarView(),
-		dayView:         tview.NewTextView(),
+		agendaView:      tview.NewTextView(),
 		detail:          tview.NewTextView(),
 		status:          tview.NewTextView(),
+		detailOn:        true,
 		viewMode:        viewMonth,
 		anchor:          model.DayStart(now),
 		weekStartMonday: true,
 	}
 	a.build()
 	a.reload()
-	a.focusAt(focusMain) // start on the calendar
+	a.setMode(modeCalendar)
 
 	if err := a.tv.SetRoot(a.layout(), true).EnableMouse(true).SetInputCapture(a.globalKeys).Run(); err != nil {
 		return fmt.Errorf("running tui: %w", err)
@@ -103,41 +116,59 @@ func Run(s *store.Store, title string) error {
 
 func (a *app) build() {
 	a.calendars.ShowSecondaryText(false).SetHighlightFullLine(true)
-	a.agenda.ShowSecondaryText(false).SetHighlightFullLine(true)
+	a.tasklists.ShowSecondaryText(false).SetHighlightFullLine(true)
+	a.agendaList.ShowSecondaryText(false).SetHighlightFullLine(true)
 	a.detail.SetDynamicColors(true).SetWrap(true)
-	a.dayView.SetDynamicColors(true).SetWrap(true)
+	a.agendaView.SetDynamicColors(true).SetWrap(true).SetScrollable(true)
 	a.status.SetDynamicColors(true)
 
 	decorate(a.calendars.Box, "1 Calendars")
-	decorate(a.tree.Box, "2 Tasks")
-	decorate(a.agenda.Box, "3 Agenda")
-	decorate(a.cal.Box, "Calendar")
-	decorate(a.dayView.Box, "Calendar")
+	decorate(a.tasklists.Box, "2 Tasks")
+	decorate(a.agendaList.Box, "3 Agenda")
+	decorate(a.month.Box, "Calendar")
+	decorate(a.timegrid.Box, "Calendar")
+	decorate(a.tree.Box, "Tasks")
+	decorate(a.agendaView.Box, "Agenda")
 	decorate(a.detail.Box, "Detail")
 
-	a.main.AddPage("grid", a.cal, true, true)
-	a.main.AddPage("day", a.dayView, true, false)
+	a.center.AddPage("month", a.month, true, true)
+	a.center.AddPage("time", a.timegrid, true, false)
+	a.center.AddPage("tree", a.tree, true, false)
+	a.center.AddPage("agenda", a.agendaView, true, false)
 
-	a.calendars.SetChangedFunc(func(i int, _, _ string, _ rune) { a.showCalendarAt(i) })
-	a.agenda.SetChangedFunc(func(i int, _, _ string, _ rune) { a.showAgendaAt(i) })
+	a.borders = []bordered{
+		{a.calendars, a.calendars.Box},
+		{a.tasklists, a.tasklists.Box},
+		{a.agendaList, a.agendaList.Box},
+		{a.month, a.month.Box},
+		{a.timegrid, a.timegrid.Box},
+		{a.tree, a.tree.Box},
+		{a.agendaView, a.agendaView.Box},
+	}
+
+	// Callbacks.
+	a.month.onSelectDay = a.onCalDay
+	a.month.onSelectEvent = func(it model.AgendaItem) { a.setAgendaItemDetail(it) }
+	a.timegrid.onSelectDay = a.onCalDay
+	a.tasklists.SetChangedFunc(func(int, string, string, rune) { a.buildTree() })
+	a.tasklists.SetSelectedFunc(func(int, string, string, rune) { a.setFocus(a.tree) })
 	a.tree.SetChangedFunc(func(node *tview.TreeNode) { a.showTreeNode(node) })
 	a.tree.SetSelectedFunc(func(node *tview.TreeNode) { node.SetExpanded(!node.IsExpanded()) })
-	a.cal.onSelect = a.onCalSelect
 }
 
 func (a *app) layout() tview.Primitive {
 	left := tview.NewFlex().SetDirection(tview.FlexRow).
 		AddItem(a.calendars, 0, 1, false).
-		AddItem(a.tree, 0, 2, false).
-		AddItem(a.agenda, 0, 1, false)
+		AddItem(a.tasklists, 0, 1, false).
+		AddItem(a.agendaList, 0, 1, false)
 
-	body := tview.NewFlex(). // default FlexColumn: side by side
+	a.body = tview.NewFlex(). // default FlexColumn: side by side
 					AddItem(left, 26, 0, false).
-					AddItem(a.main, 0, 3, true).
+					AddItem(a.center, 0, 3, true).
 					AddItem(a.detail, 0, 1, false)
 
 	return tview.NewFlex().SetDirection(tview.FlexRow).
-		AddItem(body, 0, 1, true).
+		AddItem(a.body, 0, 1, true).
 		AddItem(a.status, 1, 0, false)
 }
 
@@ -147,94 +178,118 @@ func decorate(b *tview.Box, title string) {
 	b.SetBorderColor(borderIdle)
 }
 
-// mainBox returns the box of the currently visible Main widget.
-func (a *app) mainBox() *tview.Box {
-	if a.viewMode == viewDay {
-		return a.dayView.Box
-	}
-	return a.cal.Box
-}
-
-// focusTarget returns the primitive to focus for a pane index.
-func (a *app) focusTarget(i int) tview.Primitive {
-	switch i {
-	case focusCalendars:
-		return a.calendars
-	case focusTree:
-		return a.tree
-	case focusAgenda:
-		return a.agenda
-	default:
-		if a.viewMode == viewDay {
-			return a.dayView
+// setFocus focuses p and repaints borders so the active pane stands out.
+func (a *app) setFocus(p tview.Primitive) {
+	a.tv.SetFocus(p)
+	for _, bp := range a.borders {
+		if bp.prim == p {
+			bp.box.SetBorderColor(borderFocused)
+		} else {
+			bp.box.SetBorderColor(borderIdle)
 		}
-		return a.cal
 	}
 }
 
-// focusAt moves keyboard focus to pane i and repaints borders.
-func (a *app) focusAt(i int) {
-	a.focusIndex = i
-	a.paintBorders()
-	a.tv.SetFocus(a.focusTarget(i))
-	a.refreshDetailForFocus()
+// showDetail shows or hides the right Detail pane (hidden in Agenda mode).
+func (a *app) showDetail(on bool) {
+	if on == a.detailOn {
+		return
+	}
+	a.detailOn = on
+	if on {
+		a.body.ResizeItem(a.detail, 0, 1)
+	} else {
+		a.body.ResizeItem(a.detail, 0, 0)
+	}
+}
+
+// setMode switches the active overview panel and the center pane it drives.
+func (a *app) setMode(m int) {
+	a.mode = m
+	switch m {
+	case modeCalendar:
+		a.showDetail(true)
+		a.buildCenterCalendar()
+		a.setFocus(a.calendarPrimitive())
+	case modeTasks:
+		a.showDetail(true)
+		a.center.SwitchToPage("tree")
+		a.buildTree()
+		a.setFocus(a.tasklists)
+	case modeAgenda:
+		a.showDetail(false)
+		a.center.SwitchToPage("agenda")
+		a.buildAgendaCenter()
+		a.setFocus(a.agendaView)
+	}
 	a.updateStatus()
 }
 
-func (a *app) paintBorders() {
-	boxes := []*tview.Box{a.calendars.Box, a.tree.Box, a.agenda.Box, a.mainBox()}
-	for i, b := range boxes {
-		if i == a.focusIndex {
-			b.SetBorderColor(borderFocused)
-		} else {
-			b.SetBorderColor(borderIdle)
-		}
+// calendarPrimitive returns the active calendar widget for the current view.
+func (a *app) calendarPrimitive() tview.Primitive {
+	if a.viewMode == viewMonth {
+		return a.month
 	}
+	return a.timegrid
 }
 
 func (a *app) globalKeys(ev *tcell.EventKey) *tcell.EventKey {
 	switch ev.Key() {
 	case tcell.KeyTab:
-		a.focusAt((a.focusIndex + 1) % focusCount)
+		a.setMode((a.mode + 1) % 3)
 		return nil
 	case tcell.KeyBacktab:
-		a.focusAt((a.focusIndex - 1 + focusCount) % focusCount)
+		a.setMode((a.mode + 2) % 3)
 		return nil
+	case tcell.KeyEscape:
+		if a.mode == modeTasks {
+			a.setFocus(a.tasklists)
+			return nil
+		}
 	case tcell.KeyRune:
 		switch ev.Rune() {
 		case 'q':
 			a.tv.Stop()
 			return nil
 		case '1':
-			a.focusAt(focusCalendars)
+			a.setMode(modeCalendar)
 			return nil
 		case '2':
-			a.focusAt(focusTree)
+			a.setMode(modeTasks)
 			return nil
 		case '3':
-			a.focusAt(focusAgenda)
+			a.setMode(modeAgenda)
 			return nil
 		case '.':
 			a.showCompleted = !a.showCompleted
-			a.buildTree()
-			a.updateStatus()
+			a.reloadCurrent()
 			return nil
 		case 'v':
-			a.viewMode = (a.viewMode + 1) % 3
-			a.buildCalendar()
-			a.focusAt(focusMain)
-			return nil
+			if a.mode == modeCalendar {
+				a.viewMode = (a.viewMode + 1) % 3
+				a.buildCenterCalendar()
+				a.setFocus(a.calendarPrimitive())
+				a.updateStatus()
+				return nil
+			}
 		case 'n':
-			a.shiftAnchor(1)
-			return nil
+			if a.mode == modeCalendar {
+				a.shiftAnchor(1)
+				return nil
+			}
 		case 'p':
-			a.shiftAnchor(-1)
-			return nil
+			if a.mode == modeCalendar {
+				a.shiftAnchor(-1)
+				return nil
+			}
 		case 't':
-			a.anchor = model.DayStart(a.now)
-			a.buildCalendar()
-			a.focusAt(focusMain)
-			return nil
+			if a.mode == modeCalendar {
+				a.anchor = model.DayStart(a.now)
+				a.buildCenterCalendar()
+				a.setFocus(a.calendarPrimitive())
+				a.updateStatus()
+				return nil
+			}
 		}
 	}
 	return ev
@@ -250,15 +305,29 @@ func (a *app) shiftAnchor(delta int) {
 	default:
 		a.anchor = a.anchor.AddDate(0, 0, delta)
 	}
-	a.buildCalendar()
-	a.focusAt(focusMain)
+	a.buildCenterCalendar()
+	a.setFocus(a.calendarPrimitive())
+	a.updateStatus()
+}
+
+// reloadCurrent rebuilds whatever the current mode shows (after a data toggle).
+func (a *app) reloadCurrent() {
+	switch a.mode {
+	case modeCalendar:
+		a.buildCenterCalendar()
+	case modeTasks:
+		a.buildTree()
+	case modeAgenda:
+		a.buildAgendaCenter()
+	}
+	a.updateStatus()
 }
 
 // reload rebuilds every view from the current store contents.
 func (a *app) reload() {
 	a.buildCalendars()
-	a.buildTree()
-	a.buildAgenda()
-	a.buildCalendar()
+	a.buildTasklists()
+	a.buildAgendaLeft()
+	a.buildCenterCalendar()
 	a.updateStatus()
 }

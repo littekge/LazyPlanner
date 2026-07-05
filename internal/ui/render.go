@@ -11,123 +11,240 @@ import (
 	"github.com/littekge/LazyPlanner/internal/store"
 )
 
-// calRef marks a tree node as a calendar (task list) rather than a todo.
-type calRef struct{ cal store.Calendar }
+// --- Left overview column ---
 
-// buildCalendars fills the Calendars list from the store.
 func (a *app) buildCalendars() {
 	a.calendars.Clear()
 	for _, cal := range a.store.Calendars() {
 		events, todos := calCounts(cal)
-		a.calendars.AddItem(cal.DisplayName, fmt.Sprintf("%d events, %d tasks", events, todos), 0, nil)
+		a.calendars.AddItem(fmt.Sprintf("%s  (%de %dt)", cal.DisplayName, events, todos), "", 0, nil)
+	}
+	if a.calendars.GetItemCount() == 0 {
+		a.calendars.AddItem("(no calendars)", "", 0, nil)
 	}
 }
 
-// buildTree fills the Tasks tree: calendars containing todos become top-level
-// folders, with their subtask forests beneath.
-func (a *app) buildTree() {
-	root := tview.NewTreeNode("").SetSelectable(false)
-
+func (a *app) buildTasklists() {
+	a.tasklists.Clear()
+	a.tasklistIDs = a.tasklistIDs[:0]
 	for _, cal := range a.store.Calendars() {
-		var todos []*model.Todo
-		for _, r := range cal.Resources {
-			todos = append(todos, r.Object.Todos...)
+		if _, todos := calCounts(cal); todos > 0 {
+			a.tasklists.AddItem(cal.DisplayName, "", 0, nil)
+			a.tasklistIDs = append(a.tasklistIDs, cal.ID)
 		}
-		forest := model.BuildTree(todos, a.showCompleted)
-		if len(forest) == 0 {
-			continue // only calendars with (visible) tasks appear
-		}
-		calNode := tview.NewTreeNode(cal.DisplayName).
-			SetReference(calRef{cal}).
-			SetColor(accentColor).
-			SetExpanded(true)
-		for _, n := range forest {
-			calNode.AddChild(a.todoNode(n))
-		}
-		root.AddChild(calNode)
+	}
+	if len(a.tasklistIDs) == 0 {
+		a.tasklists.AddItem("(no task lists)", "", 0, nil)
+	}
+}
+
+func (a *app) buildAgendaLeft() {
+	a.agendaList.Clear()
+	items := a.dayItems(model.DayStart(a.now))
+	if len(items) == 0 {
+		a.agendaList.AddItem("(nothing today)", "", 0, nil)
+		return
+	}
+	for _, it := range items {
+		a.agendaList.AddItem(agendaLeftLabel(it), "", 0, nil)
+	}
+}
+
+func (a *app) selectedTasklistID() string {
+	i := a.tasklists.GetCurrentItem()
+	if i >= 0 && i < len(a.tasklistIDs) {
+		return a.tasklistIDs[i]
+	}
+	return ""
+}
+
+// --- Calendar center (month grid / time-grid) ---
+
+func (a *app) buildCenterCalendar() {
+	if a.viewMode == viewMonth {
+		weeks := model.MonthGrid(a.anchor, a.weekStartMonday)
+		a.month.setData(weeks, a.calItems(weeks), a.anchor.Month(), a.anchor, a.now, a.weekStartMonday)
+		a.month.Box.SetTitle(" " + a.anchor.Format("January 2006") + " ")
+		a.center.SwitchToPage("month")
+		a.setDayDetail(a.anchor)
+		return
 	}
 
+	var days []time.Time
+	var title string
+	if a.viewMode == viewWeek {
+		days = model.Week(a.anchor, a.weekStartMonday)
+		title = " Week of " + days[0].Format("Jan 2, 2006") + " "
+	} else {
+		days = []time.Time{model.DayStart(a.anchor)}
+		title = " " + a.anchor.Format("Monday, Jan 2 2006") + " "
+	}
+	timed, allday := a.splitOccs(days)
+	a.timegrid.setData(days, timed, allday, a.anchor, a.now)
+	a.timegrid.Box.SetTitle(title)
+	a.center.SwitchToPage("time")
+	a.setDayDetail(a.anchor)
+}
+
+// onCalDay handles day navigation from either calendar widget.
+func (a *app) onCalDay(day time.Time) {
+	a.anchor = day
+	if a.viewMode == viewMonth && a.dayInGrid(day) {
+		a.month.selected = day
+		a.month.eventMode = false
+	} else {
+		a.buildCenterCalendar()
+	}
+	a.setDayDetail(day)
+	a.updateStatus()
+}
+
+func (a *app) dayInGrid(day time.Time) bool {
+	if len(a.month.weeks) == 0 {
+		return false
+	}
+	first := a.month.weeks[0][0]
+	last := a.month.weeks[len(a.month.weeks)-1][6]
+	d := model.DayStart(day)
+	return !d.Before(first) && !d.After(last)
+}
+
+// calItems builds each visible day's agenda for the month grid, from one query.
+func (a *app) calItems(weeks [][]time.Time) map[string][]model.AgendaItem {
+	m := map[string][]model.AgendaItem{}
+	if len(weeks) == 0 {
+		return m
+	}
+	start := weeks[0][0]
+	end := weeks[len(weeks)-1][6].AddDate(0, 0, 1)
+	occs, _ := a.store.EventOccurrences(start, end)
+	todos := a.store.Todos()
+	for _, week := range weeks {
+		for _, day := range week {
+			ds := model.DayStart(day)
+			if items := model.DayAgenda(model.OccurrencesOn(occs, day), todos, ds, ds.AddDate(0, 0, 1)); len(items) > 0 {
+				m[dayKey(day)] = items
+			}
+		}
+	}
+	return m
+}
+
+// splitOccs buckets a range's occurrences into timed and all-day, keyed by day,
+// for the time-grid. Timed events land on their start day; all-day events mark
+// every day they cover.
+func (a *app) splitOccs(days []time.Time) (timed, allday map[string][]model.Occurrence) {
+	timed = map[string][]model.Occurrence{}
+	allday = map[string][]model.Occurrence{}
+	if len(days) == 0 {
+		return
+	}
+	start := days[0]
+	end := days[len(days)-1].AddDate(0, 0, 1)
+	occs, _ := a.store.EventOccurrences(start, end)
+	for _, o := range occs {
+		if o.Event.AllDay {
+			for d := model.DayStart(o.Start); d.Before(o.End); d = d.AddDate(0, 0, 1) {
+				if !d.Before(start) && d.Before(end) {
+					allday[dayKey(d)] = append(allday[dayKey(d)], o)
+				}
+			}
+			continue
+		}
+		d := model.DayStart(o.Start)
+		timed[dayKey(d)] = append(timed[dayKey(d)], o)
+	}
+	return timed, allday
+}
+
+// --- Tasks center (tree) ---
+
+func (a *app) buildTree() {
+	root := tview.NewTreeNode("").SetSelectable(false)
+	if id := a.selectedTasklistID(); id != "" {
+		if cal, ok := a.store.Calendar(id); ok {
+			var todos []*model.Todo
+			for _, r := range cal.Resources {
+				todos = append(todos, r.Object.Todos...)
+			}
+			for _, n := range model.BuildTree(todos, a.showCompleted) {
+				root.AddChild(a.treeNode(n))
+			}
+		}
+	}
 	a.tree.SetRoot(root)
 	if kids := root.GetChildren(); len(kids) > 0 {
 		a.tree.SetCurrentNode(kids[0])
 	} else {
-		a.setWelcomeDetail()
+		a.setDetail("[gray]No tasks in this list.[-]")
 	}
 }
 
-func (a *app) todoNode(n *model.TodoNode) *tview.TreeNode {
-	node := tview.NewTreeNode(taskLabel(n.Todo)).SetReference(n.Todo).SetExpanded(true)
+func (a *app) treeNode(n *model.TodoNode) *tview.TreeNode {
+	node := tview.NewTreeNode(treeTaskLabel(n.Todo)).SetReference(n.Todo).SetExpanded(true)
 	for _, c := range n.Children {
-		node.AddChild(a.todoNode(c))
+		node.AddChild(a.treeNode(c))
 	}
 	return node
-}
-
-// buildAgenda fills the Agenda list with today's events and due tasks.
-func (a *app) buildAgenda() {
-	start := time.Date(a.now.Year(), a.now.Month(), a.now.Day(), 0, 0, 0, 0, a.loc)
-	end := start.AddDate(0, 0, 1)
-	occs, _ := a.store.EventOccurrences(start, end)
-	a.agendaItems = model.DayAgenda(occs, a.store.Todos(), start, end)
-
-	a.agenda.Clear()
-	if len(a.agendaItems) == 0 {
-		a.agenda.AddItem("(nothing today)", "", 0, nil)
-		return
-	}
-	for _, it := range a.agendaItems {
-		a.agenda.AddItem(agendaLabel(it), "", 0, nil)
-	}
-}
-
-// refreshDetailForFocus updates the Detail pane to the current selection of the
-// focused pane, so Detail always tracks where the user is.
-func (a *app) refreshDetailForFocus() {
-	switch a.focusIndex {
-	case focusCalendars:
-		a.showCalendarAt(a.calendars.GetCurrentItem())
-	case focusTree:
-		a.showTreeNode(a.tree.GetCurrentNode())
-	case focusAgenda:
-		a.showAgendaAt(a.agenda.GetCurrentItem())
-	case focusMain:
-		a.showDayDetail(a.anchor)
-	}
-}
-
-func (a *app) showCalendarAt(i int) {
-	cals := a.store.Calendars()
-	if i < 0 || i >= len(cals) {
-		return
-	}
-	a.setCalendarDetail(cals[i])
-}
-
-func (a *app) showAgendaAt(i int) {
-	if i < 0 || i >= len(a.agendaItems) {
-		return
-	}
-	a.setAgendaDetail(a.agendaItems[i])
 }
 
 func (a *app) showTreeNode(node *tview.TreeNode) {
 	if node == nil {
 		return
 	}
-	switch ref := node.GetReference().(type) {
-	case *model.Todo:
-		a.setTodoDetail(ref)
-	case calRef:
-		a.setCalendarDetail(ref.cal)
+	if t, ok := node.GetReference().(*model.Todo); ok {
+		a.setTodoDetail(t)
 	}
 }
 
-// --- Detail rendering ---
+// --- Agenda center (full-detail, scrollable) ---
+
+func (a *app) buildAgendaCenter() {
+	day := model.DayStart(a.now)
+	items := a.dayItems(day)
+
+	var b strings.Builder
+	fmt.Fprintf(&b, "[teal::b]%s[-:-:-]\n\n", day.Format("Monday, January 2, 2006"))
+	if len(items) == 0 {
+		b.WriteString("[gray]No events or due tasks today.[-]\n")
+	}
+	for i, it := range items {
+		if i > 0 {
+			b.WriteString("\n")
+		}
+		b.WriteString(agendaItemBlock(it))
+	}
+	a.agendaView.SetText(b.String())
+	a.agendaView.ScrollToBeginning()
+}
+
+// --- Detail pane ---
 
 func (a *app) setDetail(s string) { a.detail.SetText(s) }
 
-func (a *app) setWelcomeDetail() {
-	a.setDetail("[teal]LazyPlanner[-]\n\nNo tasks to show yet.\n\nImport your calendars with:\n  lazyplanner import\n\nThen relaunch.")
+func (a *app) setDayDetail(day time.Time) {
+	items := a.dayItems(day)
+	var b strings.Builder
+	fmt.Fprintf(&b, "[teal]%s[-]\n\n", day.Format("Monday, January 2, 2006"))
+	if len(items) == 0 {
+		b.WriteString("[gray]No events or due tasks.[-]\n")
+	}
+	for _, it := range items {
+		kind := "event"
+		if it.IsTodo() {
+			kind = "task"
+		}
+		fmt.Fprintf(&b, "[gray]%-8s[-] %s  [gray](%s)[-]\n", whenLabel(it), nonEmpty(it.Title, "(untitled)"), kind)
+	}
+	a.setDetail(b.String())
+}
+
+func (a *app) setAgendaItemDetail(it model.AgendaItem) {
+	if it.Todo != nil {
+		a.setTodoDetail(it.Todo)
+		return
+	}
+	a.setEventDetail(it.Event)
 }
 
 func (a *app) setTodoDetail(t *model.Todo) {
@@ -150,14 +267,6 @@ func (a *app) setTodoDetail(t *model.Todo) {
 		fmt.Fprintf(&b, "\n%s\n", t.Description)
 	}
 	a.setDetail(b.String())
-}
-
-func (a *app) setAgendaDetail(it model.AgendaItem) {
-	if it.Todo != nil {
-		a.setTodoDetail(it.Todo)
-		return
-	}
-	a.setEventDetail(it.Event)
 }
 
 func (a *app) setEventDetail(e *model.Event) {
@@ -191,162 +300,34 @@ func (a *app) setEventDetail(e *model.Event) {
 	a.setDetail(b.String())
 }
 
-func (a *app) setCalendarDetail(cal store.Calendar) {
-	events, todos := calCounts(cal)
-	var b strings.Builder
-	fmt.Fprintf(&b, "[teal]Calendar[-]\n%s\n\n", cal.DisplayName)
-	fmt.Fprintf(&b, "[gray]Events[-]    %d\n", events)
-	fmt.Fprintf(&b, "[gray]Tasks[-]     %d\n", todos)
-	if cal.Color != "" {
-		fmt.Fprintf(&b, "[gray]Color[-]     %s\n", cal.Color)
-	}
-	if cal.Href != "" {
-		fmt.Fprintf(&b, "[gray]Path[-]      %s\n", cal.Href)
-	}
-	a.setDetail(b.String())
-}
+// --- Status bar ---
 
-// updateStatus repaints the bottom status bar: key hints and live counts.
 func (a *app) updateStatus() {
-	view := [...]string{"month", "week", "day"}[a.viewMode]
+	mode := [...]string{"Calendar", "Tasks", "Agenda"}[a.mode]
+	if a.mode == modeCalendar {
+		mode += " · " + [...]string{"month", "week", "day"}[a.viewMode]
+	}
 	completed := "off"
 	if a.showCompleted {
 		completed = "on"
 	}
-	hints := fmt.Sprintf("[1]Cal [2]Tasks [3]Agenda Tab:cycle | v:view(%s) n/p:prev/next t:today | .:done(%s) q:quit", view, completed)
-	counts := fmt.Sprintf("%s · %d cals · %d tasks", a.anchor.Format("Jan 2 2006"), len(a.store.Calendars()), len(a.store.Todos()))
-	line := fmt.Sprintf("%s   [gray]|[-]   %s", hints, counts)
+	hints := fmt.Sprintf("[1]Cal [2]Tasks [3]Agenda Tab:cycle | v:view n/p:prev/next t:today | .:done(%s) q:quit", completed)
+	right := fmt.Sprintf("%s · %s · %d cals · %d tasks", mode, a.anchor.Format("Jan 2 2006"), len(a.store.Calendars()), len(a.store.Todos()))
+	line := fmt.Sprintf("%s   [gray]|[-]   %s", hints, right)
 	if n := len(a.store.LoadErrors()); n > 0 {
 		line += fmt.Sprintf("   [red]!%d load error(s)[-]", n)
 	}
 	a.status.SetText(line)
 }
 
-// --- Calendar (Main pane) rendering ---
+// --- shared helpers ---
 
-func (a *app) buildCalendar() {
-	switch a.viewMode {
-	case viewMonth:
-		weeks := model.MonthGrid(a.anchor, a.weekStartMonday)
-		a.cal.setData(weeks, a.calItems(weeks), a.anchor.Month(), a.anchor, a.now, a.weekStartMonday)
-		a.cal.Box.SetTitle(" " + a.anchor.Format("January 2006") + " ")
-		a.main.SwitchToPage("grid")
-	case viewWeek:
-		weeks := [][]time.Time{model.Week(a.anchor, a.weekStartMonday)}
-		a.cal.setData(weeks, a.calItems(weeks), 0, a.anchor, a.now, a.weekStartMonday)
-		a.cal.Box.SetTitle(" Week of " + weeks[0][0].Format("Jan 2, 2006") + " ")
-		a.main.SwitchToPage("grid")
-	default:
-		a.renderDay()
-	}
-	a.paintBorders()
-}
-
-// calItems builds each visible day's agenda for the grid from a single range
-// query (one EventOccurrences call), then filters per day with model helpers.
-func (a *app) calItems(weeks [][]time.Time) map[string][]model.AgendaItem {
-	m := map[string][]model.AgendaItem{}
-	if len(weeks) == 0 {
-		return m
-	}
-	start := weeks[0][0]
-	end := weeks[len(weeks)-1][6].AddDate(0, 0, 1)
-	occs, _ := a.store.EventOccurrences(start, end)
-	todos := a.store.Todos()
-	for _, week := range weeks {
-		for _, day := range week {
-			dayStart := model.DayStart(day)
-			dayEnd := dayStart.AddDate(0, 0, 1)
-			if items := model.DayAgenda(model.OccurrencesOn(occs, day), todos, dayStart, dayEnd); len(items) > 0 {
-				m[dayKey(day)] = items
-			}
-		}
-	}
-	return m
-}
-
-// onCalSelect handles arrow-navigation in the calendar: it moves the selected
-// day and re-anchors the grid only when the day leaves the visible range, so the
-// displayed period stays put while navigating within it.
-func (a *app) onCalSelect(day time.Time) {
-	a.anchor = day
-	if a.dayInGrid(day) {
-		a.cal.selected = day
-	} else {
-		a.buildCalendar()
-	}
-	a.showDayDetail(day)
-	a.updateStatus()
-}
-
-func (a *app) dayInGrid(day time.Time) bool {
-	if len(a.cal.weeks) == 0 {
-		return false
-	}
-	first := a.cal.weeks[0][0]
-	last := a.cal.weeks[len(a.cal.weeks)-1][6]
-	d := model.DayStart(day)
-	return !d.Before(first) && !d.After(last)
-}
-
-func (a *app) renderDay() {
-	a.main.SwitchToPage("day")
-	a.dayView.Box.SetTitle(" " + a.anchor.Format("Monday, Jan 2 2006") + " ")
-	a.dayView.SetText(a.dayAgendaText(a.anchor))
-}
-
-func (a *app) showDayDetail(day time.Time) {
-	items := a.dayItems(day)
-	var b strings.Builder
-	fmt.Fprintf(&b, "[teal]%s[-]\n\n", day.Format("Monday, January 2, 2006"))
-	if len(items) == 0 {
-		b.WriteString("[gray]No events or due tasks.[-]\n")
-	}
-	for _, it := range items {
-		when := "all-day"
-		if !it.AllDay {
-			when = it.Start.Format("3:04pm")
-		}
-		kind := "event"
-		if it.IsTodo() {
-			kind = "task"
-		}
-		fmt.Fprintf(&b, "[gray]%-8s[-] %s  [gray](%s)[-]\n", when, nonEmpty(it.Title, "(untitled)"), kind)
-	}
-	a.setDetail(b.String())
-}
-
-func (a *app) dayAgendaText(day time.Time) string {
-	items := a.dayItems(day)
-	if len(items) == 0 {
-		return "[gray]No events or due tasks.[-]"
-	}
-	var b strings.Builder
-	for _, it := range items {
-		when := "all-day"
-		if !it.AllDay {
-			when = it.Start.Format("3:04pm")
-		}
-		mark := "   "
-		if it.IsTodo() {
-			mark = "[ ]"
-		}
-		fmt.Fprintf(&b, "%-8s %s %s\n", when, mark, nonEmpty(it.Title, "(untitled)"))
-	}
-	return b.String()
-}
-
-// dayItems returns the agenda (events + due todos) for a single day.
 func (a *app) dayItems(day time.Time) []model.AgendaItem {
 	start := model.DayStart(day)
 	end := start.AddDate(0, 0, 1)
 	occs, _ := a.store.EventOccurrences(start, end)
 	return model.DayAgenda(occs, a.store.Todos(), start, end)
 }
-
-func dayKey(t time.Time) string { return t.Format("2006-01-02") }
-
-// --- small helpers ---
 
 func calCounts(cal store.Calendar) (events, todos int) {
 	for _, r := range cal.Resources {
@@ -356,28 +337,58 @@ func calCounts(cal store.Calendar) (events, todos int) {
 	return events, todos
 }
 
-func taskLabel(t *model.Todo) string {
+// agendaItemBlock is a full-detail block for the Agenda center pane.
+func agendaItemBlock(it model.AgendaItem) string {
+	var b strings.Builder
+	if it.Todo != nil {
+		t := it.Todo
+		fmt.Fprintf(&b, "[aqua]%s  %s[-]\n", whenLabel(it), nonEmpty(t.Summary, "(untitled)"))
+		meta := fmt.Sprintf("task · %s · priority %s", statusText(t.Status), priorityText(t.Priority))
+		fmt.Fprintf(&b, "  [gray]%s[-]\n", meta)
+		if t.Description != "" {
+			fmt.Fprintf(&b, "  %s\n", oneLine(t.Description))
+		}
+		return b.String()
+	}
+	e := it.Event
+	fmt.Fprintf(&b, "[green]%s  %s[-]\n", whenLabel(it), nonEmpty(e.Summary, "(untitled)"))
+	if e.Location != "" {
+		fmt.Fprintf(&b, "  [gray]at %s[-]\n", e.Location)
+	}
+	if e.Description != "" {
+		fmt.Fprintf(&b, "  %s\n", oneLine(e.Description))
+	}
+	return b.String()
+}
+
+func treeTaskLabel(t *model.Todo) string {
 	mark := "[ ] "
 	if t.Completed() {
 		mark = "[x] "
 	}
 	label := mark + nonEmpty(t.Summary, "(untitled)")
+	if t.Priority != model.PriorityUndefined {
+		label += fmt.Sprintf("  !%d", t.Priority)
+	}
 	if t.HasDue {
-		label += "  (" + fmtDate(t.Due, t.DueAllDay) + ")"
+		label += "  due " + fmtDate(t.Due, t.DueAllDay)
 	}
 	return label
 }
 
-func agendaLabel(it model.AgendaItem) string {
-	when := "all-day"
-	if !it.AllDay {
-		when = it.Start.Format("3:04pm")
-	}
+func agendaLeftLabel(it model.AgendaItem) string {
 	mark := ""
 	if it.IsTodo() {
 		mark = "[ ] "
 	}
-	return fmt.Sprintf("%-8s %s%s", when, mark, nonEmpty(it.Title, "(untitled)"))
+	return fmt.Sprintf("%-8s %s%s", whenLabel(it), mark, nonEmpty(it.Title, "(untitled)"))
+}
+
+func whenLabel(it model.AgendaItem) string {
+	if it.AllDay {
+		return "all-day"
+	}
+	return it.Start.Format("3:04pm")
 }
 
 func fmtWhen(t time.Time, allDay bool) string {
@@ -408,9 +419,15 @@ func priorityText(p int) string {
 	return fmt.Sprintf("%d", p)
 }
 
+func oneLine(s string) string {
+	return strings.ReplaceAll(strings.TrimSpace(s), "\n", " ")
+}
+
 func nonEmpty(s, fallback string) string {
 	if strings.TrimSpace(s) == "" {
 		return fallback
 	}
 	return s
 }
+
+func dayKey(t time.Time) string { return t.Format("2006-01-02") }

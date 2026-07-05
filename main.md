@@ -105,28 +105,37 @@ The vdir data lives under *data* paths, **not** `~/.cache` — it can hold offli
 ```
 ┌─1 Calendars──┐┌─Main──────────────────────────┐┌─Detail─────────┐
 │ Personal     ││                               ││                │
-│ School       ││  Content follows the focused  ││  Selected      │
-│ Work         ││  left panel:                  ││  event or      │
-├─2 Tasks──────┤│                               ││  task:         │
-│ ▾ School     ││  focus 1 → calendar grid      ││  title, when,  │
-│   ▾ ECE384   ││            (month/week/day)   ││  location,     │
-│     ☐ Lab 3  ││  focus 2 → zoomed task tree   ││  priority,     │
-│   ▸ Thesis   ││  focus 3 → day agenda         ││  tags, ⏰,     │
-├─3 Agenda─────┤│                               ││  notes         │
+│ School       ││  Center follows the active    ││  Full details  │
+│ Work         ││  overview panel (1 / 2 / 3):  ││  of the        │
+├─2 Tasks──────┤│                               ││  highlighted   │
+│ School       ││  1 → calendar (month/week/day)││  item          │
+│ Personal     ││  2 → selected list's tree     ││  (hidden in    │
+│ Work         ││  3 → day agenda, full detail  ││  Agenda mode)  │
+├─3 Agenda─────┤│                               ││                │
 │ 2:30p Standup││                               ││                │
 │ ☐ Grade labs ││                               ││                │
 └──────────────┘└───────────────────────────────┘└────────────────┘
  a:add  e:edit  space:done  ::cmd  ?:help       ✓ synced 2m ago
 ```
 
-- **Left column** — three small focusable panels: **Calendars** (list, with visibility toggles), **Tasks** (the subtask tree), **Agenda** (today's events + due tasks). Number keys jump focus; the Main pane's content follows focus.
-- **Main pane** — the large workspace: calendar grid (month default, week/day switchable), the task tree zoomed view, or the day agenda.
-- **Detail pane** — always shows the selected item's full fields (event: time/location/reminders/notes; task: due/priority/tags/notes).
+- **Left column (the "overview")** — three small panels: **Calendars** (list, with visibility toggles), **Tasks** (the **task lists** — top-level calendars that contain todos, *not* the full tree), **Agenda** (today's events + due tasks). `1`/`2`/`3` select the active panel; the Main pane's content follows it.
+- **Main pane** — follows the active overview panel:
+  - **Calendars** → the calendar view: month grid (default) or the week/day hourly time-grid. Navigate days; select a day to cycle through its events.
+  - **Tasks** → the selected list's full collapsible subtask tree, with inline priority / due date / completion status.
+  - **Agenda** → the day's events and tasks with full descriptions, at **full width** (the Detail pane is hidden), scrollable when a day overflows.
+- **Detail pane** — the highlighted item's full fields (event: time/location/reminders/notes; task: due/priority/tags/status/notes). **Hidden in Agenda mode** so the center gets the whole width.
 - **Status bar** — contextual key hints + sync status (`✓ synced 2m ago`, `↻ syncing`, `⚠ 2 conflicts`, `⚠ offline`).
 
-### Task tree: full tree + zoom
+### Calendar views
 
-The whole hierarchy renders as a collapsible tree (`→`/`←` expand/collapse). `>` **zooms** — re-roots the view at the selected task like `cd`-ing into a directory (breadcrumb shows `School / ECE384`); `<` zooms back out. Lists (CalDAV calendars) are the root level; a "folder" is any task with children.
+The calendar (active when Calendars is selected) has three views, cycled with `v`:
+
+- **Month** — a custom-drawn grid that fills the pane: one cell per day listing that day's events/tasks (with a `+N more` overflow line), today emphasized and adjacent-month days dimmed. The selected day is marked with an **outline box** (a cursor), never a solid fill, so event text stays readable. Selecting a day lets you cycle through *that day's* events; the Detail pane then shows the highlighted event/task's full info.
+- **Week / Day** — an **hourly time-grid** like a conventional calendar: an hour axis down the side with events drawn as blocks sized by their duration; all-day items sit in a band across the top; overlapping events are placed side-by-side. Day view is one column, week view seven. The grid scrolls vertically (e.g. PageUp/PageDown) when the day doesn't fit. (v1 uses one row per hour with simple overlap handling; proportional/overlap refinement can follow.)
+
+### Task tree: lists in the overview, tree in Main
+
+The left **Tasks** panel lists the task lists (calendars containing todos). Selecting a list opens its full collapsible subtask tree in the **Main** pane (`→`/`←` expand/collapse), with inline priority/due/status; the Detail pane shows the highlighted task's full fields. `>` **zooms** — re-roots the Main tree at the selected task like `cd`-ing into a directory (breadcrumb shows `School / ECE384`); `<` zooms back out. A "folder" is any task with children.
 
 ### Creation: quick-add with smart date parsing
 
