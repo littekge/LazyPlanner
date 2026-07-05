@@ -2,7 +2,7 @@
 
 A terminal-based todo-list and calendar manager with offline-first CalDAV sync — a full-screen interactive TUI in the style of [lazygit](https://github.com/jesseduffield/lazygit), written in Go.
 
-> **Status: early build.** The spec is complete (see [`main.md`](main.md)). Done so far: build steps 1–7 — the Go module, packages, vendored deps, and CI (step 1); the `model` layer parsing iCalendar events and todos (step 2); timezone-aware recurrence expansion (step 3); the local vdir cache with an in-memory index and atomic writes (step 4); one-way CalDAV import from NextCloud (step 5); a **read-only TUI** with a calendar subtask tree and today's agenda (step 6); and **month/week/day calendar views** with movement keys (step 7). Editing and two-way sync are *not yet built*.
+> **Status: early build.** The spec is complete (see [`main.md`](main.md)). Done so far: build steps 1–7 — the Go module, packages, vendored deps, and CI (step 1); the `model` layer parsing iCalendar events and todos (step 2); timezone-aware recurrence expansion (step 3); the local vdir cache with an in-memory index and atomic writes (step 4); one-way CalDAV import from NextCloud (step 5); a read-only TUI with a calendar subtask tree and today's agenda (step 6); **month/week/day calendar views** with movement keys (step 7); and **editing** — create/edit/complete/delete tasks and events, indent/outdent subtasks, and a session undo (step 8). Edits are written to the local cache only; **two-way sync is *not yet built*** (changes don't reach the server until step 9).
 
 ## What it does
 
@@ -20,7 +20,16 @@ Run `lazyplanner` with no arguments to open the TUI. It reads the local cache (p
 - **`2` Tasks** → pick a list on the left; its full subtask tree opens in the center (with inline priority/due/status). The Detail pane shows the highlighted task's full description and fields.
 - **`3` Agenda** → focus the agenda list on the left; moving its highlight highlights the matching block in the center (which auto-scrolls). The center shows the day's events and tasks with full descriptions, at full width (the Detail pane hides).
 
-This is **read-only** for now (editing lands in a later step). Keys available today:
+**Creating and editing** (writes to the local cache only until two-way sync lands):
+
+- **`a`** — quick-add. One line, contextual: a task under the selected tree node (Tasks) or an event on the selected/current day (Calendar/Agenda). It parses smart tokens and leaves anything ambiguous in the title: dates (`today`, `tomorrow`, `fri`, `jul 20`, `7/20`, `2026-07-20`), times (`3pm`, `3:30pm`, `15:00` — a bare number stays a number), `!1`–`!9` / `!high` / `!med` / `!low` priority, and `#tag`.
+- **`e`** — full edit form for the selected item (all fields). `Esc` or Cancel to back out.
+- **`Space`** — toggle a task complete/incomplete.
+- **`d`** — delete the selected item (with a confirm).
+- **`H` / `L`** — outdent / indent the selected task (re-parent in the subtask tree).
+- **`u`** — undo the last create/edit/complete/delete this session (multi-level).
+
+Full key list:
 
 | Key | Action |
 |---|---|
@@ -32,7 +41,11 @@ This is **read-only** for now (editing lands in a later step). Keys available to
 | `n` / `p` | Next / previous month·week·day |
 | `t` | Jump to today |
 | `Enter` | Dive from the overview into the center: grid (calendar) · open a list / expand a task (tasks) |
-| `Esc` | Back out to the overview (event cycling, grid, task tree) |
+| `Esc` | Back out to the overview (event cycling, grid, task tree) · cancel a form/dialog |
+| `a` `e` `d` | Add / edit / delete |
+| `Space` | Toggle task done |
+| `H` / `L` | Outdent / indent task (re-parent) |
+| `u` | Undo last local change (this session) |
 | `PageUp` / `PageDown` | Scroll the week/day time-grid or the agenda |
 | `.` | Show/hide completed tasks |
 | `q` / `Ctrl-C` | Quit |

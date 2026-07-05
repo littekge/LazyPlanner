@@ -20,11 +20,16 @@ import (
 //   - Tags:     "#tag".
 //
 // Only the first date and first time win; later matches fall back to the title.
+// Date and time are independent: HasTime without HasDate lets a caller apply the
+// time to a context day (e.g. the selected calendar day) rather than assuming
+// today.
 type QuickAdd struct {
 	Title    string
-	When     time.Time // date at local midnight, plus time-of-day when HasTime
 	HasDate  bool
+	Date     time.Time // local midnight of the parsed date, valid when HasDate
 	HasTime  bool
+	Hour     int
+	Minute   int
 	Priority int // 0 = none
 	Tags     []string
 }
@@ -39,7 +44,6 @@ func ParseQuickAdd(input string, now time.Time, loc *time.Location) QuickAdd {
 
 	var qa QuickAdd
 	var titleTokens []string
-	hour, minute := 0, 0
 
 	tokens := strings.Fields(input)
 	for i := 0; i < len(tokens); i++ {
@@ -61,7 +65,7 @@ func ParseQuickAdd(input string, now time.Time, loc *time.Location) QuickAdd {
 		if !qa.HasTime {
 			if h, m, ok := parseClock(tok); ok {
 				qa.HasTime = true
-				hour, minute = h, m
+				qa.Hour, qa.Minute = h, m
 				continue
 			}
 		}
@@ -69,7 +73,7 @@ func ParseQuickAdd(input string, now time.Time, loc *time.Location) QuickAdd {
 		if !qa.HasDate {
 			if d, consumed, ok := parseDate(tokens, i, today, loc); ok {
 				qa.HasDate = true
-				qa.When = d
+				qa.Date = d
 				i += consumed - 1
 				continue
 			}
@@ -78,16 +82,22 @@ func ParseQuickAdd(input string, now time.Time, loc *time.Location) QuickAdd {
 		titleTokens = append(titleTokens, tok)
 	}
 
-	if qa.HasTime {
-		if !qa.HasDate {
-			qa.When = today
-			qa.HasDate = true
-		}
-		qa.When = time.Date(qa.When.Year(), qa.When.Month(), qa.When.Day(), hour, minute, 0, 0, loc)
-	}
-
 	qa.Title = strings.Join(titleTokens, " ")
 	return qa
+}
+
+// At combines a QuickAdd's date and time onto base (used when no explicit date
+// was given, e.g. the selected calendar day), returning the resulting time and
+// whether it should be treated as all-day (a date with no time).
+func (qa QuickAdd) At(base time.Time, loc *time.Location) (when time.Time, allDay bool) {
+	y, mo, d := base.Year(), base.Month(), base.Day()
+	if qa.HasDate {
+		y, mo, d = qa.Date.Year(), qa.Date.Month(), qa.Date.Day()
+	}
+	if qa.HasTime {
+		return time.Date(y, mo, d, qa.Hour, qa.Minute, 0, 0, loc), false
+	}
+	return time.Date(y, mo, d, 0, 0, 0, 0, loc), true
 }
 
 // parsePriority maps the text after "!" to a 1–9 priority, or reports no match.

@@ -59,6 +59,18 @@ func (a *app) selectedTasklistID() string {
 	return ""
 }
 
+// selectedCalendarID is the id of the highlighted calendar in the Calendars
+// overview — the target for new events. The panel lists a.store.Calendars() in
+// order, so the current item index maps straight onto that slice.
+func (a *app) selectedCalendarID() string {
+	cals := a.store.Calendars()
+	i := a.calendars.GetCurrentItem()
+	if i >= 0 && i < len(cals) {
+		return cals[i].ID
+	}
+	return ""
+}
+
 // --- Calendar center (month grid / time-grid) ---
 
 func (a *app) buildCenterCalendar() {
@@ -378,7 +390,7 @@ func (a *app) updateStatus() {
 	if a.showCompleted {
 		completed = "on"
 	}
-	hints := fmt.Sprintf("[1]Cal [2]Tasks [3]Agenda Tab:cycle | Enter:open Esc:back | v:view n/p:prev/next t:today [/]:cal | .:done(%s) q:quit", completed)
+	hints := fmt.Sprintf("[1][2][3] Tab:cycle Enter/Esc:in/out | a:add e:edit d:del Space:done H/L:move u:undo | v:view n/p t:today [/]:cal | .:completed(%s) q:quit", completed)
 	right := fmt.Sprintf("%s · %s · %d cals · %d tasks", mode, a.anchor.Format("Jan 2 2006"), len(a.store.Calendars()), len(a.store.Todos()))
 	line := fmt.Sprintf("%s   [gray]|[-]   %s", hints, right)
 	if n := len(a.store.LoadErrors()); n > 0 {

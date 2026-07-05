@@ -40,13 +40,22 @@ const (
 	viewDay
 )
 
+// Page names for the top-level Pages: the main layout and the modal overlays.
+const (
+	pageMain    = "main"
+	pageInput   = "modal-input"
+	pageForm    = "modal-form"
+	pageConfirm = "modal-confirm"
+)
+
 type bordered struct {
 	prim tview.Primitive
 	box  *tview.Box
 }
 
-// app holds the widgets and state of the read-only TUI. It reads from the
-// store; it does not mutate data (editing arrives in a later step).
+// app holds the widgets and state of the TUI. It reads from and writes to the
+// store (create/edit/complete/delete); all writes stay local until the sync
+// layer pushes them.
 type app struct {
 	tv    *tview.Application
 	store *store.Store
@@ -68,9 +77,11 @@ type app struct {
 	detail *tview.TextView
 	status *tview.TextView
 
-	body     *tview.Flex // holds left | center | detail; used to hide detail
+	body     *tview.Flex  // holds left | center | detail; used to hide detail
+	root     *tview.Pages // top-level: the main layout plus modal overlays
 	borders  []bordered
 	detailOn bool
+	undo     []undoStep // session undo stack (most recent last)
 
 	mode            int
 	viewMode        int
@@ -81,14 +92,17 @@ type app struct {
 	agendaCount     int      // real agenda items in the left panel (0 = placeholder row)
 }
 
-// Run builds the read-only TUI over the given store and blocks until quit.
+// Run builds the TUI over the given store and blocks until quit.
 func Run(s *store.Store, title string) error {
 	a := newApp(s, title, time.Now())
 	a.build()
 	a.reload()
 	a.setMode(modeCalendar)
 
-	if err := a.tv.SetRoot(a.layout(), true).EnableMouse(true).SetInputCapture(a.globalKeys).Run(); err != nil {
+	a.root = tview.NewPages()
+	a.root.AddPage(pageMain, a.layout(), true, true)
+
+	if err := a.tv.SetRoot(a.root, true).EnableMouse(true).SetInputCapture(a.globalKeys).Run(); err != nil {
 		return fmt.Errorf("running tui: %w", err)
 	}
 	return nil
@@ -249,6 +263,11 @@ func (a *app) calendarPrimitive() tview.Primitive {
 }
 
 func (a *app) globalKeys(ev *tcell.EventKey) *tcell.EventKey {
+	// While a modal (input/form/confirm) is open it owns all keys; app shortcuts
+	// must not fire, or typing "a"/"q"/digits would trigger them.
+	if a.modalOpen() {
+		return ev
+	}
 	switch ev.Key() {
 	case tcell.KeyTab:
 		a.setMode((a.mode + 1) % 3)
@@ -266,6 +285,31 @@ func (a *app) globalKeys(ev *tcell.EventKey) *tcell.EventKey {
 		case 'q':
 			a.tv.Stop()
 			return nil
+		case 'a':
+			a.quickAdd()
+			return nil
+		case 'e':
+			a.editSelected()
+			return nil
+		case 'd':
+			a.deleteSelected()
+			return nil
+		case ' ':
+			a.toggleComplete()
+			return nil
+		case 'u':
+			a.undoLast()
+			return nil
+		case 'H':
+			if a.mode == modeTasks {
+				a.reparentSelected(outdent)
+				return nil
+			}
+		case 'L':
+			if a.mode == modeTasks {
+				a.reparentSelected(indent)
+				return nil
+			}
 		case '1':
 			a.setMode(modeCalendar)
 			return nil

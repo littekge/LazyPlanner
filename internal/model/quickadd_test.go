@@ -16,8 +16,10 @@ func TestParseQuickAdd(t *testing.T) {
 		input    string
 		title    string
 		hasDate  bool
-		when     time.Time
+		date     time.Time
 		hasTime  bool
+		hour     int
+		minute   int
 		priority int
 		tags     []string
 	}{
@@ -38,65 +40,66 @@ func TestParseQuickAdd(t *testing.T) {
 			input:   "Standup today",
 			title:   "Standup",
 			hasDate: true,
-			when:    today,
+			date:    today,
 		},
 		{
 			name:    "tomorrow",
 			input:   "Ship it tomorrow",
 			title:   "Ship it",
 			hasDate: true,
-			when:    today.AddDate(0, 0, 1),
+			date:    today.AddDate(0, 0, 1),
 		},
 		{
 			name:    "weekday rolls to same-or-future",
 			input:   "Gym wed",
 			title:   "Gym",
 			hasDate: true,
-			when:    time.Date(2026, 7, 8, 0, 0, 0, 0, loc), // Wed after Sun Jul 5
+			date:    time.Date(2026, 7, 8, 0, 0, 0, 0, loc), // Wed after Sun Jul 5
 		},
 		{
 			name:    "month name and day",
 			input:   "Trip jul 20",
 			title:   "Trip",
 			hasDate: true,
-			when:    time.Date(2026, 7, 20, 0, 0, 0, 0, loc),
+			date:    time.Date(2026, 7, 20, 0, 0, 0, 0, loc),
 		},
 		{
 			name:    "past month day rolls to next year",
 			input:   "Taxes apr 15",
 			title:   "Taxes",
 			hasDate: true,
-			when:    time.Date(2027, 4, 15, 0, 0, 0, 0, loc),
+			date:    time.Date(2027, 4, 15, 0, 0, 0, 0, loc),
 		},
 		{
 			name:    "slashed date with year",
 			input:   "Review 12/31/2026",
 			title:   "Review",
 			hasDate: true,
-			when:    time.Date(2026, 12, 31, 0, 0, 0, 0, loc),
+			date:    time.Date(2026, 12, 31, 0, 0, 0, 0, loc),
 		},
 		{
 			name:    "iso date",
 			input:   "Deadline 2026-08-01",
 			title:   "Deadline",
 			hasDate: true,
-			when:    time.Date(2026, 8, 1, 0, 0, 0, 0, loc),
+			date:    time.Date(2026, 8, 1, 0, 0, 0, 0, loc),
 		},
 		{
-			name:    "time with pm defaults date to today",
+			name:    "bare time has no date",
 			input:   "Call 3pm",
 			title:   "Call",
-			hasDate: true,
 			hasTime: true,
-			when:    time.Date(2026, 7, 5, 15, 0, 0, 0, loc),
+			hour:    15,
 		},
 		{
 			name:    "date and time together",
 			input:   "Dentist jul 20 9:30am",
 			title:   "Dentist",
 			hasDate: true,
+			date:    time.Date(2026, 7, 20, 0, 0, 0, 0, loc),
 			hasTime: true,
-			when:    time.Date(2026, 7, 20, 9, 30, 0, 0, loc),
+			hour:    9,
+			minute:  30,
 		},
 		{
 			name:  "bare number stays in title",
@@ -108,8 +111,9 @@ func TestParseQuickAdd(t *testing.T) {
 			input:    "Pay rent aug 1 5pm !1 #bills",
 			title:    "Pay rent",
 			hasDate:  true,
+			date:     time.Date(2026, 8, 1, 0, 0, 0, 0, loc),
 			hasTime:  true,
-			when:     time.Date(2026, 8, 1, 17, 0, 0, 0, loc),
+			hour:     17,
 			priority: 1,
 			tags:     []string{"bills"},
 		},
@@ -132,8 +136,11 @@ func TestParseQuickAdd(t *testing.T) {
 			if qa.HasTime != tc.hasTime {
 				t.Errorf("HasTime = %v, want %v", qa.HasTime, tc.hasTime)
 			}
-			if tc.hasDate && !qa.When.Equal(tc.when) {
-				t.Errorf("When = %s, want %s", qa.When, tc.when)
+			if tc.hasDate && !qa.Date.Equal(tc.date) {
+				t.Errorf("Date = %s, want %s", qa.Date, tc.date)
+			}
+			if tc.hasTime && (qa.Hour != tc.hour || qa.Minute != tc.minute) {
+				t.Errorf("time = %d:%02d, want %d:%02d", qa.Hour, qa.Minute, tc.hour, tc.minute)
 			}
 			if qa.Priority != tc.priority {
 				t.Errorf("Priority = %d, want %d", qa.Priority, tc.priority)
