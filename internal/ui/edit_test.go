@@ -196,6 +196,21 @@ func TestStickyKeepsCompletedVisibleUntilLeavingList(t *testing.T) {
 	}
 }
 
+// TestCycleCalendar guards the [ / ] calendar cycling (the keys the misleading
+// "[/]" hint was about — it is not the / key).
+func TestCycleCalendar(t *testing.T) {
+	a := newWritableTestApp(t, time.Date(2026, 7, 5, 9, 0, 0, 0, time.UTC))
+	a.setMode(modeCalendar)
+	if a.calendars.GetItemCount() < 2 {
+		t.Skip("need at least two calendars to cycle")
+	}
+	before := a.calendars.GetCurrentItem()
+	a.cycleCalendar(1)
+	if a.calendars.GetCurrentItem() == before {
+		t.Error("cycleCalendar did not move the calendar highlight")
+	}
+}
+
 func TestDescendants(t *testing.T) {
 	now := time.Date(2026, 7, 5, 9, 0, 0, 0, time.UTC)
 	a := newWritableTestApp(t, now)
