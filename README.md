@@ -14,24 +14,25 @@ A terminal-based todo-list and calendar manager with offline-first CalDAV sync �
 
 ## Usage
 
-Run `lazyplanner` with no arguments to open the TUI. It reads the local cache (populate it with `import` first — see below). A left "overview" column holds **Calendars**, **Tasks** (your task lists), and **Agenda**; the **center** pane follows whichever you select with `1`/`2`/`3`:
+Run `lazyplanner` with no arguments to open the TUI. It reads the local cache (populate it with `import` first — see below). A left "overview" column holds **Calendars**, **Tasks** (your task lists), and **Agenda**. `1`/`2`/`3` **focus the matching overview panel** (the highlight lives there); the **center** pane shows the corresponding view, and `Enter` dives in / `Esc` backs out:
 
-- **`1` Calendars** → the calendar: a month grid (each day cell lists its events/tasks) or a week/day **hourly time-grid**. `v` cycles the view; `n`/`p` move by period; `t` jumps to today. The selected day is outlined; press `Enter` to cycle that day's events (the Detail pane shows the highlighted one), `Esc` to step back out.
+- **`1` Calendars** → focus the calendar list on the left (arrows highlight each calendar). The center shows a month grid (each day cell lists its events/tasks) or a week/day **hourly time-grid**. `Enter` dives into the grid — arrows move days, `Enter` cycles the selected day's events (the Detail pane shows the highlighted one), `Esc` returns to the list. `[`/`]` cycle the highlighted calendar from anywhere; `v` cycles the view; `n`/`p` move by period; `t` jumps to today.
 - **`2` Tasks** → pick a list on the left; its full subtask tree opens in the center (with inline priority/due/status). The Detail pane shows the highlighted task's full description and fields.
-- **`3` Agenda** → the day's events and tasks with full descriptions, at full width (the Detail pane hides); scroll with PageUp/PageDown.
+- **`3` Agenda** → focus the agenda list on the left; moving its highlight highlights the matching block in the center (which auto-scrolls). The center shows the day's events and tasks with full descriptions, at full width (the Detail pane hides).
 
 This is **read-only** for now (editing lands in a later step). Keys available today:
 
 | Key | Action |
 |---|---|
-| `1` `2` `3` | Show Calendar / Tasks / Agenda in the center |
+| `1` `2` `3` | Focus the Calendars / Tasks / Agenda overview panel |
 | `Tab` / `Shift-Tab` | Cycle those three |
-| `↑` `↓` `←` `→` / `j` `k` `h` `l` | Move within the active pane (days in the grid, nodes in the tree) |
+| `↑` `↓` `←` `→` / `j` `k` `h` `l` | Move the highlight in the focused pane (overview rows, days in the grid, nodes in the tree) |
 | `v` | Cycle calendar view: month → week → day |
+| `[` / `]` | Cycle the highlighted calendar (calendar mode; works from the grid too) |
 | `n` / `p` | Next / previous month·week·day |
 | `t` | Jump to today |
-| `Enter` | Cycle a day's events (calendar) · open a list / expand a task (tasks) |
-| `Esc` | Step back out (event cycling, task tree) |
+| `Enter` | Dive from the overview into the center: grid (calendar) · open a list / expand a task (tasks) |
+| `Esc` | Back out to the overview (event cycling, grid, task tree) |
 | `PageUp` / `PageDown` | Scroll the week/day time-grid or the agenda |
 | `.` | Show/hide completed tasks |
 | `q` / `Ctrl-C` | Quit |

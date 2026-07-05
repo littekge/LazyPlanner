@@ -31,6 +31,7 @@ type calendarView struct {
 
 	onSelectDay   func(day time.Time)
 	onSelectEvent func(item model.AgendaItem)
+	onExit        func() // Esc in day mode: hand focus back to the overview
 }
 
 func newCalendarView() *calendarView {
@@ -82,6 +83,10 @@ func (cv *calendarView) handleDayMode(ev *tcell.EventKey) {
 			cv.eventMode = true
 			cv.eventIndex = 0
 			cv.emitEvent()
+		}
+	case tcell.KeyEscape:
+		if cv.onExit != nil {
+			cv.onExit()
 		}
 	case tcell.KeyRune:
 		switch ev.Rune() {

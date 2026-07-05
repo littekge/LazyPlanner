@@ -118,11 +118,11 @@ The vdir data lives under *data* paths, **not** `~/.cache` — it can hold offli
  a:add  e:edit  space:done  ::cmd  ?:help       ✓ synced 2m ago
 ```
 
-- **Left column (the "overview")** — three small panels: **Calendars** (list, with visibility toggles), **Tasks** (the **task lists** — top-level calendars that contain todos, *not* the full tree), **Agenda** (today's events + due tasks). `1`/`2`/`3` select the active panel; the Main pane's content follows it.
+- **Left column (the "overview")** — three small panels: **Calendars** (list, with visibility toggles), **Tasks** (the **task lists** — top-level calendars that contain todos, *not* the full tree), **Agenda** (today's events + due tasks). `1`/`2`/`3` **focus the corresponding overview panel** — the highlight lives there and moves through its rows — while the Main pane shows the matching view. `Enter` dives from the overview into the Main pane where that makes sense; `Esc` backs out to the overview.
 - **Main pane** — follows the active overview panel:
-  - **Calendars** → the calendar view: month grid (default) or the week/day hourly time-grid. Navigate days; select a day to cycle through its events.
-  - **Tasks** → the selected list's full collapsible subtask tree, with inline priority / due date / completion status.
-  - **Agenda** → the day's events and tasks with full descriptions, at **full width** (the Detail pane is hidden), scrollable when a day overflows.
+  - **Calendars** → focus lands on the **Calendars list** (arrow keys highlight each calendar — this is where per-calendar visibility toggles will live in step 10). The Main pane shows the calendar view: month grid (default) or the week/day hourly time-grid. `Enter` dives into the grid (arrows move days, `Enter` cycles the selected day's events, `Esc` returns to the list); `[` / `]` cycle the highlighted calendar from anywhere in calendar mode, and `v`/`n`/`p`/`t` (view/prev/next/today) work regardless of where focus sits.
+  - **Tasks** → focus lands on the **Tasks list**; selecting a list opens its full collapsible subtask tree in the Main pane, with inline priority / due date / completion status.
+  - **Agenda** → focus lands on the **Agenda list**; moving its highlight highlights the matching block in the Main pane (which auto-scrolls to it). The Main pane shows the day's events and tasks with full descriptions, at **full width** (the Detail pane is hidden), scrollable when a day overflows.
 - **Detail pane** — the highlighted item's full fields (event: time/location/reminders/notes; task: due/priority/tags/status/notes). **Hidden in Agenda mode** so the center gets the whole width.
 - **Status bar** — contextual key hints + sync status (`✓ synced 2m ago`, `↻ syncing`, `⚠ 2 conflicts`, `⚠ offline`).
 
@@ -176,6 +176,7 @@ Chosen sizes are remembered across launches in the state file under the data dir
 | `u` | Undo last local change (session stack) |
 | `.` | Show/hide completed tasks |
 | `v` | Cycle calendar view: month → week → day |
+| `[` / `]` | Cycle the highlighted calendar (calendar mode; works from the grid too) |
 | `n` / `p` | Next / previous month(/week/day) |
 | `t` | Jump to today |
 | `g` | Go to date (smart-parsed input) |

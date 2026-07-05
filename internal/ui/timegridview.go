@@ -30,6 +30,7 @@ type timeGridView struct {
 	scrollHour int // topmost visible hour
 
 	onSelectDay func(day time.Time)
+	onExit      func() // Esc: hand focus back to the overview
 }
 
 func newTimeGridView() *timeGridView {
@@ -73,6 +74,10 @@ func (tg *timeGridView) InputHandler() func(*tcell.EventKey, func(tview.Primitiv
 			scroll(-6)
 		case tcell.KeyPgDn:
 			scroll(6)
+		case tcell.KeyEscape:
+			if tg.onExit != nil {
+				tg.onExit()
+			}
 		case tcell.KeyRune:
 			switch ev.Rune() {
 			case 'h':

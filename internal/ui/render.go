@@ -41,6 +41,7 @@ func (a *app) buildTasklists() {
 func (a *app) buildAgendaLeft() {
 	a.agendaList.Clear()
 	items := a.dayItems(model.DayStart(a.now))
+	a.agendaCount = len(items)
 	if len(items) == 0 {
 		a.agendaList.AddItem("(nothing today)", "", 0, nil)
 		return
@@ -208,12 +209,16 @@ func (a *app) buildAgendaCenter() {
 	if len(items) == 0 {
 		b.WriteString("[gray]No events or due tasks today.[-]\n")
 	}
+	// Each block is wrapped in a text region ("item-N") so the left Agenda list
+	// can highlight the matching block as its selection moves (syncAgendaHighlight).
 	for i, it := range items {
 		if i > 0 {
 			b.WriteString("\n")
 		}
+		fmt.Fprintf(&b, "[\"item-%d\"]", i)
 		b.WriteString(agendaItemBlock(it))
 	}
+	b.WriteString("[\"\"]")
 	a.agendaView.SetText(b.String())
 	a.agendaView.ScrollToBeginning()
 }
@@ -311,7 +316,7 @@ func (a *app) updateStatus() {
 	if a.showCompleted {
 		completed = "on"
 	}
-	hints := fmt.Sprintf("[1]Cal [2]Tasks [3]Agenda Tab:cycle | v:view n/p:prev/next t:today | .:done(%s) q:quit", completed)
+	hints := fmt.Sprintf("[1]Cal [2]Tasks [3]Agenda Tab:cycle | Enter:open Esc:back | v:view n/p:prev/next t:today [/]:cal | .:done(%s) q:quit", completed)
 	right := fmt.Sprintf("%s · %s · %d cals · %d tasks", mode, a.anchor.Format("Jan 2 2006"), len(a.store.Calendars()), len(a.store.Todos()))
 	line := fmt.Sprintf("%s   [gray]|[-]   %s", hints, right)
 	if n := len(a.store.LoadErrors()); n > 0 {

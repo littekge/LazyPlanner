@@ -78,6 +78,7 @@ type app struct {
 	weekStartMonday bool
 	showCompleted   bool
 	tasklistIDs     []string // calendar ids parallel to the tasklists panel
+	agendaCount     int      // real agenda items in the left panel (0 = placeholder row)
 }
 
 // Run builds the read-only TUI over the given store and blocks until quit.
@@ -119,7 +120,7 @@ func (a *app) build() {
 	a.tasklists.ShowSecondaryText(false).SetHighlightFullLine(true)
 	a.agendaList.ShowSecondaryText(false).SetHighlightFullLine(true)
 	a.detail.SetDynamicColors(true).SetWrap(true)
-	a.agendaView.SetDynamicColors(true).SetWrap(true).SetScrollable(true)
+	a.agendaView.SetDynamicColors(true).SetRegions(true).SetWrap(true).SetScrollable(true)
 	a.status.SetDynamicColors(true)
 
 	decorate(a.calendars.Box, "1 Calendars")
@@ -149,9 +150,17 @@ func (a *app) build() {
 	// Callbacks.
 	a.month.onSelectDay = a.onCalDay
 	a.month.onSelectEvent = func(it model.AgendaItem) { a.setAgendaItemDetail(it) }
+	a.month.onExit = func() { a.setFocus(a.calendars) }
 	a.timegrid.onSelectDay = a.onCalDay
+	a.timegrid.onExit = func() { a.setFocus(a.calendars) }
+	a.calendars.SetSelectedFunc(func(int, string, string, rune) { a.setFocus(a.calendarPrimitive()) })
 	a.tasklists.SetChangedFunc(func(int, string, string, rune) { a.buildTree() })
 	a.tasklists.SetSelectedFunc(func(int, string, string, rune) { a.setFocus(a.tree) })
+	a.agendaList.SetChangedFunc(func(index int, _, _ string, _ rune) {
+		if a.mode == modeAgenda {
+			a.syncAgendaHighlight(index)
+		}
+	})
 	a.tree.SetChangedFunc(func(node *tview.TreeNode) { a.showTreeNode(node) })
 	a.tree.SetSelectedFunc(func(node *tview.TreeNode) { node.SetExpanded(!node.IsExpanded()) })
 }
@@ -210,7 +219,7 @@ func (a *app) setMode(m int) {
 	case modeCalendar:
 		a.showDetail(true)
 		a.buildCenterCalendar()
-		a.setFocus(a.calendarPrimitive())
+		a.setFocus(a.calendars)
 	case modeTasks:
 		a.showDetail(true)
 		a.center.SwitchToPage("tree")
@@ -220,7 +229,8 @@ func (a *app) setMode(m int) {
 		a.showDetail(false)
 		a.center.SwitchToPage("agenda")
 		a.buildAgendaCenter()
-		a.setFocus(a.agendaView)
+		a.setFocus(a.agendaList)
+		a.syncAgendaHighlight(a.agendaList.GetCurrentItem())
 	}
 	a.updateStatus()
 }
@@ -268,7 +278,7 @@ func (a *app) globalKeys(ev *tcell.EventKey) *tcell.EventKey {
 			if a.mode == modeCalendar {
 				a.viewMode = (a.viewMode + 1) % 3
 				a.buildCenterCalendar()
-				a.setFocus(a.calendarPrimitive())
+				a.refocusCalendar()
 				a.updateStatus()
 				return nil
 			}
@@ -286,8 +296,18 @@ func (a *app) globalKeys(ev *tcell.EventKey) *tcell.EventKey {
 			if a.mode == modeCalendar {
 				a.anchor = model.DayStart(a.now)
 				a.buildCenterCalendar()
-				a.setFocus(a.calendarPrimitive())
+				a.refocusCalendar()
 				a.updateStatus()
+				return nil
+			}
+		case '[':
+			if a.mode == modeCalendar {
+				a.cycleCalendar(-1)
+				return nil
+			}
+		case ']':
+			if a.mode == modeCalendar {
+				a.cycleCalendar(1)
 				return nil
 			}
 		}
@@ -306,8 +326,44 @@ func (a *app) shiftAnchor(delta int) {
 		a.anchor = a.anchor.AddDate(0, 0, delta)
 	}
 	a.buildCenterCalendar()
-	a.setFocus(a.calendarPrimitive())
+	a.refocusCalendar()
 	a.updateStatus()
+}
+
+// refocusCalendar keeps focus on the overview list, but follows the grid to its
+// (possibly swapped) primitive when the grid itself was focused — so switching
+// view or period while diving through the grid doesn't kick focus back to the list.
+func (a *app) refocusCalendar() {
+	if a.gridFocused() {
+		a.setFocus(a.calendarPrimitive())
+	}
+}
+
+func (a *app) gridFocused() bool {
+	f := a.tv.GetFocus()
+	return f == a.month || f == a.timegrid
+}
+
+// cycleCalendar moves the highlight in the Calendars overview (wrapping), usable
+// from the grid too. Toggling a calendar's visibility arrives in step 10.
+func (a *app) cycleCalendar(delta int) {
+	n := a.calendars.GetItemCount()
+	if n == 0 {
+		return
+	}
+	i := (a.calendars.GetCurrentItem() + delta + n) % n
+	a.calendars.SetCurrentItem(i)
+}
+
+// syncAgendaHighlight highlights the center agenda block matching the left-list
+// row and scrolls it into view. Index maps 1:1 to the item blocks built by
+// buildAgendaCenter; when the day is empty the left list holds only a placeholder.
+func (a *app) syncAgendaHighlight(index int) {
+	if a.agendaCount == 0 {
+		a.agendaView.Highlight()
+		return
+	}
+	a.agendaView.Highlight(fmt.Sprintf("item-%d", index)).ScrollToHighlight()
 }
 
 // reloadCurrent rebuilds whatever the current mode shows (after a data toggle).
