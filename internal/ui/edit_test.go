@@ -140,3 +140,75 @@ func TestReparentIndentAndUndo(t *testing.T) {
 		t.Errorf("undo did not clear the parent: %q", got)
 	}
 }
+
+func TestFolderBlocksCompletionUntilChildrenDone(t *testing.T) {
+	now := time.Date(2026, 7, 5, 9, 0, 0, 0, time.UTC)
+	a := newWritableTestApp(t, now)
+	a.setMode(modeTasks)
+	calID := a.selectedTasklistID()
+
+	a.createTask(calID, "", "Parent")
+	parent := todoBySummary(a.store, "Parent")
+	a.createTask(calID, parent.UID, "Child")
+	child := todoBySummary(a.store, "Child")
+
+	// Parent is now a folder — completing it is blocked.
+	a.selectTreeByUID(parent.UID)
+	a.toggleComplete()
+	if todoBySummary(a.store, "Parent").Completed() {
+		t.Fatal("a folder with an incomplete child should not complete")
+	}
+
+	// Complete the child; the parent is no longer a folder and can complete.
+	a.selectTreeByUID(child.UID)
+	a.toggleComplete()
+	if !todoBySummary(a.store, "Child").Completed() {
+		t.Fatal("child did not complete")
+	}
+	a.selectTreeByUID(parent.UID)
+	a.toggleComplete()
+	if !todoBySummary(a.store, "Parent").Completed() {
+		t.Error("parent should complete once its children are done")
+	}
+}
+
+func TestStickyKeepsCompletedVisibleUntilLeavingList(t *testing.T) {
+	now := time.Date(2026, 7, 5, 9, 0, 0, 0, time.UTC)
+	a := newWritableTestApp(t, now)
+	a.setMode(modeTasks)
+	calID := a.selectedTasklistID()
+	a.showCompleted = false
+
+	a.createTask(calID, "", "Solo")
+	solo := todoBySummary(a.store, "Solo")
+	a.selectTreeByUID(solo.UID)
+	a.toggleComplete() // completed while hidden → should stay visible
+
+	if findTreeNode(a.tree.GetRoot(), solo.UID) == nil {
+		t.Fatal("just-completed task should remain visible in the list")
+	}
+
+	// Leaving the list (switching panes) drops the pin, hiding it.
+	a.setMode(modeCalendar)
+	a.setMode(modeTasks)
+	if findTreeNode(a.tree.GetRoot(), solo.UID) != nil {
+		t.Error("completed task should be hidden after leaving the list")
+	}
+}
+
+func TestDescendants(t *testing.T) {
+	now := time.Date(2026, 7, 5, 9, 0, 0, 0, time.UTC)
+	a := newWritableTestApp(t, now)
+	a.setMode(modeTasks)
+	calID := a.selectedTasklistID()
+
+	a.createTask(calID, "", "Root")
+	root := todoBySummary(a.store, "Root")
+	a.createTask(calID, root.UID, "Mid")
+	mid := todoBySummary(a.store, "Mid")
+	a.createTask(calID, mid.UID, "Leaf")
+
+	if got := len(a.descendants(root.UID)); got != 2 {
+		t.Errorf("descendants(Root) = %d, want 2 (Mid, Leaf)", got)
+	}
+}

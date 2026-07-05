@@ -177,14 +177,33 @@ func (a *app) buildTree() {
 	// stems attach to it (like a file tree rooted at the directory name).
 	name := "Tasks"
 	root := tview.NewTreeNode("").SetSelectable(false).SetColor(accentColor)
-	if id := a.selectedTasklistID(); id != "" {
+	id := a.selectedTasklistID()
+
+	// Leaving one list for another drops the "keep just-completed visible" pins.
+	// Ignore the transient empty id seen mid-rebuild (while the panel is cleared).
+	if id != "" && id != a.treeListID {
+		a.stickyDone = map[string]bool{}
+		a.treeListID = id
+	}
+
+	a.treeFolders = map[string]bool{}
+	if id != "" {
 		if cal, ok := a.store.Calendar(id); ok {
 			name = cal.DisplayName
-			var todos []*model.Todo
+			var all []*model.Todo
 			for _, r := range cal.Resources {
-				todos = append(todos, r.Object.Todos...)
+				all = append(all, r.Object.Todos...)
 			}
-			for _, n := range model.BuildTree(todos, a.showCompleted) {
+			a.treeFolders = folderSet(all)
+
+			// Show incomplete tasks, plus completed ones when toggled on or pinned.
+			var visible []*model.Todo
+			for _, td := range all {
+				if a.showCompleted || !td.Completed() || a.stickyDone[td.UID] {
+					visible = append(visible, td)
+				}
+			}
+			for _, n := range model.BuildTree(visible, true) {
 				root.AddChild(a.treeNode(n))
 			}
 		}
@@ -198,12 +217,51 @@ func (a *app) buildTree() {
 	}
 }
 
+// folderSet returns the UIDs that are folders — tasks with at least one
+// incomplete child among todos.
+func folderSet(todos []*model.Todo) map[string]bool {
+	folders := map[string]bool{}
+	for _, t := range todos {
+		if t.ParentUID != "" && !t.Completed() {
+			folders[t.ParentUID] = true
+		}
+	}
+	return folders
+}
+
 func (a *app) treeNode(n *model.TodoNode) *tview.TreeNode {
-	node := tview.NewTreeNode(treeTaskLabel(n.Todo)).SetReference(n.Todo).SetExpanded(true)
+	node := tview.NewTreeNode(a.nodeLabel(n.Todo, true)).SetReference(n.Todo).SetExpanded(true)
 	for _, c := range n.Children {
 		node.AddChild(a.treeNode(c))
 	}
 	return node
+}
+
+// nodeLabel renders a task's tree line. Folders show a ▸/▾ disclosure marker in
+// place of the checkbox (doubling as the expand indicator); regular tasks show
+// [ ] / [x].
+func (a *app) nodeLabel(t *model.Todo, expanded bool) string {
+	var mark string
+	switch {
+	case a.treeFolders[t.UID]:
+		if expanded {
+			mark = "▾ "
+		} else {
+			mark = "▸ "
+		}
+	case t.Completed():
+		mark = "[x] "
+	default:
+		mark = "[ ] "
+	}
+	label := mark + nonEmpty(t.Summary, "(untitled)")
+	if t.Priority != model.PriorityUndefined {
+		label += fmt.Sprintf("  !%d", t.Priority)
+	}
+	if t.HasDue {
+		label += "  due " + fmtDate(t.Due, t.DueAllDay)
+	}
+	return label
 }
 
 func (a *app) showTreeNode(node *tview.TreeNode) {
@@ -454,21 +512,6 @@ func agendaItemBlock(it model.AgendaItem, plain bool) string {
 		fmt.Fprintf(&b, "  %s\n", oneLine(e.Description))
 	}
 	return b.String()
-}
-
-func treeTaskLabel(t *model.Todo) string {
-	mark := "[ ] "
-	if t.Completed() {
-		mark = "[x] "
-	}
-	label := mark + nonEmpty(t.Summary, "(untitled)")
-	if t.Priority != model.PriorityUndefined {
-		label += fmt.Sprintf("  !%d", t.Priority)
-	}
-	if t.HasDue {
-		label += "  due " + fmtDate(t.Due, t.DueAllDay)
-	}
-	return label
 }
 
 func agendaLeftLabel(it model.AgendaItem) string {

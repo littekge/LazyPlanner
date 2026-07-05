@@ -3,6 +3,7 @@ package ui
 import (
 	"context"
 	"errors"
+	"strconv"
 	"strings"
 	"time"
 
@@ -19,6 +20,9 @@ var (
 	errTimeFormat = errors.New("use HH:MM or h:mmpm")
 )
 
+func errField(name string, err error) error { return errors.New(name + ": " + err.Error()) }
+func errFieldMsg(msg string) error          { return errors.New(msg) }
+
 // reparentDir is the direction of an H/L re-parent.
 type reparentDir int
 
@@ -27,15 +31,25 @@ const (
 	indent                     // L: nest under the previous sibling
 )
 
-// undoStep records one reversible local change. prev is the resource snapshot
-// captured before the change; a nil prev marks a creation, whose inverse is a
-// delete. selUID is the item to reselect after undoing.
+// undoOp reverses one resource write: a nil prev marks a creation (undo by
+// deleting), a non-nil prev restores that earlier snapshot exactly.
+type undoOp struct {
+	calID string
+	name  string
+	prev  *store.Resource
+}
+
+// undoStep is one user action's worth of reversal — usually a single op, but a
+// recursive folder delete carries one op per removed resource. selUID is the
+// item to reselect after undoing.
 type undoStep struct {
-	calID  string
-	name   string
-	prev   *store.Resource
 	label  string
 	selUID string
+	ops    []undoOp
+}
+
+func (a *app) pushUndo(label, selUID string, ops ...undoOp) {
+	a.undo = append(a.undo, undoStep{label: label, selUID: selUID, ops: ops})
 }
 
 // editTarget is the item the editing shortcuts act on in the current context.
@@ -82,37 +96,98 @@ func targetFromItem(it model.AgendaItem) editTarget {
 
 // --- quick add (a) ---
 
-func (a *app) quickAdd() {
-	switch a.mode {
-	case modeTasks:
+// addQuick (a): quick-add a top-level task (Tasks) or an event (Calendar/Agenda).
+func (a *app) addQuick() {
+	if a.mode == modeTasks {
 		calID := a.selectedTasklistID()
 		if calID == "" {
 			a.flash("No task list selected — create one first")
 			return
 		}
-		parentUID := ""
-		if node := a.tree.GetCurrentNode(); node != nil {
-			if t, ok := node.GetReference().(*model.Todo); ok {
-				parentUID = t.UID
-			}
-		}
-		a.promptInput("New task", "Task: ", func(text string) {
-			a.createTask(calID, parentUID, text)
-		})
-	case modeCalendar, modeAgenda:
-		calID := a.selectedCalendarID()
+		a.promptInput("New task", "Task: ", func(text string) { a.createTask(calID, "", text) })
+		return
+	}
+	calID, base, ok := a.eventCreateContext()
+	if !ok {
+		return
+	}
+	a.promptInput("New event", "Event: ", func(text string) { a.createEvent(calID, base, text) })
+}
+
+// addSubtaskQuick (s): quick-add a subtask under the highlighted task.
+func (a *app) addSubtaskQuick() {
+	if a.mode != modeTasks {
+		return
+	}
+	calID, parentUID, ok := a.subtaskContext()
+	if !ok {
+		return
+	}
+	a.promptInput("New subtask", "Subtask: ", func(text string) { a.createTask(calID, parentUID, text) })
+}
+
+// addFull (A): open the full create form for a top-level task or an event.
+func (a *app) addFull() {
+	if a.mode == modeTasks {
+		calID := a.selectedTasklistID()
 		if calID == "" {
-			a.flash("No calendar selected")
+			a.flash("No task list selected — create one first")
 			return
 		}
-		base := a.anchor
-		if a.mode == modeAgenda {
-			base = model.DayStart(a.now)
-		}
-		a.promptInput("New event", "Event: ", func(text string) {
-			a.createEvent(calID, base, text)
-		})
+		a.showCreateTodoForm(calID, "")
+		return
 	}
+	calID, base, ok := a.eventCreateContext()
+	if !ok {
+		return
+	}
+	a.showCreateEventForm(calID, base)
+}
+
+// addSubtaskFull (S): full create form for a subtask under the highlighted task.
+func (a *app) addSubtaskFull() {
+	if a.mode != modeTasks {
+		return
+	}
+	calID, parentUID, ok := a.subtaskContext()
+	if !ok {
+		return
+	}
+	a.showCreateTodoForm(calID, parentUID)
+}
+
+// eventCreateContext resolves the target calendar and default day for a new event.
+func (a *app) eventCreateContext() (calID string, base time.Time, ok bool) {
+	calID = a.selectedCalendarID()
+	if calID == "" {
+		a.flash("No calendar selected")
+		return "", time.Time{}, false
+	}
+	base = a.anchor
+	if a.mode == modeAgenda {
+		base = model.DayStart(a.now)
+	}
+	return calID, base, true
+}
+
+// subtaskContext resolves the target list and the highlighted task as parent.
+func (a *app) subtaskContext() (calID, parentUID string, ok bool) {
+	calID = a.selectedTasklistID()
+	if calID == "" {
+		a.flash("No task list selected")
+		return "", "", false
+	}
+	node := a.tree.GetCurrentNode()
+	if node == nil {
+		a.flash("Select a task to add a subtask under")
+		return "", "", false
+	}
+	t, isTodo := node.GetReference().(*model.Todo)
+	if !isTodo {
+		a.flash("Select a task to add a subtask under")
+		return "", "", false
+	}
+	return calID, t.UID, true
 }
 
 // createTask parses a quick-add line and writes a new task under parentUID.
@@ -139,7 +214,7 @@ func (a *app) createTask(calID, parentUID, text string) {
 		a.flash("Add failed: " + err.Error())
 		return
 	}
-	a.undo = append(a.undo, undoStep{calID: calID, name: name, label: "add task", selUID: uid})
+	a.pushUndo("add task", uid, undoOp{calID: calID, name: name})
 	a.refresh(uid)
 	a.flash("Added task")
 }
@@ -173,7 +248,7 @@ func (a *app) createEvent(calID string, base time.Time, text string) {
 		a.flash("Add failed: " + err.Error())
 		return
 	}
-	a.undo = append(a.undo, undoStep{calID: calID, name: name, label: "add event", selUID: uid})
+	a.pushUndo("add event", uid, undoOp{calID: calID, name: name})
 	a.refresh(uid)
 	a.flash("Added event")
 }
@@ -195,7 +270,13 @@ func (a *app) toggleComplete() {
 		a.flash("Task not found")
 		return
 	}
-	newObj, err := model.SetTodoCompleted(loc.Object, t.uid, !td.Completed(), a.now, a.loc)
+	// A folder (has incomplete children) can't be completed until they are.
+	if !td.Completed() && a.hasIncompleteChildren(t.uid) {
+		a.flash("Finish or remove its subtasks first")
+		return
+	}
+	completing := !td.Completed()
+	newObj, err := model.SetTodoCompleted(loc.Object, t.uid, completing, a.now, a.loc)
 	if err != nil {
 		a.flash(err.Error())
 		return
@@ -204,8 +285,49 @@ func (a *app) toggleComplete() {
 		a.flash("Update failed: " + err.Error())
 		return
 	}
-	a.undo = append(a.undo, undoStep{calID: loc.CalID, name: loc.Name, prev: loc.Prev, label: "toggle done", selUID: t.uid})
+	// Keep a just-completed task visible until the list is left (see refresh).
+	if completing && !a.showCompleted && a.mode == modeTasks {
+		a.stickyDone[t.uid] = true
+	}
+	a.pushUndo("toggle done", t.uid, undoOp{calID: loc.CalID, name: loc.Name, prev: loc.Prev})
 	a.refresh(t.uid)
+}
+
+// hasIncompleteChildren reports whether any todo anywhere is an incomplete child
+// of uid — the definition of a "folder".
+func (a *app) hasIncompleteChildren(uid string) bool {
+	for _, t := range a.store.Todos() {
+		if t.ParentUID == uid && !t.Completed() {
+			return true
+		}
+	}
+	return false
+}
+
+// descendants returns every UID beneath uid in the subtask tree (all depths),
+// so deleting a task can take its whole subtree with it.
+func (a *app) descendants(uid string) []string {
+	childrenOf := map[string][]string{}
+	for _, t := range a.store.Todos() {
+		if t.ParentUID != "" {
+			childrenOf[t.ParentUID] = append(childrenOf[t.ParentUID], t.UID)
+		}
+	}
+	var out []string
+	seen := map[string]bool{uid: true} // guard against malformed cycles
+	var walk func(u string)
+	walk = func(u string) {
+		for _, c := range childrenOf[u] {
+			if seen[c] {
+				continue
+			}
+			seen[c] = true
+			out = append(out, c)
+			walk(c)
+		}
+	}
+	walk(uid)
+	return out
 }
 
 // --- delete (d) ---
@@ -222,12 +344,28 @@ func (a *app) deleteSelected() {
 		return
 	}
 	what := summaryOf(loc.Object, t.uid)
-	a.confirm("Delete \""+oneLine(what)+"\"?", func() {
-		if err := a.store.Delete(context.Background(), loc.CalID, loc.Name); err != nil {
-			a.flash("Delete failed: " + err.Error())
-			return
+
+	// A task's subtree is deleted with it (deleting a folder is recursive).
+	kids := a.descendants(t.uid)
+	prompt := "Delete \"" + oneLine(what) + "\"?"
+	if n := len(kids); n > 0 {
+		prompt = "Delete \"" + oneLine(what) + "\" and its " + strconv.Itoa(n) + " subtask(s)?"
+	}
+
+	a.confirm(prompt, func() {
+		var ops []undoOp
+		for _, uid := range append([]string{t.uid}, kids...) {
+			l, ok := a.store.Locate(uid)
+			if !ok {
+				continue
+			}
+			if err := a.store.Delete(context.Background(), l.CalID, l.Name); err != nil {
+				a.flash("Delete failed: " + err.Error())
+				return
+			}
+			ops = append(ops, undoOp{calID: l.CalID, name: l.Name, prev: l.Prev})
 		}
-		a.undo = append(a.undo, undoStep{calID: loc.CalID, name: loc.Name, prev: loc.Prev, label: "delete", selUID: t.uid})
+		a.pushUndo("delete", "", ops...)
 		a.refresh("")
 		a.flash("Deleted (u to undo)")
 	})
@@ -289,7 +427,7 @@ func (a *app) reparentSelected(dir reparentDir) {
 		a.flash("Move failed: " + err.Error())
 		return
 	}
-	a.undo = append(a.undo, undoStep{calID: loc.CalID, name: loc.Name, prev: loc.Prev, label: "re-parent", selUID: td.UID})
+	a.pushUndo("re-parent", td.UID, undoOp{calID: loc.CalID, name: loc.Name, prev: loc.Prev})
 	a.refresh(td.UID)
 	a.flash("Moved task")
 }
@@ -334,60 +472,51 @@ func (a *app) editSelected() {
 	}
 }
 
-func (a *app) showTodoForm(loc store.Located, uid string) {
-	td := findTodo(loc.Object, uid)
-	if td == nil {
-		a.flash("Task not found")
-		return
-	}
-	dueDate, dueTime := "", ""
-	if td.HasDue {
-		dueDate = td.Due.In(a.loc).Format("2006-01-02")
-		if !td.DueAllDay {
-			dueTime = td.Due.In(a.loc).Format("15:04")
+// newTodoForm builds the task field set, pre-filled from td (nil = a blank
+// create form). Buttons and border are added by the caller.
+func (a *app) newTodoForm(td *model.Todo) *tview.Form {
+	summary, desc, tags, dueDate, dueTime := "", "", "", "", ""
+	prio, completed := 0, false
+	if td != nil {
+		summary, desc = td.Summary, td.Description
+		tags = strings.Join(td.Categories, ", ")
+		prio, completed = td.Priority, td.Completed()
+		if td.HasDue {
+			dueDate = td.Due.In(a.loc).Format("2006-01-02")
+			if !td.DueAllDay {
+				dueTime = td.Due.In(a.loc).Format("15:04")
+			}
 		}
 	}
-
 	form := tview.NewForm()
-	form.AddInputField("Summary", td.Summary, 0, nil, nil)
-	form.AddInputField("Description", td.Description, 0, nil, nil)
+	form.AddInputField("Summary", summary, 0, nil, nil)
+	form.AddInputField("Description", desc, 0, nil, nil)
 	form.AddInputField("Due date (YYYY-MM-DD)", dueDate, 12, nil, nil)
 	form.AddInputField("Due time (HH:MM)", dueTime, 8, nil, nil)
-	form.AddDropDown("Priority", priorityOptions, td.Priority, nil)
-	form.AddInputField("Tags (comma-sep)", strings.Join(td.Categories, ", "), 0, nil, nil)
-	form.AddCheckbox("Completed", td.Completed(), nil)
-	form.AddButton("Save", func() { a.saveTodoForm(form, loc, uid) })
-	form.AddButton("Cancel", func() { a.closeModal(pageForm) })
-	form.SetCancelFunc(func() { a.closeModal(pageForm) })
+	form.AddDropDown("Priority", priorityOptions, prio, nil)
+	form.AddInputField("Tags (comma-sep)", tags, 0, nil, nil)
+	form.AddCheckbox("Completed", completed, nil)
 	styleBWForm(form)
-	form.SetBorder(true).SetTitle(" Edit task ")
-	a.openModal(pageForm, form, 62, 19)
+	return form
 }
 
-func (a *app) saveTodoForm(form *tview.Form, loc store.Located, uid string) {
-	td := findTodo(loc.Object, uid)
-	if td == nil {
-		a.flash("Task not found")
-		return
-	}
+// readTodoDraft reads the task fields from the form. ParentUID is left empty for
+// the caller to set (preserve on edit, assign on create).
+func (a *app) readTodoDraft(form *tview.Form) (model.TodoDraft, error) {
 	date, hasDate, err := parseDateField(formText(form, "Due date (YYYY-MM-DD)"), a.loc)
 	if err != nil {
-		a.flash("Due date: " + err.Error())
-		return
+		return model.TodoDraft{}, errField("Due date", err)
 	}
 	h, m, hasTime, err := parseTimeField(formText(form, "Due time (HH:MM)"))
 	if err != nil {
-		a.flash("Due time: " + err.Error())
-		return
+		return model.TodoDraft{}, errField("Due time", err)
 	}
 	prio, _ := form.GetFormItemByLabel("Priority").(*tview.DropDown).GetCurrentOption()
-
 	d := model.TodoDraft{
 		Summary:     formText(form, "Summary"),
 		Description: formText(form, "Description"),
 		Priority:    prio, // dropdown index maps directly: 0 = none, 1..9 = priority
 		Categories:  splitTags(formText(form, "Tags (comma-sep)")),
-		ParentUID:   td.ParentUID, // preserve the existing parent
 		Completed:   form.GetFormItemByLabel("Completed").(*tview.Checkbox).IsChecked(),
 	}
 	if hasDate {
@@ -398,71 +527,107 @@ func (a *app) saveTodoForm(form *tview.Form, loc store.Located, uid string) {
 			d.Due, d.DueAllDay = date, true
 		}
 	}
-
-	newObj, err := model.EditTodo(loc.Object, uid, d, a.now, a.loc)
-	if err != nil {
-		a.flash(err.Error())
-		return
-	}
-	if _, err := a.store.Put(context.Background(), loc.CalID, loc.Name, newObj); err != nil {
-		a.flash("Save failed: " + err.Error())
-		return
-	}
-	a.undo = append(a.undo, undoStep{calID: loc.CalID, name: loc.Name, prev: loc.Prev, label: "edit task", selUID: uid})
-	a.closeModal(pageForm)
-	a.refresh(uid)
-	a.flash("Saved")
+	return d, nil
 }
 
-func (a *app) showEventForm(loc store.Located, uid string) {
-	ev := findEvent(loc.Object, uid)
-	if ev == nil {
-		a.flash("Event not found")
+func (a *app) showTodoForm(loc store.Located, uid string) {
+	td := findTodo(loc.Object, uid)
+	if td == nil {
+		a.flash("Task not found")
 		return
 	}
-	startDate := ev.Start.In(a.loc).Format("2006-01-02")
-	startTime, endDate, endTime := "", "", ""
-	if ev.AllDay {
-		// DTEND is exclusive; show the inclusive last day.
-		if !ev.End.IsZero() {
-			endDate = ev.End.In(a.loc).AddDate(0, 0, -1).Format("2006-01-02")
+	form := a.newTodoForm(td)
+	form.AddButton("Save", func() {
+		d, err := a.readTodoDraft(form)
+		if err != nil {
+			a.flash(err.Error())
+			return
 		}
-	} else {
-		startTime = ev.Start.In(a.loc).Format("15:04")
-		if !ev.End.IsZero() {
-			endDate = ev.End.In(a.loc).Format("2006-01-02")
-			endTime = ev.End.In(a.loc).Format("15:04")
+		d.ParentUID = td.ParentUID // preserve the existing parent
+		newObj, err := model.EditTodo(loc.Object, uid, d, a.now, a.loc)
+		if err != nil {
+			a.flash(err.Error())
+			return
+		}
+		a.commitMutation(loc.CalID, loc.Name, newObj, loc.Prev, "edit task", uid, "Saved")
+	})
+	form.AddButton("Cancel", func() { a.closeModal(pageForm) })
+	form.SetCancelFunc(func() { a.closeModal(pageForm) })
+	form.SetBorder(true).SetTitle(" Edit task ")
+	a.openModal(pageForm, form, 62, 19)
+}
+
+func (a *app) showCreateTodoForm(calID, parentUID string) {
+	title := " New task "
+	if parentUID != "" {
+		title = " New subtask "
+	}
+	form := a.newTodoForm(nil)
+	form.AddButton("Create", func() {
+		d, err := a.readTodoDraft(form)
+		if err != nil {
+			a.flash(err.Error())
+			return
+		}
+		if strings.TrimSpace(d.Summary) == "" {
+			a.flash("A summary is required")
+			return
+		}
+		d.ParentUID = parentUID
+		obj := model.NewTodoObject(d, a.now)
+		uid := obj.Todos[0].UID
+		a.commitMutation(calID, store.ResourceName(uid), obj, nil, "add task", uid, "Added task")
+	})
+	form.AddButton("Cancel", func() { a.closeModal(pageForm) })
+	form.SetCancelFunc(func() { a.closeModal(pageForm) })
+	form.SetBorder(true).SetTitle(title)
+	a.openModal(pageForm, form, 62, 19)
+}
+
+// newEventForm builds the event field set, pre-filled from ev (nil = a blank
+// create form defaulting the start date to defaultDay).
+func (a *app) newEventForm(ev *model.Event, defaultDay time.Time) *tview.Form {
+	summary, desc, location := "", "", ""
+	allDay := true
+	startDate := defaultDay.In(a.loc).Format("2006-01-02")
+	startTime, endDate, endTime := "", "", ""
+	if ev != nil {
+		summary, desc, location = ev.Summary, ev.Description, ev.Location
+		allDay = ev.AllDay
+		startDate = ev.Start.In(a.loc).Format("2006-01-02")
+		if ev.AllDay {
+			if !ev.End.IsZero() { // DTEND is exclusive; show the inclusive last day
+				endDate = ev.End.In(a.loc).AddDate(0, 0, -1).Format("2006-01-02")
+			}
+		} else {
+			startTime = ev.Start.In(a.loc).Format("15:04")
+			if !ev.End.IsZero() {
+				endDate = ev.End.In(a.loc).Format("2006-01-02")
+				endTime = ev.End.In(a.loc).Format("15:04")
+			}
 		}
 	}
-
 	form := tview.NewForm()
-	form.AddInputField("Summary", ev.Summary, 0, nil, nil)
-	form.AddInputField("Description", ev.Description, 0, nil, nil)
-	form.AddInputField("Location", ev.Location, 0, nil, nil)
-	form.AddCheckbox("All day", ev.AllDay, nil)
+	form.AddInputField("Summary", summary, 0, nil, nil)
+	form.AddInputField("Description", desc, 0, nil, nil)
+	form.AddInputField("Location", location, 0, nil, nil)
+	form.AddCheckbox("All day", allDay, nil)
 	form.AddInputField("Start date (YYYY-MM-DD)", startDate, 12, nil, nil)
 	form.AddInputField("Start time (HH:MM)", startTime, 8, nil, nil)
 	form.AddInputField("End date (YYYY-MM-DD)", endDate, 12, nil, nil)
 	form.AddInputField("End time (HH:MM)", endTime, 8, nil, nil)
-	form.AddButton("Save", func() { a.saveEventForm(form, loc, uid) })
-	form.AddButton("Cancel", func() { a.closeModal(pageForm) })
-	form.SetCancelFunc(func() { a.closeModal(pageForm) })
 	styleBWForm(form)
-	form.SetBorder(true).SetTitle(" Edit event ")
-	a.openModal(pageForm, form, 62, 21)
+	return form
 }
 
-func (a *app) saveEventForm(form *tview.Form, loc store.Located, uid string) {
+func (a *app) readEventDraft(form *tview.Form) (model.EventDraft, error) {
 	allDay := form.GetFormItemByLabel("All day").(*tview.Checkbox).IsChecked()
-
 	sd, hasSD, err := parseDateField(formText(form, "Start date (YYYY-MM-DD)"), a.loc)
 	if err != nil {
-		a.flash("Start date: " + err.Error())
-		return
+		return model.EventDraft{}, errField("Start date", err)
 	}
 	if !hasSD {
-		a.flash("Start date is required")
-		return
+		return model.EventDraft{}, errFieldMsg("Start date is required")
 	}
 
 	var start, end time.Time
@@ -470,8 +635,7 @@ func (a *app) saveEventForm(form *tview.Form, loc store.Located, uid string) {
 		start = sd
 		ed, hasED, err := parseDateField(formText(form, "End date (YYYY-MM-DD)"), a.loc)
 		if err != nil {
-			a.flash("End date: " + err.Error())
-			return
+			return model.EventDraft{}, errField("End date", err)
 		}
 		last := sd
 		if hasED {
@@ -481,50 +645,97 @@ func (a *app) saveEventForm(form *tview.Form, loc store.Located, uid string) {
 	} else {
 		sh, sm, _, err := parseTimeField(formText(form, "Start time (HH:MM)"))
 		if err != nil {
-			a.flash("Start time: " + err.Error())
-			return
+			return model.EventDraft{}, errField("Start time", err)
 		}
 		start = time.Date(sd.Year(), sd.Month(), sd.Day(), sh, sm, 0, 0, a.loc)
-
 		ed, hasED, err := parseDateField(formText(form, "End date (YYYY-MM-DD)"), a.loc)
 		if err != nil {
-			a.flash("End date: " + err.Error())
-			return
+			return model.EventDraft{}, errField("End date", err)
 		}
 		eh, em, _, err := parseTimeField(formText(form, "End time (HH:MM)"))
 		if err != nil {
-			a.flash("End time: " + err.Error())
-			return
+			return model.EventDraft{}, errField("End time", err)
 		}
 		if hasED {
 			end = time.Date(ed.Year(), ed.Month(), ed.Day(), eh, em, 0, 0, a.loc)
 		}
 		if !end.After(start) {
-			end = start.Add(time.Hour) // sensible default when end is blank or invalid
+			end = start.Add(time.Hour) // sensible default when end is blank/invalid
 		}
 	}
-
-	d := model.EventDraft{
+	return model.EventDraft{
 		Summary:     formText(form, "Summary"),
 		Description: formText(form, "Description"),
 		Location:    formText(form, "Location"),
 		Start:       start,
 		End:         end,
 		AllDay:      allDay,
-	}
-	newObj, err := model.EditEvent(loc.Object, uid, d, a.now, a.loc)
-	if err != nil {
-		a.flash(err.Error())
+	}, nil
+}
+
+func (a *app) showEventForm(loc store.Located, uid string) {
+	ev := findEvent(loc.Object, uid)
+	if ev == nil {
+		a.flash("Event not found")
 		return
 	}
-	if _, err := a.store.Put(context.Background(), loc.CalID, loc.Name, newObj); err != nil {
+	form := a.newEventForm(ev, ev.Start)
+	form.AddButton("Save", func() {
+		d, err := a.readEventDraft(form)
+		if err != nil {
+			a.flash(err.Error())
+			return
+		}
+		newObj, err := model.EditEvent(loc.Object, uid, d, a.now, a.loc)
+		if err != nil {
+			a.flash(err.Error())
+			return
+		}
+		a.commitMutation(loc.CalID, loc.Name, newObj, loc.Prev, "edit event", uid, "Saved")
+	})
+	form.AddButton("Cancel", func() { a.closeModal(pageForm) })
+	form.SetCancelFunc(func() { a.closeModal(pageForm) })
+	form.SetBorder(true).SetTitle(" Edit event ")
+	a.openModal(pageForm, form, 62, 21)
+}
+
+func (a *app) showCreateEventForm(calID string, base time.Time) {
+	form := a.newEventForm(nil, base)
+	form.AddButton("Create", func() {
+		d, err := a.readEventDraft(form)
+		if err != nil {
+			a.flash(err.Error())
+			return
+		}
+		if strings.TrimSpace(d.Summary) == "" {
+			a.flash("A summary is required")
+			return
+		}
+		obj, err := model.NewEventObject(d, a.now)
+		if err != nil {
+			a.flash("Add failed: " + err.Error())
+			return
+		}
+		uid := obj.Events[0].UID
+		a.commitMutation(calID, store.ResourceName(uid), obj, nil, "add event", uid, "Added event")
+	})
+	form.AddButton("Cancel", func() { a.closeModal(pageForm) })
+	form.SetCancelFunc(func() { a.closeModal(pageForm) })
+	form.SetBorder(true).SetTitle(" New event ")
+	a.openModal(pageForm, form, 62, 21)
+}
+
+// commitMutation writes obj, records undo, closes the form, refreshes, and
+// flashes — the shared tail of every form Save/Create. prev nil marks a creation.
+func (a *app) commitMutation(calID, name string, obj *model.Parsed, prev *store.Resource, label, selUID, done string) {
+	if _, err := a.store.Put(context.Background(), calID, name, obj); err != nil {
 		a.flash("Save failed: " + err.Error())
 		return
 	}
-	a.undo = append(a.undo, undoStep{calID: loc.CalID, name: loc.Name, prev: loc.Prev, label: "edit event", selUID: uid})
+	a.pushUndo(label, selUID, undoOp{calID: calID, name: name, prev: prev})
 	a.closeModal(pageForm)
-	a.refresh(uid)
-	a.flash("Saved")
+	a.refresh(selUID)
+	a.flash(done)
 }
 
 // --- undo (u) ---
@@ -538,15 +749,17 @@ func (a *app) undoLast() {
 	a.undo = a.undo[:len(a.undo)-1]
 
 	ctx := context.Background()
-	var err error
-	if step.prev == nil {
-		err = a.store.Delete(ctx, step.calID, step.name)
-	} else {
-		_, err = a.store.Restore(ctx, step.calID, step.name, step.prev)
-	}
-	if err != nil {
-		a.flash("Undo failed: " + err.Error())
-		return
+	for _, op := range step.ops {
+		var err error
+		if op.prev == nil {
+			err = a.store.Delete(ctx, op.calID, op.name) // undo a creation
+		} else {
+			_, err = a.store.Restore(ctx, op.calID, op.name, op.prev)
+		}
+		if err != nil {
+			a.flash("Undo failed: " + err.Error())
+			return
+		}
 	}
 	a.refresh(step.selUID)
 	a.flash("Undid " + step.label)

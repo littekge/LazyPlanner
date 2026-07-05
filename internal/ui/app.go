@@ -92,8 +92,11 @@ type app struct {
 	anchor          time.Time
 	weekStartMonday bool
 	showCompleted   bool
-	tasklistIDs     []string // calendar ids parallel to the tasklists panel
-	agendaCount     int      // real agenda items in the left panel (0 = placeholder row)
+	tasklistIDs     []string        // calendar ids parallel to the tasklists panel
+	agendaCount     int             // real agenda items in the left panel (0 = placeholder row)
+	treeFolders     map[string]bool // task UIDs that are folders (≥1 incomplete child)
+	treeListID      string          // calendar id the tree currently shows (to detect list changes)
+	stickyDone      map[string]bool // tasks completed while hidden, kept visible until the list is left
 }
 
 // useRoundedBorders switches tview's global border runes to rounded (soft)
@@ -157,6 +160,8 @@ func newApp(s *store.Store, title string, now time.Time) *app {
 		viewMode:        viewMonth,
 		anchor:          model.DayStart(now),
 		weekStartMonday: true,
+		treeFolders:     map[string]bool{},
+		stickyDone:      map[string]bool{},
 	}
 }
 
@@ -210,7 +215,13 @@ func (a *app) build() {
 		}
 	})
 	a.tree.SetChangedFunc(func(node *tview.TreeNode) { a.showTreeNode(node) })
-	a.tree.SetSelectedFunc(func(node *tview.TreeNode) { node.SetExpanded(!node.IsExpanded()) })
+	a.tree.SetSelectedFunc(func(node *tview.TreeNode) {
+		node.SetExpanded(!node.IsExpanded())
+		// Keep the folder disclosure marker (▸/▾) in sync with the new state.
+		if t, ok := node.GetReference().(*model.Todo); ok {
+			node.SetText(a.nodeLabel(t, node.IsExpanded()))
+		}
+	})
 }
 
 func (a *app) layout() tview.Primitive {
@@ -269,6 +280,9 @@ func (a *app) showDetail(on bool) {
 // setMode switches the active overview panel and the center pane it drives.
 func (a *app) setMode(m int) {
 	a.mode = m
+	// Switching panes counts as leaving the list: stop keeping just-completed
+	// tasks pinned visible.
+	a.stickyDone = map[string]bool{}
 	switch m {
 	case modeCalendar:
 		a.showDetail(true)
@@ -320,7 +334,16 @@ func (a *app) globalKeys(ev *tcell.EventKey) *tcell.EventKey {
 			a.tv.Stop()
 			return nil
 		case 'a':
-			a.quickAdd()
+			a.addQuick()
+			return nil
+		case 'A':
+			a.addFull()
+			return nil
+		case 's':
+			a.addSubtaskQuick()
+			return nil
+		case 'S':
+			a.addSubtaskFull()
 			return nil
 		case 'e':
 			a.editSelected()
