@@ -381,22 +381,30 @@ func (a *app) setEventDetail(e *model.Event) {
 
 // --- Status bar ---
 
+// updateStatus refreshes the permanent controls line and the resting content of
+// the 3-section status bar. The left section shows the current context; a flash()
+// temporarily replaces it and persists until the next updateStatus.
 func (a *app) updateStatus() {
 	mode := [...]string{"Calendar", "Tasks", "Agenda"}[a.mode]
 	if a.mode == modeCalendar {
 		mode += " · " + [...]string{"month", "week", "day"}[a.viewMode]
 	}
+	left := fmt.Sprintf("%s · %s · %d cals · %d tasks", mode, a.anchor.Format("Jan 2 2006"), len(a.store.Calendars()), len(a.store.Todos()))
+	if n := len(a.store.LoadErrors()); n > 0 {
+		left += fmt.Sprintf("  [red]!%d load error(s)[-]", n)
+	}
+	a.statusLeft.SetText(left)
+
+	// Sync is wired in step 9; show a neutral placeholder for now.
+	a.statusRight.SetText("[gray]— not synced[-]")
+
 	completed := "off"
 	if a.showCompleted {
 		completed = "on"
 	}
-	hints := fmt.Sprintf("[1][2][3] Tab:cycle Enter/Esc:in/out | a:add e:edit d:del Space:done H/L:move u:undo | v:view n/p t:today [/]:cal | .:completed(%s) q:quit", completed)
-	right := fmt.Sprintf("%s · %s · %d cals · %d tasks", mode, a.anchor.Format("Jan 2 2006"), len(a.store.Calendars()), len(a.store.Todos()))
-	line := fmt.Sprintf("%s   [gray]|[-]   %s", hints, right)
-	if n := len(a.store.LoadErrors()); n > 0 {
-		line += fmt.Sprintf("   [red]!%d load error(s)[-]", n)
-	}
-	a.status.SetText(line)
+	// Plain text (no color tags) so the [ and ] calendar keys read literally.
+	// Kept short so it fits without truncation; the full keymap lives in ? help.
+	a.hints.SetText(fmt.Sprintf("1/2/3 panes · a/s add · e edit · d del · Space done · u undo · v view · [ ]/n/p/t cal · . completed:%s · q quit", completed))
 }
 
 // --- shared helpers ---
@@ -475,21 +483,21 @@ func whenLabel(it model.AgendaItem) string {
 	if it.AllDay {
 		return "all-day"
 	}
-	return it.Start.Format("3:04pm")
+	return it.Start.In(time.Local).Format("3:04pm")
 }
 
 func fmtWhen(t time.Time, allDay bool) string {
 	if allDay {
-		return t.Format("Mon Jan 2, 2006")
+		return t.In(time.Local).Format("Mon Jan 2, 2006")
 	}
-	return t.Format("Mon Jan 2, 2006 3:04pm")
+	return t.In(time.Local).Format("Mon Jan 2, 2006 3:04pm")
 }
 
 func fmtDate(t time.Time, allDay bool) string {
 	if allDay {
-		return t.Format("Jan 2")
+		return t.In(time.Local).Format("Jan 2")
 	}
-	return t.Format("Jan 2 3:04pm")
+	return t.In(time.Local).Format("Jan 2 3:04pm")
 }
 
 func statusText(s model.TodoStatus) string {

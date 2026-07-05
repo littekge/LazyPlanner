@@ -122,29 +122,43 @@ The vdir data lives under *data* paths, **not** `~/.cache` — it can hold offli
 - **Main pane** — follows the active overview panel:
   - **Calendars** → focus lands on the **Calendars list** (arrow keys highlight each calendar — this is where per-calendar visibility toggles will live in step 10). The Main pane shows the calendar view: month grid (default) or the week/day hourly time-grid. `Enter` dives into the grid (arrows move days, `Enter` cycles the selected day's events, `Esc` returns to the list); `[` / `]` cycle the highlighted calendar from anywhere in calendar mode, and `v`/`n`/`p`/`t` (view/prev/next/today) work regardless of where focus sits.
   - **Tasks** → focus lands on the **Tasks list**; selecting a list opens its full collapsible subtask tree in the Main pane, with inline priority / due date / completion status.
-  - **Agenda** → focus lands on the **Agenda list**; moving its highlight highlights the matching block in the Main pane (which auto-scrolls to it). The Main pane shows the day's events and tasks with full descriptions, at **full width** (the Detail pane is hidden), scrollable when a day overflows.
+  - **Agenda** → focus lands on the **Agenda list**; moving its highlight draws an **outline box** around the matching block in the Main pane (the same cursor style as the calendar's selected day), auto-scrolling to it. The Main pane shows the day's events and tasks with full descriptions, at **full width** (the Detail pane is hidden), scrollable when a day overflows.
 - **Detail pane** — the highlighted item's full fields (event: time/location/reminders/notes; task: due/priority/tags/status/notes). **Hidden in Agenda mode** so the center gets the whole width.
-- **Status bar** — contextual key hints + sync status (`✓ synced 2m ago`, `↻ syncing`, `⚠ 2 conflicts`, `⚠ offline`).
+- **Bottom two lines**:
+  - **Status bar** (upper of the two) — three sections: **left** a general status line (results of the last action — "task created", "saved", errors — and the current context when idle), **middle** a *command view* that echoes the most recently executed action in command form (lazygit-style; populated in step 10), **right** the *sync status* (`✓ synced 2m ago`, `↻ syncing`, `⚠ 2 conflicts`, `⚠ offline`; wired in step 9). The `:` command line opens as a separate input near the top of the screen (step 10).
+  - **Controls line** (very bottom) — the key hints, always visible so the basic controls never scroll away.
 
 ### Calendar views
 
 The calendar (active when Calendars is selected) has three views, cycled with `v`:
 
 - **Month** — a custom-drawn grid that fills the pane: one cell per day listing that day's events/tasks (with a `+N more` overflow line), today emphasized and adjacent-month days dimmed. The selected day is marked with an **outline box** (a cursor), never a solid fill, so event text stays readable. Selecting a day lets you cycle through *that day's* events; the Detail pane then shows the highlighted event/task's full info.
-- **Week / Day** — an **hourly time-grid** like a conventional calendar: an hour axis down the side with events drawn as blocks sized by their duration; all-day items sit in a band across the top; overlapping events are placed side-by-side. Day view is one column, week view seven. The grid scrolls vertically (e.g. PageUp/PageDown) when the day doesn't fit. (v1 uses one row per hour with simple overlap handling; proportional/overlap refinement can follow.)
+- **Week / Day** — an **hourly time-grid** like a conventional calendar: an hour axis down the side with events drawn as blocks sized by their duration; all-day items sit in a band across the top; overlapping events are placed side-by-side. Day view is one column, week view seven. The grid scrolls vertically (e.g. PageUp/PageDown) when the day doesn't fit. Like the month grid, a day can be **drilled into** (`Enter` on the selected day) to cycle its events, with the highlighted event outlined and its full info in the Detail pane; `Esc` backs out. (v1 uses one row per hour with simple overlap handling; proportional/overlap refinement can follow.)
+
+All timed values are stored in UTC and **displayed in the local timezone**; all-day items stay date-only. (A created "3pm" event is written as the equivalent UTC instant and rendered back as 3pm locally.)
 
 ### Task tree: lists in the overview, tree in Main
 
-The left **Tasks** panel lists the task lists (calendars containing todos). Selecting a list opens its full collapsible subtask tree in the **Main** pane, **rooted at the list's own name** so the top-level tasks attach to it (`→`/`←` expand/collapse), with inline priority/due/status; the Detail pane shows the highlighted task's full fields. `>` **zooms** — re-roots the Main tree at the selected task like `cd`-ing into a directory (breadcrumb shows `School / ECE384`); `<` zooms back out. A "folder" is any task with children.
+The left **Tasks** panel lists the task lists (calendars containing todos). Selecting a list opens its full collapsible subtask tree in the **Main** pane, **rooted at the list's own name** so the top-level tasks attach to it (`→`/`←` expand/collapse), with inline priority/due/status; the Detail pane shows the highlighted task's full fields. `>` **zooms** — re-roots the Main tree at the selected task like `cd`-ing into a directory (breadcrumb shows `School / ECE384`); `<` zooms back out.
+
+**Folders**: a task with at least one *incomplete* child is a "folder" and behaves like one:
+
+- Rendered with a `▸`/`▾` disclosure marker in place of the `[ ]`/`[x]` checkbox (it doubles as the expand/collapse indicator).
+- **Cannot be completed** while it still has incomplete children — finish or remove them first.
+- **Reverts to an ordinary task** (checkbox, completable) once it has no children or all its children are complete.
+- **Deleting a folder** with incomplete children requires an extra recursive confirmation and removes the whole subtree (the folder and all descendants). Deleting an ordinary task never cascades.
 
 ### Creation: quick-add with smart date parsing
 
-`a` opens a one-line input scoped to the current context (task under the selected tree node; event on the selected day). Tokens parsed from the text: dates ("fri", "jul 20", "tomorrow"), times ("5pm"), `!high`/`!1`–`!9` priority, `#tag`. Everything unparsed becomes the title. `e` on any item opens the full form for detailed editing. Parsing rules must be predictable and documented in `:help` — when in doubt, leave text in the title rather than guess.
+Two creation targets in the task tree: **create task** makes a task at the **top level** of the current list; **create subtask** makes one **under the highlighted task**. In calendar/agenda context, creation makes an **event** on the selected/current day. Each has a **quick-add** form (a one-line smart-parsed input) and a **full form**; the two are reached by distinct keys (quick vs full) — interim keys now, folded into the chorded keymap in step 10.
+
+Quick-add tokens parsed from the text: dates ("fri", "jul 20", "tomorrow", "7/20", "2026-07-20"), times ("5pm", "3:30pm", "15:00" — a bare number is never a time), `!high`/`!med`/`!low` or `!1`–`!9` priority, `#tag`. Everything unparsed becomes the title. The full form (`e` on an existing item, or the full-create key) edits every field. Parsing rules must be predictable and documented in `:help` — when in doubt, leave text in the title rather than guess.
 
 ### Colors, completed tasks, sorting, undo
 
 - **Colors**: draw with the terminal's standard 16-color palette so LazyPlanner inherits the terminal theme and renders correctly everywhere (including a bare Pi console/TTY) — lazygit's approach. Server calendar colors are mapped to the nearest palette color.
-- **Completed tasks**: hidden from the tree by default (keeps deep trees clean); `.` toggles showing them struck-through in place — the dotfiles gesture, fitting the file-explorer metaphor. Completion state always remains in the data and on the server.
+- **Window chrome**: panes and dialogs use **rounded (soft) corners**; the focused pane is shown by border *color* (yellow), not a heavier line. Modal dialogs are deliberately monochrome — the confirm prompt and the edit-form fields are **black/white** (a field is black when idle, inverted to white when focused) for maximum legibility.
+- **Completed tasks**: hidden from the tree by default (keeps deep trees clean); `.` toggles showing them struck-through in place — the dotfiles gesture, fitting the file-explorer metaphor. Completion state always remains in the data and on the server. **Checking off a task while completed are hidden keeps it visible** (shown done) until you leave the list — switching to another list or to the calendar/agenda — so you can see what you just did; opening/closing a popup does *not* trigger the hide.
 - **Sibling task order**: smart sort — due date (soonest first), then priority, then title. Predictable and zero-maintenance; the sort key can become configurable later. Manual ordering rejected: iCal has no standard order field, so hand-arranged order wouldn't reliably survive other clients.
 - **Undo**: session-scoped undo stack on the `u` key — every local mutation (edit, delete, complete, re-parent) pushes the prior `.ics` version onto an in-memory stack. Cheap on this storage model, and the safety net that makes single-key actions trustworthy. Persistent trash deferred unless it proves needed.
 
@@ -166,11 +180,12 @@ Chosen sizes are remembered across launches in the state file under the data dir
 | `Tab` / `Shift-Tab` | Cycle pane focus |
 | `+` / `-` | Expand / restore the Main pane (accordion) |
 | `Ctrl-←` / `Ctrl-→` | Widen / narrow the focused side pane (keyboard resize) |
-| `Enter` | Select / open in Main |
-| `a` | Quick-add (contextual) |
+| `Enter` | Select / open in Main (drill into a day and cycle its events) |
+| `a` / `A` | Quick-add / full-form create — task at the list's top level (Tasks) or event on the selected day (Calendar/Agenda) |
+| `s` / `S` | Quick-add / full-form create **subtask** under the highlighted task |
 | `e` | Edit selected (full form) |
-| `Space` | Toggle task done |
-| `d` | Delete selected (with confirm) |
+| `Space` | Toggle task done (no-op where nothing is toggleable) |
+| `d` | Delete selected (with confirm; recursive confirm for a non-empty folder) |
 | `>` / `<` | Zoom into / out of task subtree |
 | `H` / `L` | Outdent / indent task (re-parent) |
 | `u` | Undo last local change (session stack) |
@@ -181,8 +196,18 @@ Chosen sizes are remembered across launches in the state file under the data dir
 | `t` | Jump to today |
 | `g` | Go to date (smart-parsed input) |
 | `/` | Filter/search current pane |
-| `S` | Sync now |
-| `:` | Command mode |
+| `:` | Command mode (`:sync`, etc.) |
+
+> **Note:** the interim create keys above (`a`/`A`/`s`/`S`) are placeholders. Step 10 replaces the whole scheme with a **vim-style chorded keymap** (below); e.g. `a` becomes a prefix (`at`/`as`/`ac`/`al`) rather than a standalone action.
+
+### Future keymap: vim-style chords (step 10)
+
+The keyboard interface is meant to feel like **vim, not lazygit**: related actions are grouped under a common prefix and pressed as short sequences, so once learned the whole app is fast to drive. Nearly every reasonable action gets a binding. Sketch of the intended scheme (to be finalized in step 10):
+
+- **`a` — add/create**: `at` task, `as` subtask, `ac` calendar, `al` list, `ae` event (with a capital or trailing modifier for the full form vs quick-add).
+- **`d` — delete**, **`c`/`e` — change/edit**, **`y`/`p` — yank/paste** (move tasks between lists/parents), **`g` — go/goto**, **`m` — move (re-parent)**.
+- **`z` — fold/zoom** the tree, **counts + motions** where they make sense (`3j`).
+- A discoverable **which-key style** hint popup after a prefix, and `?` for the full cheat sheet.
 | `?` | Help overlay |
 | `q` / `Esc` | Quit / back out (zoom, dialogs) |
 
@@ -207,9 +232,9 @@ Incremental steps; each ends with passing tests (`go test ./...`, vet, staticche
 5. **CalDAV one-way import** — `internal/caldav` + a first `:import`-style path: connect to NextCloud, discover calendars/todo lists, download everything into the vdir. Doing this *before* building real UI validates the model against real-world NextCloud data early, when fixing parsing assumptions is cheap.
 6. **UI shell (read-only)** — pane layout, navigation between panes, a todo-list view and a simple agenda view over real imported data.
 7. **Calendar views** — month / week / day grids with movement keys.
-8. **Editing** — create / edit / complete / delete todos and events from the UI; writes go to the local vdir only.
-9. **Two-way sync** — ETag-based diff, push local changes, pull remote changes, conflict handling, manual sync trigger. **This completes the must-have feature.**
-10. **Command mode & keybinding polish** — `:` command line, single-key shortcut coverage, help screen, mouse support pass, and interactive pane sizing (accordion expand + keyboard resize; chosen sizes remembered in the state file).
+8. **Editing** — create / edit / complete / delete todos and events from the UI; writes go to the local vdir only. Separate **create-task** (top level) and **create-subtask** (under the selection) actions; **quick-add smart parser** with a toggle to a **full form** (both offered as distinct keys for now); tasks with incomplete children behave as **folders** (see Data model); session **undo**; indent/outdent (re-parent). Cosmetic pass: rounded borders, black/white dialogs, outline-box selection in the agenda (matching the calendar).
+9. **Two-way sync** — ETag-based diff, push local changes, pull remote changes, conflict handling, manual sync trigger. **This completes the must-have feature.** Also: **in-app calendar / todo-list creation and deletion** (CalDAV `MKCALENDAR` / `DELETE` via `internal/caldav`) — created offline-first (a local collection made now, the server round-trip on push) — and wiring the **sync-status indicator** in the status bar.
+10. **Command mode & keybinding polish** — `:` command line (opens an input line near the top; the status bar's middle "command view" echoes the most recently executed action, lazygit-style), a **vim-style chorded keymap** (group related actions under a prefix — e.g. `a` → `at` task, `as` subtask, `ac` calendar, `al` list; map as many actions as possible to short sequences), single-key shortcut coverage, help screen, mouse support pass, and interactive pane sizing (accordion expand + keyboard resize; chosen sizes remembered in the state file).
 11. **Recurrence editing semantics** — "this occurrence / this and future / all" editing flows.
 12. **Background sync + polish** — periodic sync, sync status indicator, error surfacing in the UI.
 13. **Raspberry Pi target** — ARM cross-compile, performance check on hardware, dedicated-terminal (kiosk) setup notes.

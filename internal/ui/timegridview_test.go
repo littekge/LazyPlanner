@@ -45,7 +45,8 @@ func TestTimeGridDrawsDay(t *testing.T) {
 	tg.scrollHour = 8
 	day := time.Date(2026, 7, 4, 0, 0, 0, 0, time.UTC)
 
-	timedEv := &model.Event{Summary: "Team sync", Start: time.Date(2026, 7, 4, 9, 0, 0, 0, time.UTC)}
+	// Local time: the grid renders in the local zone, so 9am here stays 9am.
+	timedEv := &model.Event{Summary: "Team sync", Start: time.Date(2026, 7, 4, 9, 0, 0, 0, time.Local)}
 	allDayEv := &model.Event{Summary: "Holiday", AllDay: true, Start: day}
 	timed := map[string][]model.Occurrence{
 		dayKey(day): {{Start: timedEv.Start, End: timedEv.Start.Add(90 * time.Minute), Event: timedEv}},

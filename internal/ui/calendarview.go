@@ -267,7 +267,7 @@ func itemLabel(it model.AgendaItem) string {
 	case it.AllDay:
 		return nonEmpty(it.Title, "(untitled)")
 	default:
-		return it.Start.Format("3pm") + " " + nonEmpty(it.Title, "(untitled)")
+		return it.Start.In(time.Local).Format("3pm") + " " + nonEmpty(it.Title, "(untitled)")
 	}
 }
 
@@ -291,10 +291,11 @@ func drawBox(screen tcell.Screen, x, y, w, h int, style tcell.Style) {
 		screen.SetContent(x, yy, tcell.RuneVLine, nil, style)
 		screen.SetContent(x+w-1, yy, tcell.RuneVLine, nil, style)
 	}
-	screen.SetContent(x, y, tcell.RuneULCorner, nil, style)
-	screen.SetContent(x+w-1, y, tcell.RuneURCorner, nil, style)
-	screen.SetContent(x, y+h-1, tcell.RuneLLCorner, nil, style)
-	screen.SetContent(x+w-1, y+h-1, tcell.RuneLRCorner, nil, style)
+	// Rounded (soft) corners, matching the pane borders.
+	screen.SetContent(x, y, '╭', nil, style)
+	screen.SetContent(x+w-1, y, '╮', nil, style)
+	screen.SetContent(x, y+h-1, '╰', nil, style)
+	screen.SetContent(x+w-1, y+h-1, '╯', nil, style)
 }
 
 func weekdayHeaderNames(mondayFirst bool) []string {

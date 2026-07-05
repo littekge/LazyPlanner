@@ -73,9 +73,13 @@ type app struct {
 	timegrid   *timeGridView
 	tree       *tview.TreeView
 	agendaView *tview.TextView
-	// Right + bottom.
-	detail *tview.TextView
-	status *tview.TextView
+	// Right + bottom. The bottom is two lines: a 3-section status bar
+	// (general/results · command-view · sync) above an always-visible controls line.
+	detail      *tview.TextView
+	statusLeft  *tview.TextView // general status + action results (and flashes)
+	statusMid   *tview.TextView // command view — populated in step 10
+	statusRight *tview.TextView // sync status — wired in step 9
+	hints       *tview.TextView // permanent key-hints line at the very bottom
 
 	body     *tview.Flex  // holds left | center | detail; used to hide detail
 	root     *tview.Pages // top-level: the main layout plus modal overlays
@@ -92,8 +96,26 @@ type app struct {
 	agendaCount     int      // real agenda items in the left panel (0 = placeholder row)
 }
 
+// useRoundedBorders switches tview's global border runes to rounded (soft)
+// corners and keeps single-line edges even when a box is focused — focus is
+// shown by border color, not a heavier line. Set once at startup; tview.Borders
+// is the library's border-config surface (not app state).
+func useRoundedBorders() {
+	tview.Borders.TopLeft = '╭'
+	tview.Borders.TopRight = '╮'
+	tview.Borders.BottomLeft = '╰'
+	tview.Borders.BottomRight = '╯'
+	tview.Borders.TopLeftFocus = '╭'
+	tview.Borders.TopRightFocus = '╮'
+	tview.Borders.BottomLeftFocus = '╰'
+	tview.Borders.BottomRightFocus = '╯'
+	tview.Borders.HorizontalFocus = tview.Borders.Horizontal
+	tview.Borders.VerticalFocus = tview.Borders.Vertical
+}
+
 // Run builds the TUI over the given store and blocks until quit.
 func Run(s *store.Store, title string) error {
+	useRoundedBorders()
 	a := newApp(s, title, time.Now())
 	a.build()
 	a.reload()
@@ -127,7 +149,10 @@ func newApp(s *store.Store, title string, now time.Time) *app {
 		tree:            tview.NewTreeView(),
 		agendaView:      tview.NewTextView(),
 		detail:          tview.NewTextView(),
-		status:          tview.NewTextView(),
+		statusLeft:      tview.NewTextView(),
+		statusMid:       tview.NewTextView(),
+		statusRight:     tview.NewTextView(),
+		hints:           tview.NewTextView(),
 		detailOn:        true,
 		viewMode:        viewMonth,
 		anchor:          model.DayStart(now),
@@ -141,7 +166,10 @@ func (a *app) build() {
 	a.agendaList.ShowSecondaryText(false).SetHighlightFullLine(true)
 	a.detail.SetDynamicColors(true).SetWrap(true)
 	a.agendaView.SetDynamicColors(true).SetWrap(true).SetScrollable(true)
-	a.status.SetDynamicColors(true)
+	a.statusLeft.SetDynamicColors(true)
+	a.statusMid.SetDynamicColors(true).SetTextAlign(tview.AlignCenter)
+	a.statusRight.SetDynamicColors(true).SetTextAlign(tview.AlignRight)
+	a.hints.SetWrap(false) // plain text so [ and ] render literally; always-visible controls
 
 	decorate(a.calendars.Box, "1 Calendars")
 	decorate(a.tasklists.Box, "2 Tasks")
@@ -196,9 +224,15 @@ func (a *app) layout() tview.Primitive {
 					AddItem(a.center, 0, 3, true).
 					AddItem(a.detail, 0, 1, false)
 
+	statusBar := tview.NewFlex(). // 3 sections: general | command view | sync
+					AddItem(a.statusLeft, 0, 2, false).
+					AddItem(a.statusMid, 0, 2, false).
+					AddItem(a.statusRight, 24, 0, false)
+
 	return tview.NewFlex().SetDirection(tview.FlexRow).
 		AddItem(a.body, 0, 1, true).
-		AddItem(a.status, 1, 0, false)
+		AddItem(statusBar, 1, 0, false).
+		AddItem(a.hints, 1, 0, false)
 }
 
 func decorate(b *tview.Box, title string) {

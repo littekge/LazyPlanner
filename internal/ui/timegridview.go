@@ -164,8 +164,10 @@ func (tg *timeGridView) Draw(screen tcell.Screen) {
 }
 
 func (tg *timeGridView) drawBlock(screen tcell.Screen, p model.Placement, colX, colW, bodyY, visible int) {
-	startH := hourFloat(p.Occ.Start)
-	endH := hourFloat(p.Occ.End)
+	startT := p.Occ.Start.In(time.Local)
+	endT := p.Occ.End.In(time.Local)
+	startH := hourFloat(startT)
+	endH := hourFloat(endT)
 
 	top := bodyY + int(math.Floor(startH)) - tg.scrollHour
 	end := bodyY + int(math.Ceil(endH)) - tg.scrollHour
@@ -202,7 +204,7 @@ func (tg *timeGridView) drawBlock(screen tcell.Screen, p model.Placement, colX, 
 	}
 	printStyled(screen, bx, top, bw, nonEmpty(p.Occ.Event.Summary, "(untitled)"), style)
 	if height >= 2 {
-		span := p.Occ.Start.Format("3:04") + "-" + p.Occ.End.Format("3:04pm")
+		span := startT.Format("3:04") + "-" + endT.Format("3:04pm")
 		printStyled(screen, bx, top+1, bw, span, style.Foreground(tcell.ColorSilver))
 	}
 }

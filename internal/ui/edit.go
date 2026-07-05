@@ -183,8 +183,7 @@ func (a *app) createEvent(calID string, base time.Time, text string) {
 func (a *app) toggleComplete() {
 	t, ok := a.currentTarget()
 	if !ok || !t.isTodo {
-		a.flash("Select a task to toggle done")
-		return
+		return // nothing toggleable here; stay silent
 	}
 	loc, ok := a.store.Locate(t.uid)
 	if !ok {
@@ -350,16 +349,17 @@ func (a *app) showTodoForm(loc store.Located, uid string) {
 	}
 
 	form := tview.NewForm()
-	form.AddInputField("Summary", td.Summary, 40, nil, nil)
-	form.AddInputField("Description", td.Description, 40, nil, nil)
-	form.AddInputField("Due date (YYYY-MM-DD)", dueDate, 20, nil, nil)
-	form.AddInputField("Due time (HH:MM)", dueTime, 12, nil, nil)
+	form.AddInputField("Summary", td.Summary, 0, nil, nil)
+	form.AddInputField("Description", td.Description, 0, nil, nil)
+	form.AddInputField("Due date (YYYY-MM-DD)", dueDate, 12, nil, nil)
+	form.AddInputField("Due time (HH:MM)", dueTime, 8, nil, nil)
 	form.AddDropDown("Priority", priorityOptions, td.Priority, nil)
-	form.AddInputField("Tags (comma-sep)", strings.Join(td.Categories, ", "), 40, nil, nil)
+	form.AddInputField("Tags (comma-sep)", strings.Join(td.Categories, ", "), 0, nil, nil)
 	form.AddCheckbox("Completed", td.Completed(), nil)
 	form.AddButton("Save", func() { a.saveTodoForm(form, loc, uid) })
 	form.AddButton("Cancel", func() { a.closeModal(pageForm) })
 	form.SetCancelFunc(func() { a.closeModal(pageForm) })
+	styleBWForm(form)
 	form.SetBorder(true).SetTitle(" Edit task ")
 	a.openModal(pageForm, form, 62, 19)
 }
@@ -436,17 +436,18 @@ func (a *app) showEventForm(loc store.Located, uid string) {
 	}
 
 	form := tview.NewForm()
-	form.AddInputField("Summary", ev.Summary, 40, nil, nil)
-	form.AddInputField("Description", ev.Description, 40, nil, nil)
-	form.AddInputField("Location", ev.Location, 40, nil, nil)
+	form.AddInputField("Summary", ev.Summary, 0, nil, nil)
+	form.AddInputField("Description", ev.Description, 0, nil, nil)
+	form.AddInputField("Location", ev.Location, 0, nil, nil)
 	form.AddCheckbox("All day", ev.AllDay, nil)
-	form.AddInputField("Start date (YYYY-MM-DD)", startDate, 20, nil, nil)
-	form.AddInputField("Start time (HH:MM)", startTime, 12, nil, nil)
-	form.AddInputField("End date (YYYY-MM-DD)", endDate, 20, nil, nil)
-	form.AddInputField("End time (HH:MM)", endTime, 12, nil, nil)
+	form.AddInputField("Start date (YYYY-MM-DD)", startDate, 12, nil, nil)
+	form.AddInputField("Start time (HH:MM)", startTime, 8, nil, nil)
+	form.AddInputField("End date (YYYY-MM-DD)", endDate, 12, nil, nil)
+	form.AddInputField("End time (HH:MM)", endTime, 8, nil, nil)
 	form.AddButton("Save", func() { a.saveEventForm(form, loc, uid) })
 	form.AddButton("Cancel", func() { a.closeModal(pageForm) })
 	form.SetCancelFunc(func() { a.closeModal(pageForm) })
+	styleBWForm(form)
 	form.SetBorder(true).SetTitle(" Edit event ")
 	a.openModal(pageForm, form, 62, 21)
 }
@@ -680,8 +681,30 @@ func (a *app) confirm(text string, onYes func()) {
 				onYes()
 			}
 		})
+	// Monochrome: white card, black text, black buttons that invert when focused.
+	modal.SetBackgroundColor(tcell.ColorWhite)
+	modal.SetTextColor(tcell.ColorBlack)
+	modal.SetButtonBackgroundColor(tcell.ColorBlack)
+	modal.SetButtonTextColor(tcell.ColorWhite)
+	modal.SetButtonActivatedStyle(tcell.StyleDefault.Background(tcell.ColorWhite).Foreground(tcell.ColorBlack))
 	a.root.AddPage(pageConfirm, modal, true, true)
 	a.tv.SetFocus(modal)
+}
+
+// styleBWForm gives a form the monochrome look: a white card with black labels
+// and black input boxes (white text). Note: tview applies one field style to
+// every field each frame, so a per-field "white when focused" invert isn't
+// possible without a custom form — the black boxes on a white card read clearly.
+func styleBWForm(form *tview.Form) {
+	form.SetBackgroundColor(tcell.ColorWhite)
+	form.SetLabelColor(tcell.ColorBlack)
+	form.SetFieldBackgroundColor(tcell.ColorBlack)
+	form.SetFieldTextColor(tcell.ColorWhite)
+	form.SetButtonBackgroundColor(tcell.ColorBlack)
+	form.SetButtonTextColor(tcell.ColorWhite)
+	form.SetButtonActivatedStyle(tcell.StyleDefault.Background(tcell.ColorWhite).Foreground(tcell.ColorBlack))
+	form.SetBorderColor(tcell.ColorBlack)
+	form.SetTitleColor(tcell.ColorBlack)
 }
 
 // modalWrap centers prim in a transparent full-screen flex so the main layout
@@ -696,7 +719,9 @@ func modalWrap(prim tview.Primitive, width, height int) tview.Primitive {
 		AddItem(nil, 0, 1, false)
 }
 
-func (a *app) flash(msg string) { a.status.SetText(msg) }
+// flash shows a transient result/status message in the left section of the
+// status bar; it persists until the next updateStatus (i.e. the next action).
+func (a *app) flash(msg string) { a.statusLeft.SetText(msg) }
 
 // --- small helpers ---
 
