@@ -1,0 +1,110 @@
+package ui
+
+import (
+	"context"
+	"strings"
+	"testing"
+	"time"
+
+	"github.com/gdamore/tcell/v2"
+	"github.com/rivo/tview"
+
+	"github.com/littekge/LazyPlanner/internal/model"
+	"github.com/littekge/LazyPlanner/internal/store"
+)
+
+// newTestApp builds an app over the store package's shared vdir fixture with a
+// fixed clock, wired and loaded but not running the event loop.
+func newTestApp(t *testing.T, now time.Time) *app {
+	t.Helper()
+	s, err := storeFixture(t)
+	if err != nil {
+		t.Fatalf("open store fixture: %v", err)
+	}
+	a := newApp(s, "test", now)
+	a.build()
+	a.reload()
+	return a
+}
+
+// drawCells renders a primitive to an in-memory screen and returns its cells so
+// tests can inspect styles (colors), not just text.
+func drawCells(t *testing.T, p tview.Primitive, w, h int) ([]tcell.SimCell, int, int) {
+	t.Helper()
+	screen := tcell.NewSimulationScreen("")
+	if err := screen.Init(); err != nil {
+		t.Fatalf("init simulation screen: %v", err)
+	}
+	defer screen.Fini()
+	screen.SetSize(w, h)
+	p.SetRect(0, 0, w, h)
+	p.Draw(screen)
+	screen.Show()
+	cells, cw, ch := screen.GetContents()
+	return cells, cw, ch
+}
+
+// TestAgendaSelectedBlockLegible guards the fix for the illegible highlight: the
+// selected agenda block must render as an explicit black-on-white bar rather than
+// leaning on tview's palette-derived highlight contrast.
+func TestAgendaSelectedBlockLegible(t *testing.T) {
+	a := newTestApp(t, time.Date(2026, 7, 5, 12, 0, 0, 0, time.UTC))
+	items := a.dayItems(model.DayStart(a.now))
+	if len(items) == 0 {
+		t.Fatal("fixture has no agenda items on 2026-07-05; test needs a today item")
+	}
+	title := nonEmpty(items[0].Title, "(untitled)")
+
+	a.buildAgendaCenter() // selection defaults to the first item
+	cells, cw, ch := drawCells(t, a.agendaView, 80, 24)
+
+	for row := 0; row < ch; row++ {
+		var line strings.Builder
+		for col := 0; col < cw; col++ {
+			if c := cells[row*cw+col]; len(c.Runes) > 0 {
+				line.WriteRune(c.Runes[0])
+			} else {
+				line.WriteByte(' ')
+			}
+		}
+		idx := strings.Index(line.String(), title)
+		if idx < 0 {
+			continue
+		}
+		fg, bg, _ := cells[row*cw+idx].Style.Decompose()
+		if fg != tcell.ColorBlack || bg != tcell.ColorWhite {
+			t.Fatalf("selected title %q rendered fg=%v bg=%v, want black on white", title, fg, bg)
+		}
+		return
+	}
+	t.Fatalf("selected title %q not found in agenda render", title)
+}
+
+// TestTaskTreeRootIsListName guards that top-level tasks attach to the list's
+// name (the tree root), instead of dangling from an empty root node.
+func TestTaskTreeRootIsListName(t *testing.T) {
+	a := newTestApp(t, time.Date(2026, 7, 5, 12, 0, 0, 0, time.UTC))
+	if a.tasklists.GetItemCount() == 0 || len(a.tasklistIDs) == 0 {
+		t.Fatal("fixture has no task lists")
+	}
+	a.tasklists.SetCurrentItem(0)
+	a.buildTree()
+
+	id := a.selectedTasklistID()
+	cal, ok := a.store.Calendar(id)
+	if !ok {
+		t.Fatalf("selected task list %q not in store", id)
+	}
+	root := a.tree.GetRoot()
+	if got := root.GetText(); got != cal.DisplayName {
+		t.Errorf("tree root text = %q, want the list name %q", got, cal.DisplayName)
+	}
+	if len(root.GetChildren()) == 0 {
+		t.Error("expected top-level tasks attached to the root")
+	}
+}
+
+func storeFixture(t *testing.T) (*store.Store, error) {
+	t.Helper()
+	return store.Open(context.Background(), "../store/testdata/vdir")
+}

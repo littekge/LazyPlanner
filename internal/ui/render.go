@@ -161,9 +161,13 @@ func (a *app) splitOccs(days []time.Time) (timed, allday map[string][]model.Occu
 // --- Tasks center (tree) ---
 
 func (a *app) buildTree() {
-	root := tview.NewTreeNode("").SetSelectable(false)
+	// The root node shows the list's own name so the top-level tasks' connector
+	// stems attach to it (like a file tree rooted at the directory name).
+	name := "Tasks"
+	root := tview.NewTreeNode("").SetSelectable(false).SetColor(accentColor)
 	if id := a.selectedTasklistID(); id != "" {
 		if cal, ok := a.store.Calendar(id); ok {
+			name = cal.DisplayName
 			var todos []*model.Todo
 			for _, r := range cal.Resources {
 				todos = append(todos, r.Object.Todos...)
@@ -173,6 +177,7 @@ func (a *app) buildTree() {
 			}
 		}
 	}
+	root.SetText(name)
 	a.tree.SetRoot(root)
 	if kids := root.GetChildren(); len(kids) > 0 {
 		a.tree.SetCurrentNode(kids[0])
@@ -201,26 +206,83 @@ func (a *app) showTreeNode(node *tview.TreeNode) {
 // --- Agenda center (full-detail, scrollable) ---
 
 func (a *app) buildAgendaCenter() {
+	a.renderAgenda(a.currentAgendaIndex())
+}
+
+// currentAgendaIndex is the left Agenda list's selection clamped to the real
+// items (the list shows a placeholder row when the day is empty).
+func (a *app) currentAgendaIndex() int {
+	if a.agendaCount == 0 {
+		return -1
+	}
+	i := a.agendaList.GetCurrentItem()
+	if i < 0 {
+		i = 0
+	}
+	if i >= a.agendaCount {
+		i = a.agendaCount - 1
+	}
+	return i
+}
+
+// renderAgenda draws the full-detail day agenda, drawing the selected block as an
+// explicit black-on-white bar and scrolling it into view. We style the selection
+// ourselves (rather than tview's region highlight) because that highlight derives
+// contrast from a color's nominal RGB, which the terminal's 16-color palette
+// remaps — making a colored title illegible under the highlight.
+func (a *app) renderAgenda(selected int) {
 	day := model.DayStart(a.now)
 	items := a.dayItems(day)
+	a.agendaCount = len(items)
 
 	var b strings.Builder
 	fmt.Fprintf(&b, "[teal::b]%s[-:-:-]\n\n", day.Format("Monday, January 2, 2006"))
 	if len(items) == 0 {
 		b.WriteString("[gray]No events or due tasks today.[-]\n")
 	}
-	// Each block is wrapped in a text region ("item-N") so the left Agenda list
-	// can highlight the matching block as its selection moves (syncAgendaHighlight).
+	line := 2 // date line + the blank line after it
+	selStart, selHeight := -1, 0
 	for i, it := range items {
 		if i > 0 {
 			b.WriteString("\n")
+			line++
 		}
-		fmt.Fprintf(&b, "[\"item-%d\"]", i)
-		b.WriteString(agendaItemBlock(it))
+		block := agendaItemBlock(it, i == selected)
+		h := strings.Count(block, "\n")
+		if i == selected {
+			selStart, selHeight = line, h
+			fmt.Fprintf(&b, "[black:white]%s[-:-]", block)
+		} else {
+			b.WriteString(block)
+		}
+		line += h
 	}
-	b.WriteString("[\"\"]")
 	a.agendaView.SetText(b.String())
-	a.agendaView.ScrollToBeginning()
+	if selStart >= 0 {
+		a.scrollAgendaTo(selStart, selHeight)
+	} else {
+		a.agendaView.ScrollToBeginning()
+	}
+}
+
+// scrollAgendaTo scrolls the agenda only as much as needed to keep the block at
+// [start, start+height) fully visible (like a list cursor), never jumping to top.
+func (a *app) scrollAgendaTo(start, height int) {
+	_, _, _, viewH := a.agendaView.GetInnerRect()
+	if viewH <= 0 { // not laid out yet; approximate
+		a.agendaView.ScrollTo(max(0, start-1), 0)
+		return
+	}
+	top, _ := a.agendaView.GetScrollOffset()
+	if start < top {
+		top = start
+	} else if start+height > top+viewH {
+		top = start + height - viewH
+	}
+	if top < 0 {
+		top = 0
+	}
+	a.agendaView.ScrollTo(top, 0)
 }
 
 // --- Detail pane ---
@@ -342,23 +404,31 @@ func calCounts(cal store.Calendar) (events, todos int) {
 	return events, todos
 }
 
-// agendaItemBlock is a full-detail block for the Agenda center pane.
-func agendaItemBlock(it model.AgendaItem) string {
+// agendaItemBlock is a full-detail block for the Agenda center pane. When plain
+// is set it emits no color tags, so the caller can wrap it in a single uniform
+// selection style (the highlighted row) without inner tags fighting the colors.
+func agendaItemBlock(it model.AgendaItem, plain bool) string {
+	title, meta, reset := "[green]", "[gray]", "[-]"
+	if it.IsTodo() {
+		title = "[aqua]"
+	}
+	if plain {
+		title, meta, reset = "", "", ""
+	}
 	var b strings.Builder
 	if it.Todo != nil {
 		t := it.Todo
-		fmt.Fprintf(&b, "[aqua]%s  %s[-]\n", whenLabel(it), nonEmpty(t.Summary, "(untitled)"))
-		meta := fmt.Sprintf("task · %s · priority %s", statusText(t.Status), priorityText(t.Priority))
-		fmt.Fprintf(&b, "  [gray]%s[-]\n", meta)
+		fmt.Fprintf(&b, "%s%s  %s%s\n", title, whenLabel(it), nonEmpty(t.Summary, "(untitled)"), reset)
+		fmt.Fprintf(&b, "  %stask · %s · priority %s%s\n", meta, statusText(t.Status), priorityText(t.Priority), reset)
 		if t.Description != "" {
 			fmt.Fprintf(&b, "  %s\n", oneLine(t.Description))
 		}
 		return b.String()
 	}
 	e := it.Event
-	fmt.Fprintf(&b, "[green]%s  %s[-]\n", whenLabel(it), nonEmpty(e.Summary, "(untitled)"))
+	fmt.Fprintf(&b, "%s%s  %s%s\n", title, whenLabel(it), nonEmpty(e.Summary, "(untitled)"), reset)
 	if e.Location != "" {
-		fmt.Fprintf(&b, "  [gray]at %s[-]\n", e.Location)
+		fmt.Fprintf(&b, "  %sat %s%s\n", meta, e.Location, reset)
 	}
 	if e.Description != "" {
 		fmt.Fprintf(&b, "  %s\n", oneLine(e.Description))

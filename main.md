@@ -135,7 +135,7 @@ The calendar (active when Calendars is selected) has three views, cycled with `v
 
 ### Task tree: lists in the overview, tree in Main
 
-The left **Tasks** panel lists the task lists (calendars containing todos). Selecting a list opens its full collapsible subtask tree in the **Main** pane (`→`/`←` expand/collapse), with inline priority/due/status; the Detail pane shows the highlighted task's full fields. `>` **zooms** — re-roots the Main tree at the selected task like `cd`-ing into a directory (breadcrumb shows `School / ECE384`); `<` zooms back out. A "folder" is any task with children.
+The left **Tasks** panel lists the task lists (calendars containing todos). Selecting a list opens its full collapsible subtask tree in the **Main** pane, **rooted at the list's own name** so the top-level tasks attach to it (`→`/`←` expand/collapse), with inline priority/due/status; the Detail pane shows the highlighted task's full fields. `>` **zooms** — re-roots the Main tree at the selected task like `cd`-ing into a directory (breadcrumb shows `School / ECE384`); `<` zooms back out. A "folder" is any task with children.
 
 ### Creation: quick-add with smart date parsing
 

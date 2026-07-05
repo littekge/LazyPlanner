@@ -83,8 +83,22 @@ type app struct {
 
 // Run builds the read-only TUI over the given store and blocks until quit.
 func Run(s *store.Store, title string) error {
-	now := time.Now()
-	a := &app{
+	a := newApp(s, title, time.Now())
+	a.build()
+	a.reload()
+	a.setMode(modeCalendar)
+
+	if err := a.tv.SetRoot(a.layout(), true).EnableMouse(true).SetInputCapture(a.globalKeys).Run(); err != nil {
+		return fmt.Errorf("running tui: %w", err)
+	}
+	return nil
+}
+
+// newApp assembles the app and its widgets over the store. Wiring (build) and
+// data load (reload) are separate so tests can drive them headlessly with a
+// fixed clock.
+func newApp(s *store.Store, title string, now time.Time) *app {
+	return &app{
 		tv:              tview.NewApplication(),
 		store:           s,
 		title:           title,
@@ -105,14 +119,6 @@ func Run(s *store.Store, title string) error {
 		anchor:          model.DayStart(now),
 		weekStartMonday: true,
 	}
-	a.build()
-	a.reload()
-	a.setMode(modeCalendar)
-
-	if err := a.tv.SetRoot(a.layout(), true).EnableMouse(true).SetInputCapture(a.globalKeys).Run(); err != nil {
-		return fmt.Errorf("running tui: %w", err)
-	}
-	return nil
 }
 
 func (a *app) build() {
@@ -120,7 +126,7 @@ func (a *app) build() {
 	a.tasklists.ShowSecondaryText(false).SetHighlightFullLine(true)
 	a.agendaList.ShowSecondaryText(false).SetHighlightFullLine(true)
 	a.detail.SetDynamicColors(true).SetWrap(true)
-	a.agendaView.SetDynamicColors(true).SetRegions(true).SetWrap(true).SetScrollable(true)
+	a.agendaView.SetDynamicColors(true).SetWrap(true).SetScrollable(true)
 	a.status.SetDynamicColors(true)
 
 	decorate(a.calendars.Box, "1 Calendars")
@@ -158,7 +164,7 @@ func (a *app) build() {
 	a.tasklists.SetSelectedFunc(func(int, string, string, rune) { a.setFocus(a.tree) })
 	a.agendaList.SetChangedFunc(func(index int, _, _ string, _ rune) {
 		if a.mode == modeAgenda {
-			a.syncAgendaHighlight(index)
+			a.renderAgenda(index)
 		}
 	})
 	a.tree.SetChangedFunc(func(node *tview.TreeNode) { a.showTreeNode(node) })
@@ -230,7 +236,6 @@ func (a *app) setMode(m int) {
 		a.center.SwitchToPage("agenda")
 		a.buildAgendaCenter()
 		a.setFocus(a.agendaList)
-		a.syncAgendaHighlight(a.agendaList.GetCurrentItem())
 	}
 	a.updateStatus()
 }
@@ -353,17 +358,6 @@ func (a *app) cycleCalendar(delta int) {
 	}
 	i := (a.calendars.GetCurrentItem() + delta + n) % n
 	a.calendars.SetCurrentItem(i)
-}
-
-// syncAgendaHighlight highlights the center agenda block matching the left-list
-// row and scrolls it into view. Index maps 1:1 to the item blocks built by
-// buildAgendaCenter; when the day is empty the left list holds only a placeholder.
-func (a *app) syncAgendaHighlight(index int) {
-	if a.agendaCount == 0 {
-		a.agendaView.Highlight()
-		return
-	}
-	a.agendaView.Highlight(fmt.Sprintf("item-%d", index)).ScrollToHighlight()
 }
 
 // reloadCurrent rebuilds whatever the current mode shows (after a data toggle).
