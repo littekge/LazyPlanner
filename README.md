@@ -22,10 +22,12 @@ Run `lazyplanner` with no arguments to open the TUI. It reads the local cache (p
 
 **Creating and editing** (writes to the local cache only until two-way sync lands):
 
-- **`a`** — quick-add. One line, contextual: a task under the selected tree node (Tasks) or an event on the selected/current day (Calendar/Agenda). It parses smart tokens and leaves anything ambiguous in the title: dates (`today`, `tomorrow`, `fri`, `jul 20`, `7/20`, `2026-07-20`), times (`3pm`, `3:30pm`, `15:00` — a bare number stays a number), `!1`–`!9` / `!high` / `!med` / `!low` priority, and `#tag`.
-- **`e`** — full edit form for the selected item (all fields). `Esc` or Cancel to back out.
-- **`Space`** — toggle a task complete/incomplete.
-- **`d`** — delete the selected item (with a confirm).
+- **`a`** — quick-add. A top-level task (Tasks) or an event on the selected/current day (Calendar/Agenda). One line; it parses smart tokens and leaves anything ambiguous in the title: dates (`today`, `tomorrow`, `fri`, `jul 20`, `7/20`, `2026-07-20`), times (`3pm`, `3:30pm`, `15:00` — a bare number stays a number), `!1`–`!9` / `!high` / `!med` / `!low` priority, and `#tag`.
+- **`s`** — quick-add a **subtask** under the highlighted task.
+- **`A` / `S`** — the same as `a` / `s` but opening the **full form** (all fields) instead of the quick line.
+- **`e`** — full edit form for the selected item. `Esc` or Cancel to back out.
+- **`Space`** — toggle a task complete/incomplete. A task with unfinished subtasks is a **folder** (shown with `▸`/`▾`) and can't be completed until they are.
+- **`d`** — delete the selected item (with a confirm; deleting a folder removes its whole subtree).
 - **`H` / `L`** — outdent / indent the selected task (re-parent in the subtask tree).
 - **`u`** — undo the last create/edit/complete/delete this session (multi-level).
 
@@ -40,10 +42,12 @@ Full key list:
 | `[` / `]` | Cycle the highlighted calendar (calendar mode; works from the grid too) |
 | `n` / `p` | Next / previous month·week·day |
 | `t` | Jump to today |
-| `Enter` | Dive from the overview into the center: grid (calendar) · open a list / expand a task (tasks) |
+| `Enter` | Dive into the center; on a day (month **or** week/day grid) cycle its events; open a list / expand a task |
 | `Esc` | Back out to the overview (event cycling, grid, task tree) · cancel a form/dialog |
-| `a` `e` `d` | Add / edit / delete |
-| `Space` | Toggle task done |
+| `a` / `A` | Add task/event — quick line / full form |
+| `s` / `S` | Add subtask — quick line / full form |
+| `e` `d` | Edit / delete selected |
+| `Space` | Toggle task done (folders can't complete until their subtasks do) |
 | `H` / `L` | Outdent / indent task (re-parent) |
 | `u` | Undo last local change (this session) |
 | `PageUp` / `PageDown` | Scroll the week/day time-grid or the agenda |

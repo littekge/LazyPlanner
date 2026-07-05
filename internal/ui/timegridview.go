@@ -29,8 +29,12 @@ type timeGridView struct {
 	selected   time.Time
 	scrollHour int // topmost visible hour
 
-	onSelectDay func(day time.Time)
-	onExit      func() // Esc: hand focus back to the overview
+	eventMode  bool // cycling the selected day's timed events
+	eventIndex int
+
+	onSelectDay   func(day time.Time)
+	onSelectEvent func(occ model.Occurrence)
+	onExit        func() // Esc in day mode: hand focus back to the overview
 }
 
 func newTimeGridView() *timeGridView {
@@ -43,54 +47,139 @@ func (tg *timeGridView) setData(days []time.Time, timed, allDay map[string][]mod
 	tg.allDay = allDay
 	tg.selected = selected
 	tg.now = now
+	tg.eventMode = false
+	tg.eventIndex = 0
+}
+
+// dayOccs is the selected day's timed events, the set cycled in event mode.
+// (All-day items live in the band and aren't part of the grid's cycle.)
+func (tg *timeGridView) dayOccs() []model.Occurrence {
+	return tg.timed[dayKey(tg.selected)]
+}
+
+func (tg *timeGridView) emitEvent() {
+	occs := tg.dayOccs()
+	if tg.eventIndex >= 0 && tg.eventIndex < len(occs) && tg.onSelectEvent != nil {
+		tg.onSelectEvent(occs[tg.eventIndex])
+	}
+}
+
+// drillState / reDrill implement calGrid so focus can be restored into the same
+// day after a modal (see app.restoreFocus).
+func (tg *timeGridView) drillState() (time.Time, bool, int) {
+	return tg.selected, tg.eventMode, tg.eventIndex
+}
+
+func (tg *timeGridView) reDrill(day time.Time, index int) {
+	tg.selected = day
+	if occs := tg.dayOccs(); len(occs) > 0 {
+		tg.eventMode = true
+		tg.eventIndex = clampIndex(index, len(occs))
+		tg.emitEvent()
+	}
 }
 
 func (tg *timeGridView) InputHandler() func(*tcell.EventKey, func(tview.Primitive)) {
 	return tg.WrapInputHandler(func(ev *tcell.EventKey, _ func(tview.Primitive)) {
-		move := func(days int) {
-			if tg.onSelectDay != nil {
-				tg.onSelectDay(tg.selected.AddDate(0, 0, days))
-			}
+		if tg.eventMode {
+			tg.handleEventMode(ev)
+			return
 		}
-		scroll := func(by int) {
-			tg.scrollHour += by
-			if tg.scrollHour < 0 {
-				tg.scrollHour = 0
-			}
-			if tg.scrollHour > 23 {
-				tg.scrollHour = 23
-			}
-		}
-		switch ev.Key() {
-		case tcell.KeyLeft:
-			move(-1)
-		case tcell.KeyRight:
-			move(1)
-		case tcell.KeyUp:
-			scroll(-1)
-		case tcell.KeyDown:
-			scroll(1)
-		case tcell.KeyPgUp:
-			scroll(-6)
-		case tcell.KeyPgDn:
-			scroll(6)
-		case tcell.KeyEscape:
-			if tg.onExit != nil {
-				tg.onExit()
-			}
-		case tcell.KeyRune:
-			switch ev.Rune() {
-			case 'h':
-				move(-1)
-			case 'l':
-				move(1)
-			case 'k':
-				scroll(-1)
-			case 'j':
-				scroll(1)
-			}
-		}
+		tg.handleDayMode(ev)
 	})
+}
+
+func (tg *timeGridView) handleDayMode(ev *tcell.EventKey) {
+	move := func(days int) {
+		if tg.onSelectDay != nil {
+			tg.onSelectDay(tg.selected.AddDate(0, 0, days))
+		}
+	}
+	scroll := func(by int) {
+		tg.scrollHour += by
+		if tg.scrollHour < 0 {
+			tg.scrollHour = 0
+		}
+		if tg.scrollHour > 23 {
+			tg.scrollHour = 23
+		}
+	}
+	switch ev.Key() {
+	case tcell.KeyLeft:
+		move(-1)
+	case tcell.KeyRight:
+		move(1)
+	case tcell.KeyUp:
+		scroll(-1)
+	case tcell.KeyDown:
+		scroll(1)
+	case tcell.KeyPgUp:
+		scroll(-6)
+	case tcell.KeyPgDn:
+		scroll(6)
+	case tcell.KeyEnter:
+		if len(tg.dayOccs()) > 0 {
+			tg.eventMode = true
+			tg.eventIndex = 0
+			tg.emitEvent()
+		}
+	case tcell.KeyEscape:
+		if tg.onExit != nil {
+			tg.onExit()
+		}
+	case tcell.KeyRune:
+		switch ev.Rune() {
+		case 'h':
+			move(-1)
+		case 'l':
+			move(1)
+		case 'k':
+			scroll(-1)
+		case 'j':
+			scroll(1)
+		}
+	}
+}
+
+func (tg *timeGridView) handleEventMode(ev *tcell.EventKey) {
+	occs := tg.dayOccs()
+	move := func(days int) {
+		tg.eventMode = false
+		if tg.onSelectDay != nil {
+			tg.onSelectDay(tg.selected.AddDate(0, 0, days))
+		}
+	}
+	switch ev.Key() {
+	case tcell.KeyEscape:
+		tg.eventMode = false
+	case tcell.KeyUp:
+		if tg.eventIndex > 0 {
+			tg.eventIndex--
+			tg.emitEvent()
+		}
+	case tcell.KeyDown:
+		if tg.eventIndex < len(occs)-1 {
+			tg.eventIndex++
+			tg.emitEvent()
+		}
+	case tcell.KeyLeft:
+		move(-1)
+	case tcell.KeyRight:
+		move(1)
+	case tcell.KeyRune:
+		switch ev.Rune() {
+		case 'k':
+			if tg.eventIndex > 0 {
+				tg.eventIndex--
+				tg.emitEvent()
+			}
+		case 'j':
+			if tg.eventIndex < len(occs)-1 {
+				tg.eventIndex++
+				tg.emitEvent()
+			}
+		}
+	}
 }
 
 func (tg *timeGridView) Draw(screen tcell.Screen) {
@@ -154,16 +243,24 @@ func (tg *timeGridView) Draw(screen tcell.Screen) {
 		}
 	}
 
-	// Event blocks.
+	// Event blocks. In event mode the cycled event on the selected day is boxed.
+	var sel *model.Occurrence
+	if tg.eventMode {
+		if occs := tg.dayOccs(); tg.eventIndex >= 0 && tg.eventIndex < len(occs) {
+			sel = &occs[tg.eventIndex]
+		}
+	}
 	for di, day := range tg.days {
 		places := model.LayoutDay(tg.timed[dayKey(day)])
 		for _, p := range places {
-			tg.drawBlock(screen, p, colStart+di*colW, colW, bodyY, visible)
+			selected := sel != nil && model.SameDay(day, tg.selected) &&
+				p.Occ.Event == sel.Event && p.Occ.Start.Equal(sel.Start)
+			tg.drawBlock(screen, p, colStart+di*colW, colW, bodyY, visible, selected)
 		}
 	}
 }
 
-func (tg *timeGridView) drawBlock(screen tcell.Screen, p model.Placement, colX, colW, bodyY, visible int) {
+func (tg *timeGridView) drawBlock(screen tcell.Screen, p model.Placement, colX, colW, bodyY, visible int, selected bool) {
 	startT := p.Occ.Start.In(time.Local)
 	endT := p.Occ.End.In(time.Local)
 	startH := hourFloat(startT)
@@ -197,6 +294,9 @@ func (tg *timeGridView) drawBlock(screen tcell.Screen, p model.Placement, colX, 
 	bw := laneW
 
 	style := tcell.StyleDefault.Background(blockColor).Foreground(tcell.ColorWhite)
+	if selected {
+		style = tcell.StyleDefault.Background(accentColor).Foreground(tcell.ColorBlack).Bold(true)
+	}
 	for yy := top; yy < top+height; yy++ {
 		for xx := bx; xx < bx+bw; xx++ {
 			screen.SetContent(xx, yy, ' ', nil, style)

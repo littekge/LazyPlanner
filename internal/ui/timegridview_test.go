@@ -66,6 +66,33 @@ func TestTimeGridDrawsDay(t *testing.T) {
 	}
 }
 
+func TestTimeGridDrillIn(t *testing.T) {
+	tg := newTimeGridView()
+	day := time.Date(2026, 7, 4, 0, 0, 0, 0, time.Local)
+	ev := &model.Event{Summary: "E", Start: time.Date(2026, 7, 4, 9, 0, 0, 0, time.Local)}
+	timed := map[string][]model.Occurrence{
+		dayKey(day): {{Start: ev.Start, End: ev.Start.Add(time.Hour), Event: ev}},
+	}
+	tg.setData([]time.Time{day}, timed, nil, day, day)
+
+	var got *model.Event
+	tg.onSelectEvent = func(o model.Occurrence) { got = o.Event }
+	handle := tg.InputHandler()
+
+	handle(tcell.NewEventKey(tcell.KeyEnter, 0, tcell.ModNone), func(tview.Primitive) {})
+	if !tg.eventMode {
+		t.Fatal("Enter did not enter event mode")
+	}
+	if got != ev {
+		t.Fatal("onSelectEvent not called with the drilled event")
+	}
+
+	handle(tcell.NewEventKey(tcell.KeyEscape, 0, tcell.ModNone), func(tview.Primitive) {})
+	if tg.eventMode {
+		t.Error("Esc did not exit event mode")
+	}
+}
+
 func TestTimeGridArrowChangesDay(t *testing.T) {
 	tg := newTimeGridView()
 	day := time.Date(2026, 7, 4, 0, 0, 0, 0, time.UTC)

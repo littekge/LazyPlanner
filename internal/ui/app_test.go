@@ -44,10 +44,10 @@ func drawCells(t *testing.T, p tview.Primitive, w, h int) ([]tcell.SimCell, int,
 	return cells, cw, ch
 }
 
-// TestAgendaSelectedBlockLegible guards the fix for the illegible highlight: the
-// selected agenda block must render as an explicit black-on-white bar rather than
-// leaning on tview's palette-derived highlight contrast.
-func TestAgendaSelectedBlockLegible(t *testing.T) {
+// TestAgendaSelectedBlockOutlined guards that the selected agenda item is marked
+// with an outline box (matching the month view) rather than a filled bar: the
+// title keeps its own color and a rounded box corner is drawn.
+func TestAgendaSelectedBlockOutlined(t *testing.T) {
 	a := newTestApp(t, time.Date(2026, 7, 5, 12, 0, 0, 0, time.UTC))
 	items := a.dayItems(model.DayStart(a.now))
 	if len(items) == 0 {
@@ -56,8 +56,9 @@ func TestAgendaSelectedBlockLegible(t *testing.T) {
 	title := nonEmpty(items[0].Title, "(untitled)")
 
 	a.buildAgendaCenter() // selection defaults to the first item
-	cells, cw, ch := drawCells(t, a.agendaView, 80, 24)
+	cells, cw, ch := drawCells(t, a.agenda, 80, 24)
 
+	titleRow, hasCorner := -1, false
 	for row := 0; row < ch; row++ {
 		var line strings.Builder
 		for col := 0; col < cw; col++ {
@@ -67,17 +68,26 @@ func TestAgendaSelectedBlockLegible(t *testing.T) {
 				line.WriteByte(' ')
 			}
 		}
-		idx := strings.Index(line.String(), title)
-		if idx < 0 {
-			continue
+		text := line.String()
+		if titleRow < 0 && strings.Contains(text, title) {
+			titleRow = row
+			// The selected title keeps its own foreground (not inverted to black).
+			idx := strings.Index(text, title)
+			fg, _, _ := cells[row*cw+idx].Style.Decompose()
+			if fg == tcell.ColorBlack {
+				t.Errorf("selected title should keep its color, got black (inverted)")
+			}
 		}
-		fg, bg, _ := cells[row*cw+idx].Style.Decompose()
-		if fg != tcell.ColorBlack || bg != tcell.ColorWhite {
-			t.Fatalf("selected title %q rendered fg=%v bg=%v, want black on white", title, fg, bg)
+		if strings.ContainsRune(text, '╭') || strings.ContainsRune(text, '╰') {
+			hasCorner = true
 		}
-		return
 	}
-	t.Fatalf("selected title %q not found in agenda render", title)
+	if titleRow < 0 {
+		t.Fatalf("selected title %q not found in agenda render", title)
+	}
+	if !hasCorner {
+		t.Error("selected item is not outlined (no rounded box corner drawn)")
+	}
 }
 
 // TestTaskTreeRootIsListName guards that top-level tasks attach to the list's

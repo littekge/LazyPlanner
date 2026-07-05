@@ -68,11 +68,11 @@ type app struct {
 	tasklists  *tview.List
 	agendaList *tview.List
 	// Center Main pane (Pages: month, time, tree, agenda).
-	center     *tview.Pages
-	month      *calendarView
-	timegrid   *timeGridView
-	tree       *tview.TreeView
-	agendaView *tview.TextView
+	center   *tview.Pages
+	month    *calendarView
+	timegrid *timeGridView
+	tree     *tview.TreeView
+	agenda   *agendaBoard
 	// Right + bottom. The bottom is two lines: a 3-section status bar
 	// (general/results · command-view · sync) above an always-visible controls line.
 	detail      *tview.TextView
@@ -93,10 +93,26 @@ type app struct {
 	weekStartMonday bool
 	showCompleted   bool
 	tasklistIDs     []string        // calendar ids parallel to the tasklists panel
-	agendaCount     int             // real agenda items in the left panel (0 = placeholder row)
 	treeFolders     map[string]bool // task UIDs that are folders (≥1 incomplete child)
 	treeListID      string          // calendar id the tree currently shows (to detect list changes)
 	stickyDone      map[string]bool // tasks completed while hidden, kept visible until the list is left
+	savedFocus      focusState      // where focus was before a modal opened, to restore on close
+}
+
+// focusState remembers where focus was so closing a modal returns there — down
+// to a drilled-into calendar day, not just the overview pane.
+type focusState struct {
+	prim     tview.Primitive
+	calDay   time.Time
+	calEvent bool // was the calendar in event-cycling mode
+	calIndex int
+}
+
+// calGrid is implemented by the month and time-grid views so drill-in (event
+// cycling) state can be captured and restored uniformly.
+type calGrid interface {
+	drillState() (day time.Time, active bool, index int)
+	reDrill(day time.Time, index int)
 }
 
 // useRoundedBorders switches tview's global border runes to rounded (soft)
@@ -150,7 +166,7 @@ func newApp(s *store.Store, title string, now time.Time) *app {
 		month:           newCalendarView(),
 		timegrid:        newTimeGridView(),
 		tree:            tview.NewTreeView(),
-		agendaView:      tview.NewTextView(),
+		agenda:          newAgendaBoard(),
 		detail:          tview.NewTextView(),
 		statusLeft:      tview.NewTextView(),
 		statusMid:       tview.NewTextView(),
@@ -170,7 +186,6 @@ func (a *app) build() {
 	a.tasklists.ShowSecondaryText(false).SetHighlightFullLine(true)
 	a.agendaList.ShowSecondaryText(false).SetHighlightFullLine(true)
 	a.detail.SetDynamicColors(true).SetWrap(true)
-	a.agendaView.SetDynamicColors(true).SetWrap(true).SetScrollable(true)
 	a.statusLeft.SetDynamicColors(true)
 	a.statusMid.SetDynamicColors(true).SetTextAlign(tview.AlignCenter)
 	a.statusRight.SetDynamicColors(true).SetTextAlign(tview.AlignRight)
@@ -182,13 +197,13 @@ func (a *app) build() {
 	decorate(a.month.Box, "Calendar")
 	decorate(a.timegrid.Box, "Calendar")
 	decorate(a.tree.Box, "Tasks")
-	decorate(a.agendaView.Box, "Agenda")
+	decorate(a.agenda.Box, "Agenda")
 	decorate(a.detail.Box, "Detail")
 
 	a.center.AddPage("month", a.month, true, true)
 	a.center.AddPage("time", a.timegrid, true, false)
 	a.center.AddPage("tree", a.tree, true, false)
-	a.center.AddPage("agenda", a.agendaView, true, false)
+	a.center.AddPage("agenda", a.agenda, true, false)
 
 	a.borders = []bordered{
 		{a.calendars, a.calendars.Box},
@@ -197,7 +212,7 @@ func (a *app) build() {
 		{a.month, a.month.Box},
 		{a.timegrid, a.timegrid.Box},
 		{a.tree, a.tree.Box},
-		{a.agendaView, a.agendaView.Box},
+		{a.agenda, a.agenda.Box},
 	}
 
 	// Callbacks.
@@ -205,13 +220,14 @@ func (a *app) build() {
 	a.month.onSelectEvent = func(it model.AgendaItem) { a.setAgendaItemDetail(it) }
 	a.month.onExit = func() { a.setFocus(a.calendars) }
 	a.timegrid.onSelectDay = a.onCalDay
+	a.timegrid.onSelectEvent = func(o model.Occurrence) { a.setEventDetail(o.Event) }
 	a.timegrid.onExit = func() { a.setFocus(a.calendars) }
 	a.calendars.SetSelectedFunc(func(int, string, string, rune) { a.setFocus(a.calendarPrimitive()) })
 	a.tasklists.SetChangedFunc(func(int, string, string, rune) { a.buildTree() })
 	a.tasklists.SetSelectedFunc(func(int, string, string, rune) { a.setFocus(a.tree) })
 	a.agendaList.SetChangedFunc(func(index int, _, _ string, _ rune) {
 		if a.mode == modeAgenda {
-			a.renderAgenda(index)
+			a.agenda.setSelected(index)
 		}
 	})
 	a.tree.SetChangedFunc(func(node *tview.TreeNode) { a.showTreeNode(node) })

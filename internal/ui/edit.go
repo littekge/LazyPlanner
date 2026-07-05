@@ -733,8 +733,10 @@ func (a *app) commitMutation(calID, name string, obj *model.Parsed, prev *store.
 		return
 	}
 	a.pushUndo(label, selUID, undoOp{calID: calID, name: name, prev: prev})
-	a.closeModal(pageForm)
+	// Refresh first (rebuilds the calendar grid), then close — so restoreFocus
+	// can re-drill into the day the user was on.
 	a.refresh(selUID)
+	a.closeModal(pageForm)
 	a.flash(done)
 }
 
@@ -843,16 +845,56 @@ func (a *app) modalOpen() bool {
 }
 
 func (a *app) openModal(name string, prim tview.Primitive, width, height int) {
+	a.captureFocus()
 	a.root.AddPage(name, modalWrap(prim, width, height), true, true)
 	a.tv.SetFocus(prim)
 }
 
 func (a *app) closeModal(name string) {
 	a.root.RemovePage(name)
-	a.setFocus(a.focusForMode())
+	a.restoreFocus()
 }
 
-// focusForMode is the pane focus returns to after a modal closes.
+// captureFocus records the focused primitive (and any calendar drill-in state)
+// before a modal opens.
+func (a *app) captureFocus() {
+	a.savedFocus = focusState{prim: a.tv.GetFocus()}
+	if a.mode == modeCalendar {
+		if g, ok := a.calendarPrimitive().(calGrid); ok {
+			a.savedFocus.calDay, a.savedFocus.calEvent, a.savedFocus.calIndex = g.drillState()
+		}
+	}
+}
+
+// restoreFocus returns focus to where it was before the modal, re-entering the
+// calendar's event-cycling on the same day when that's where the user was.
+func (a *app) restoreFocus() {
+	fs := a.savedFocus
+	if fs.prim == nil {
+		a.setFocus(a.focusForMode())
+		return
+	}
+	if fs.calEvent && a.mode == modeCalendar {
+		if g, ok := a.calendarPrimitive().(calGrid); ok {
+			g.reDrill(fs.calDay, fs.calIndex)
+			a.setFocus(a.calendarPrimitive())
+			return
+		}
+	}
+	a.setFocus(fs.prim)
+}
+
+func clampIndex(i, n int) int {
+	if i < 0 {
+		return 0
+	}
+	if i >= n {
+		return n - 1
+	}
+	return i
+}
+
+// focusForMode is the fallback pane focus after a modal closes.
 func (a *app) focusForMode() tview.Primitive {
 	switch a.mode {
 	case modeTasks:
@@ -900,6 +942,7 @@ func (a *app) confirm(text string, onYes func()) {
 	modal.SetButtonBackgroundColor(tcell.ColorBlack)
 	modal.SetButtonTextColor(tcell.ColorWhite)
 	modal.SetButtonActivatedStyle(tcell.StyleDefault.Background(tcell.ColorWhite).Foreground(tcell.ColorBlack))
+	a.captureFocus()
 	a.root.AddPage(pageConfirm, modal, true, true)
 	a.tv.SetFocus(modal)
 }

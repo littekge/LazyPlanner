@@ -152,6 +152,21 @@ func (cv *calendarView) emitEvent() {
 	}
 }
 
+// drillState / reDrill implement calGrid so focus can be restored into the same
+// day after a modal closes (see app.restoreFocus).
+func (cv *calendarView) drillState() (time.Time, bool, int) {
+	return cv.selected, cv.eventMode, cv.eventIndex
+}
+
+func (cv *calendarView) reDrill(day time.Time, index int) {
+	cv.selected = day
+	if items := cv.selectedItems(); len(items) > 0 {
+		cv.eventMode = true
+		cv.eventIndex = clampIndex(index, len(items))
+		cv.emitEvent()
+	}
+}
+
 func (cv *calendarView) Draw(screen tcell.Screen) {
 	cv.Box.DrawForSubclass(screen, cv)
 	x, y, w, h := cv.GetInnerRect()
