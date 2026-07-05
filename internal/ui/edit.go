@@ -474,7 +474,15 @@ func (a *app) editSelected() {
 
 // newTodoForm builds the task field set, pre-filled from td (nil = a blank
 // create form). Buttons and border are added by the caller.
-func (a *app) newTodoForm(td *model.Todo) *tview.Form {
+// todoFields holds references to a task form's inputs so values are read
+// directly (labels change as the ▸ caret moves, so label lookup won't work).
+type todoFields struct {
+	summary, desc, dueDate, dueTime, tags *tview.InputField
+	priority                              *tview.DropDown
+	completed                             *tview.Checkbox
+}
+
+func (a *app) newTodoForm(td *model.Todo) (*caretForm, *todoFields) {
 	summary, desc, tags, dueDate, dueTime := "", "", "", "", ""
 	prio, completed := 0, false
 	if td != nil {
@@ -488,36 +496,38 @@ func (a *app) newTodoForm(td *model.Todo) *tview.Form {
 			}
 		}
 	}
-	form := tview.NewForm()
-	form.AddInputField("Summary", summary, 0, nil, nil)
-	form.AddInputField("Description", desc, 0, nil, nil)
-	form.AddInputField("Due date (YYYY-MM-DD)", dueDate, 12, nil, nil)
-	form.AddInputField("Due time (HH:MM)", dueTime, 8, nil, nil)
-	form.AddDropDown("Priority", priorityOptions, prio, nil)
-	form.AddInputField("Tags (comma-sep)", tags, 0, nil, nil)
-	form.AddCheckbox("Completed", completed, nil)
-	styleBWForm(form)
-	return form
+	f := newCaretForm()
+	fields := &todoFields{
+		summary:   f.addInput("Summary", summary, 0),
+		desc:      f.addInput("Description", desc, 0),
+		dueDate:   f.addInput("Due date (YYYY-MM-DD)", dueDate, 12),
+		dueTime:   f.addInput("Due time (HH:MM)", dueTime, 8),
+		priority:  f.addDropDown("Priority", priorityOptions, prio),
+		tags:      f.addInput("Tags (comma-sep)", tags, 0),
+		completed: f.addCheckbox("Completed", completed),
+	}
+	f.stylePopup()
+	return f, fields
 }
 
-// readTodoDraft reads the task fields from the form. ParentUID is left empty for
-// the caller to set (preserve on edit, assign on create).
-func (a *app) readTodoDraft(form *tview.Form) (model.TodoDraft, error) {
-	date, hasDate, err := parseDateField(formText(form, "Due date (YYYY-MM-DD)"), a.loc)
+// readTodoDraft reads the task fields. ParentUID is left empty for the caller to
+// set (preserve on edit, assign on create).
+func (a *app) readTodoDraft(f *todoFields) (model.TodoDraft, error) {
+	date, hasDate, err := parseDateField(f.dueDate.GetText(), a.loc)
 	if err != nil {
 		return model.TodoDraft{}, errField("Due date", err)
 	}
-	h, m, hasTime, err := parseTimeField(formText(form, "Due time (HH:MM)"))
+	h, m, hasTime, err := parseTimeField(f.dueTime.GetText())
 	if err != nil {
 		return model.TodoDraft{}, errField("Due time", err)
 	}
-	prio, _ := form.GetFormItemByLabel("Priority").(*tview.DropDown).GetCurrentOption()
+	prio, _ := f.priority.GetCurrentOption()
 	d := model.TodoDraft{
-		Summary:     formText(form, "Summary"),
-		Description: formText(form, "Description"),
+		Summary:     f.summary.GetText(),
+		Description: f.desc.GetText(),
 		Priority:    prio, // dropdown index maps directly: 0 = none, 1..9 = priority
-		Categories:  splitTags(formText(form, "Tags (comma-sep)")),
-		Completed:   form.GetFormItemByLabel("Completed").(*tview.Checkbox).IsChecked(),
+		Categories:  splitTags(f.tags.GetText()),
+		Completed:   f.completed.IsChecked(),
 	}
 	if hasDate {
 		d.HasDue = true
@@ -536,9 +546,9 @@ func (a *app) showTodoForm(loc store.Located, uid string) {
 		a.flash("Task not found")
 		return
 	}
-	form := a.newTodoForm(td)
-	form.AddButton("Save", func() {
-		d, err := a.readTodoDraft(form)
+	f, fields := a.newTodoForm(td)
+	f.AddButton("Save", func() {
+		d, err := a.readTodoDraft(fields)
 		if err != nil {
 			a.flash(err.Error())
 			return
@@ -551,10 +561,10 @@ func (a *app) showTodoForm(loc store.Located, uid string) {
 		}
 		a.commitMutation(loc.CalID, loc.Name, newObj, loc.Prev, "edit task", uid, "Saved")
 	})
-	form.AddButton("Cancel", func() { a.closeModal(pageForm) })
-	form.SetCancelFunc(func() { a.closeModal(pageForm) })
-	form.SetBorder(true).SetTitle(" Edit task ")
-	a.openModal(pageForm, form, 62, 19)
+	f.AddButton("Cancel", func() { a.closeModal(pageForm) })
+	f.SetCancelFunc(func() { a.closeModal(pageForm) })
+	f.SetBorder(true).SetTitle(" Edit task ")
+	a.openModal(pageForm, f, 62, 19)
 }
 
 func (a *app) showCreateTodoForm(calID, parentUID string) {
@@ -562,9 +572,9 @@ func (a *app) showCreateTodoForm(calID, parentUID string) {
 	if parentUID != "" {
 		title = " New subtask "
 	}
-	form := a.newTodoForm(nil)
-	form.AddButton("Create", func() {
-		d, err := a.readTodoDraft(form)
+	f, fields := a.newTodoForm(nil)
+	f.AddButton("Create", func() {
+		d, err := a.readTodoDraft(fields)
 		if err != nil {
 			a.flash(err.Error())
 			return
@@ -578,15 +588,23 @@ func (a *app) showCreateTodoForm(calID, parentUID string) {
 		uid := obj.Todos[0].UID
 		a.commitMutation(calID, store.ResourceName(uid), obj, nil, "add task", uid, "Added task")
 	})
-	form.AddButton("Cancel", func() { a.closeModal(pageForm) })
-	form.SetCancelFunc(func() { a.closeModal(pageForm) })
-	form.SetBorder(true).SetTitle(title)
-	a.openModal(pageForm, form, 62, 19)
+	f.AddButton("Cancel", func() { a.closeModal(pageForm) })
+	f.SetCancelFunc(func() { a.closeModal(pageForm) })
+	f.SetBorder(true).SetTitle(title)
+	a.openModal(pageForm, f, 62, 19)
+}
+
+// eventFields holds references to an event form's inputs.
+type eventFields struct {
+	summary, desc, location *tview.InputField
+	startDate, startTime    *tview.InputField
+	endDate, endTime        *tview.InputField
+	allDay                  *tview.Checkbox
 }
 
 // newEventForm builds the event field set, pre-filled from ev (nil = a blank
 // create form defaulting the start date to defaultDay).
-func (a *app) newEventForm(ev *model.Event, defaultDay time.Time) *tview.Form {
+func (a *app) newEventForm(ev *model.Event, defaultDay time.Time) (*caretForm, *eventFields) {
 	summary, desc, location := "", "", ""
 	allDay := true
 	startDate := defaultDay.In(a.loc).Format("2006-01-02")
@@ -607,22 +625,24 @@ func (a *app) newEventForm(ev *model.Event, defaultDay time.Time) *tview.Form {
 			}
 		}
 	}
-	form := tview.NewForm()
-	form.AddInputField("Summary", summary, 0, nil, nil)
-	form.AddInputField("Description", desc, 0, nil, nil)
-	form.AddInputField("Location", location, 0, nil, nil)
-	form.AddCheckbox("All day", allDay, nil)
-	form.AddInputField("Start date (YYYY-MM-DD)", startDate, 12, nil, nil)
-	form.AddInputField("Start time (HH:MM)", startTime, 8, nil, nil)
-	form.AddInputField("End date (YYYY-MM-DD)", endDate, 12, nil, nil)
-	form.AddInputField("End time (HH:MM)", endTime, 8, nil, nil)
-	styleBWForm(form)
-	return form
+	f := newCaretForm()
+	fields := &eventFields{
+		summary:   f.addInput("Summary", summary, 0),
+		desc:      f.addInput("Description", desc, 0),
+		location:  f.addInput("Location", location, 0),
+		allDay:    f.addCheckbox("All day", allDay),
+		startDate: f.addInput("Start date (YYYY-MM-DD)", startDate, 12),
+		startTime: f.addInput("Start time (HH:MM)", startTime, 8),
+		endDate:   f.addInput("End date (YYYY-MM-DD)", endDate, 12),
+		endTime:   f.addInput("End time (HH:MM)", endTime, 8),
+	}
+	f.stylePopup()
+	return f, fields
 }
 
-func (a *app) readEventDraft(form *tview.Form) (model.EventDraft, error) {
-	allDay := form.GetFormItemByLabel("All day").(*tview.Checkbox).IsChecked()
-	sd, hasSD, err := parseDateField(formText(form, "Start date (YYYY-MM-DD)"), a.loc)
+func (a *app) readEventDraft(f *eventFields) (model.EventDraft, error) {
+	allDay := f.allDay.IsChecked()
+	sd, hasSD, err := parseDateField(f.startDate.GetText(), a.loc)
 	if err != nil {
 		return model.EventDraft{}, errField("Start date", err)
 	}
@@ -633,7 +653,7 @@ func (a *app) readEventDraft(form *tview.Form) (model.EventDraft, error) {
 	var start, end time.Time
 	if allDay {
 		start = sd
-		ed, hasED, err := parseDateField(formText(form, "End date (YYYY-MM-DD)"), a.loc)
+		ed, hasED, err := parseDateField(f.endDate.GetText(), a.loc)
 		if err != nil {
 			return model.EventDraft{}, errField("End date", err)
 		}
@@ -643,16 +663,16 @@ func (a *app) readEventDraft(form *tview.Form) (model.EventDraft, error) {
 		}
 		end = last.AddDate(0, 0, 1) // DTEND is exclusive
 	} else {
-		sh, sm, _, err := parseTimeField(formText(form, "Start time (HH:MM)"))
+		sh, sm, _, err := parseTimeField(f.startTime.GetText())
 		if err != nil {
 			return model.EventDraft{}, errField("Start time", err)
 		}
 		start = time.Date(sd.Year(), sd.Month(), sd.Day(), sh, sm, 0, 0, a.loc)
-		ed, hasED, err := parseDateField(formText(form, "End date (YYYY-MM-DD)"), a.loc)
+		ed, hasED, err := parseDateField(f.endDate.GetText(), a.loc)
 		if err != nil {
 			return model.EventDraft{}, errField("End date", err)
 		}
-		eh, em, _, err := parseTimeField(formText(form, "End time (HH:MM)"))
+		eh, em, _, err := parseTimeField(f.endTime.GetText())
 		if err != nil {
 			return model.EventDraft{}, errField("End time", err)
 		}
@@ -664,9 +684,9 @@ func (a *app) readEventDraft(form *tview.Form) (model.EventDraft, error) {
 		}
 	}
 	return model.EventDraft{
-		Summary:     formText(form, "Summary"),
-		Description: formText(form, "Description"),
-		Location:    formText(form, "Location"),
+		Summary:     f.summary.GetText(),
+		Description: f.desc.GetText(),
+		Location:    f.location.GetText(),
 		Start:       start,
 		End:         end,
 		AllDay:      allDay,
@@ -679,9 +699,9 @@ func (a *app) showEventForm(loc store.Located, uid string) {
 		a.flash("Event not found")
 		return
 	}
-	form := a.newEventForm(ev, ev.Start)
-	form.AddButton("Save", func() {
-		d, err := a.readEventDraft(form)
+	f, fields := a.newEventForm(ev, ev.Start)
+	f.AddButton("Save", func() {
+		d, err := a.readEventDraft(fields)
 		if err != nil {
 			a.flash(err.Error())
 			return
@@ -693,16 +713,16 @@ func (a *app) showEventForm(loc store.Located, uid string) {
 		}
 		a.commitMutation(loc.CalID, loc.Name, newObj, loc.Prev, "edit event", uid, "Saved")
 	})
-	form.AddButton("Cancel", func() { a.closeModal(pageForm) })
-	form.SetCancelFunc(func() { a.closeModal(pageForm) })
-	form.SetBorder(true).SetTitle(" Edit event ")
-	a.openModal(pageForm, form, 62, 21)
+	f.AddButton("Cancel", func() { a.closeModal(pageForm) })
+	f.SetCancelFunc(func() { a.closeModal(pageForm) })
+	f.SetBorder(true).SetTitle(" Edit event ")
+	a.openModal(pageForm, f, 62, 21)
 }
 
 func (a *app) showCreateEventForm(calID string, base time.Time) {
-	form := a.newEventForm(nil, base)
-	form.AddButton("Create", func() {
-		d, err := a.readEventDraft(form)
+	f, fields := a.newEventForm(nil, base)
+	f.AddButton("Create", func() {
+		d, err := a.readEventDraft(fields)
 		if err != nil {
 			a.flash(err.Error())
 			return
@@ -719,10 +739,10 @@ func (a *app) showCreateEventForm(calID string, base time.Time) {
 		uid := obj.Events[0].UID
 		a.commitMutation(calID, store.ResourceName(uid), obj, nil, "add event", uid, "Added event")
 	})
-	form.AddButton("Cancel", func() { a.closeModal(pageForm) })
-	form.SetCancelFunc(func() { a.closeModal(pageForm) })
-	form.SetBorder(true).SetTitle(" New event ")
-	a.openModal(pageForm, form, 62, 21)
+	f.AddButton("Cancel", func() { a.closeModal(pageForm) })
+	f.SetCancelFunc(func() { a.closeModal(pageForm) })
+	f.SetBorder(true).SetTitle(" New event ")
+	a.openModal(pageForm, f, 62, 21)
 }
 
 // commitMutation writes obj, records undo, closes the form, refreshes, and
@@ -910,7 +930,15 @@ func (a *app) focusForMode() tview.Primitive {
 // on Enter, and Esc cancels.
 func (a *app) promptInput(title, label string, onAccept func(text string)) {
 	in := tview.NewInputField().SetLabel(label)
+	// Shared popup look: terminal-default (unified) background, high-contrast
+	// default text, accent rounded border/title.
+	in.SetFieldBackgroundColor(tcell.ColorDefault)
+	in.SetFieldTextColor(tcell.ColorDefault)
+	in.SetLabelColor(tcell.ColorDefault)
+	in.SetBackgroundColor(tcell.ColorDefault)
 	in.SetBorder(true)
+	in.SetBorderColor(accentColor)
+	in.SetTitleColor(accentColor)
 	in.SetTitle(" " + title + " ")
 	in.SetDoneFunc(func(key tcell.Key) {
 		switch key {
@@ -936,31 +964,16 @@ func (a *app) confirm(text string, onYes func()) {
 				onYes()
 			}
 		})
-	// Monochrome: white card, black text, black buttons that invert when focused.
-	modal.SetBackgroundColor(tcell.ColorWhite)
-	modal.SetTextColor(tcell.ColorBlack)
-	modal.SetButtonBackgroundColor(tcell.ColorBlack)
-	modal.SetButtonTextColor(tcell.ColorWhite)
-	modal.SetButtonActivatedStyle(tcell.StyleDefault.Background(tcell.ColorWhite).Foreground(tcell.ColorBlack))
+	// Shared popup look: terminal-default background, default text, the focused
+	// button reversed.
+	modal.SetBackgroundColor(tcell.ColorDefault)
+	modal.SetTextColor(tcell.ColorDefault)
+	modal.SetButtonBackgroundColor(tcell.ColorDefault)
+	modal.SetButtonTextColor(tcell.ColorDefault)
+	modal.SetButtonActivatedStyle(tcell.StyleDefault.Reverse(true))
 	a.captureFocus()
 	a.root.AddPage(pageConfirm, modal, true, true)
 	a.tv.SetFocus(modal)
-}
-
-// styleBWForm gives a form the monochrome look: a white card with black labels
-// and black input boxes (white text). Note: tview applies one field style to
-// every field each frame, so a per-field "white when focused" invert isn't
-// possible without a custom form — the black boxes on a white card read clearly.
-func styleBWForm(form *tview.Form) {
-	form.SetBackgroundColor(tcell.ColorWhite)
-	form.SetLabelColor(tcell.ColorBlack)
-	form.SetFieldBackgroundColor(tcell.ColorBlack)
-	form.SetFieldTextColor(tcell.ColorWhite)
-	form.SetButtonBackgroundColor(tcell.ColorBlack)
-	form.SetButtonTextColor(tcell.ColorWhite)
-	form.SetButtonActivatedStyle(tcell.StyleDefault.Background(tcell.ColorWhite).Foreground(tcell.ColorBlack))
-	form.SetBorderColor(tcell.ColorBlack)
-	form.SetTitleColor(tcell.ColorBlack)
 }
 
 // modalWrap centers prim in a transparent full-screen flex so the main layout
@@ -1011,15 +1024,6 @@ func summaryOf(obj *model.Parsed, uid string) string {
 		return nonEmpty(e.Summary, "(untitled)")
 	}
 	return "item"
-}
-
-func formText(form *tview.Form, label string) string {
-	if item := form.GetFormItemByLabel(label); item != nil {
-		if in, ok := item.(*tview.InputField); ok {
-			return in.GetText()
-		}
-	}
-	return ""
 }
 
 func splitTags(s string) []string {
