@@ -88,6 +88,50 @@ func (s *Store) ensureCalendar(calID string) (*calState, error) {
 	return cs, nil
 }
 
+// Located identifies the cached resource that holds a given event or todo, so
+// the UI can edit or delete it by UID without tracking file names itself. Object
+// is the resource's parsed contents (edit a clone of it, then Put); Prev is the
+// current immutable snapshot, suitable for stashing on an undo stack.
+type Located struct {
+	CalID  string
+	Name   string
+	Object *model.Parsed
+	Prev   *Resource
+}
+
+// Locate finds the resource containing the event or todo with the given UID.
+func (s *Store) Locate(uid string) (Located, bool) {
+	s.mu.RLock()
+	defer s.mu.RUnlock()
+	for _, cs := range s.cals {
+		for name, r := range cs.resources {
+			for _, ev := range r.Object.Events {
+				if ev.UID == uid {
+					return Located{CalID: cs.id, Name: name, Object: r.Object, Prev: r}, true
+				}
+			}
+			for _, td := range r.Object.Todos {
+				if td.UID == uid {
+					return Located{CalID: cs.id, Name: name, Object: r.Object, Prev: r}, true
+				}
+			}
+		}
+	}
+	return Located{}, false
+}
+
+// Restore writes a prior resource snapshot back to calID/name exactly, keeping
+// its sync state (ETag/Href/Dirty). It is the inverse of an edit or delete for
+// the session undo stack: pair it with a snapshot captured before the change.
+func (s *Store) Restore(ctx context.Context, calID, name string, res *Resource) (*Resource, error) {
+	if res == nil || res.Object == nil {
+		return nil, errors.New("store: restore requires a resource snapshot")
+	}
+	return s.writeResource(ctx, calID, name, res.Object, func(*Resource) *Resource {
+		return &Resource{Name: name, ETag: res.ETag, Href: res.Href, Dirty: res.Dirty, Object: res.Object}
+	})
+}
+
 // Delete removes calID/name from disk and the in-memory index. This is a local
 // deletion; propagating it to the server is the sync layer's job.
 func (s *Store) Delete(ctx context.Context, calID, name string) error {

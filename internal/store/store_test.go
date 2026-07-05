@@ -267,6 +267,71 @@ func TestDelete(t *testing.T) {
 	}
 }
 
+func TestLocate(t *testing.T) {
+	ctx := context.Background()
+	s, err := store.Open(ctx, "testdata/vdir")
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	got, ok := s.Locate("grocery@lazyplanner.test")
+	if !ok {
+		t.Fatal("grocery todo not located")
+	}
+	if got.CalID != "personal" || got.Object == nil || got.Prev == nil {
+		t.Errorf("Locate returned %+v", got)
+	}
+
+	if _, ok := s.Locate("does-not-exist@example.com"); ok {
+		t.Error("Locate found a nonexistent UID")
+	}
+}
+
+// TestRestoreUndoesEdit exercises the undo primitive: capture a snapshot, edit,
+// then Restore returns the resource to the captured state exactly.
+func TestRestoreUndoesEdit(t *testing.T) {
+	ctx := context.Background()
+	dir := t.TempDir()
+	s, err := store.Open(ctx, dir)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	name := store.ResourceName("undo@lazyplanner.test")
+	orig := mustDecode(t, "undo@lazyplanner.test", "Original")
+	if _, err := s.Put(ctx, "cal1", name, orig); err != nil {
+		t.Fatal(err)
+	}
+
+	// Capture the pre-edit snapshot, then overwrite with an edit.
+	before, ok := s.Locate("undo@lazyplanner.test")
+	if !ok {
+		t.Fatal("resource not located")
+	}
+	snapshot := before.Prev
+
+	edited := mustDecode(t, "undo@lazyplanner.test", "Edited")
+	if _, err := s.Put(ctx, "cal1", name, edited); err != nil {
+		t.Fatal(err)
+	}
+
+	// Undo by restoring the captured snapshot.
+	if _, err := s.Restore(ctx, "cal1", name, snapshot); err != nil {
+		t.Fatal(err)
+	}
+	cal, _ := s.Calendar("cal1")
+	got := findResource(cal, name)
+	if got == nil || len(got.Object.Events) != 1 || got.Object.Events[0].Summary != "Original" {
+		t.Errorf("Restore did not bring back the original: %+v", got)
+	}
+
+	// The restored content is on disk too.
+	raw, _ := os.ReadFile(filepath.Join(dir, "calendars", "cal1", name))
+	if !bytes.Contains(raw, []byte("SUMMARY:Original")) {
+		t.Errorf("restored file has wrong content:\n%s", raw)
+	}
+}
+
 func TestPutCancelledContext(t *testing.T) {
 	dir := t.TempDir()
 	s, err := store.Open(context.Background(), dir)
