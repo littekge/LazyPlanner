@@ -95,6 +95,7 @@ type app struct {
 	tasklistIDs     []string        // calendar ids parallel to the tasklists panel
 	treeFolders     map[string]bool // task UIDs that are folders (≥1 incomplete child)
 	treeListID      string          // calendar id the tree currently shows (to detect list changes)
+	suspendTree     bool            // ignore tasklist change events while the panel is rebuilt
 	stickyDone      map[string]bool // tasks completed while hidden, kept visible until the list is left
 	savedFocus      focusState      // where focus was before a modal opened, to restore on close
 }
@@ -223,7 +224,23 @@ func (a *app) build() {
 	a.timegrid.onSelectEvent = func(o model.Occurrence) { a.setEventDetail(o.Event) }
 	a.timegrid.onExit = func() { a.setFocus(a.calendars) }
 	a.calendars.SetSelectedFunc(func(int, string, string, rune) { a.setFocus(a.calendarPrimitive()) })
-	a.tasklists.SetChangedFunc(func(int, string, string, rune) { a.buildTree() })
+	a.tasklists.SetChangedFunc(func(index int, _, _ string, _ rune) {
+		// Rebuilding the panel briefly parks the selection at index 0; ignore
+		// those transient events so they don't look like a real list change.
+		if a.suspendTree {
+			return
+		}
+		// Use the callback's index argument, not GetCurrentItem: tview fires
+		// changed BEFORE updating the current item, so GetCurrentItem is stale
+		// here. Switching to a different list drops the sticky just-completed pins.
+		if index >= 0 && index < len(a.tasklistIDs) {
+			if id := a.tasklistIDs[index]; id != a.treeListID {
+				a.stickyDone = map[string]bool{}
+				a.treeListID = id
+			}
+		}
+		a.buildTree()
+	})
 	a.tasklists.SetSelectedFunc(func(int, string, string, rune) { a.setFocus(a.tree) })
 	a.agendaList.SetChangedFunc(func(index int, _, _ string, _ rune) {
 		if a.mode == modeAgenda {
@@ -308,6 +325,7 @@ func (a *app) setMode(m int) {
 		a.showDetail(true)
 		a.center.SwitchToPage("tree")
 		a.buildTree()
+		a.treeListID = a.selectedTasklistID() // sync so restore events aren't seen as a list change
 		a.setFocus(a.tasklists)
 	case modeAgenda:
 		a.showDetail(false)

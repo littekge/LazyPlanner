@@ -211,6 +211,43 @@ func TestCycleCalendar(t *testing.T) {
 	}
 }
 
+// TestStickyWorksOnNonFirstList reproduces the bug where sticky-complete only
+// worked for the first task list: completing a task in a later list must keep it
+// visible too, despite the panel rebuild parking selection at index 0.
+func TestStickyWorksOnNonFirstList(t *testing.T) {
+	now := time.Date(2026, 7, 5, 9, 0, 0, 0, time.UTC)
+	a := newWritableTestApp(t, now)
+	a.setMode(modeTasks)
+	a.showCompleted = false
+
+	// Fixture "work" holds only events; add a todo so it becomes a second list.
+	// Calendars sort by id: "personal" (0) then "work" (1).
+	a.createTask("work", "", "WorkTask")
+	if len(a.tasklistIDs) < 2 {
+		t.Fatalf("expected two task lists, got %v", a.tasklistIDs)
+	}
+	workIdx := -1
+	for i, id := range a.tasklistIDs {
+		if id == "work" {
+			workIdx = i
+		}
+	}
+	if workIdx <= 0 {
+		t.Fatalf("work should be a non-first list, got index %d", workIdx)
+	}
+
+	// Select the work list and complete its task.
+	a.tasklists.SetCurrentItem(workIdx)
+	a.buildTree()
+	work := todoBySummary(a.store, "WorkTask")
+	a.selectTreeByUID(work.UID)
+	a.toggleComplete()
+
+	if findTreeNode(a.tree.GetRoot(), work.UID) == nil {
+		t.Error("completed task on a non-first list should stay visible (sticky)")
+	}
+}
+
 func TestDescendants(t *testing.T) {
 	now := time.Date(2026, 7, 5, 9, 0, 0, 0, time.UTC)
 	a := newWritableTestApp(t, now)

@@ -25,6 +25,11 @@ func (a *app) buildCalendars() {
 }
 
 func (a *app) buildTasklists() {
+	// Suspend the change-callback: Clear/AddItem park the selection at index 0
+	// mid-rebuild, which must not be mistaken for the user switching lists.
+	a.suspendTree = true
+	defer func() { a.suspendTree = false }()
+
 	a.tasklists.Clear()
 	a.tasklistIDs = a.tasklistIDs[:0]
 	for _, cal := range a.store.Calendars() {
@@ -177,13 +182,6 @@ func (a *app) buildTree() {
 	name := "Tasks"
 	root := tview.NewTreeNode("").SetSelectable(false).SetColor(accentColor)
 	id := a.selectedTasklistID()
-
-	// Leaving one list for another drops the "keep just-completed visible" pins.
-	// Ignore the transient empty id seen mid-rebuild (while the panel is cleared).
-	if id != "" && id != a.treeListID {
-		a.stickyDone = map[string]bool{}
-		a.treeListID = id
-	}
 
 	a.treeFolders = map[string]bool{}
 	if id != "" {
