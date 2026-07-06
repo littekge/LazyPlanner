@@ -42,7 +42,6 @@ func renderPrimitive(t *testing.T, p tview.Primitive, w, h int) string {
 
 func TestTimeGridDrawsDay(t *testing.T) {
 	tg := newTimeGridView()
-	tg.scrollHour = 8
 	day := time.Date(2026, 7, 4, 0, 0, 0, 0, time.UTC)
 
 	// Local time: the grid renders in the local zone, so 9am here stays 9am.
@@ -56,10 +55,11 @@ func TestTimeGridDrawsDay(t *testing.T) {
 	}
 	tg.setData([]time.Time{day}, timed, allday, day, day)
 
-	out := renderPrimitive(t, tg, 100, 24)
+	// Tall enough that the whole day fits with each hour on its own row.
+	out := renderPrimitive(t, tg, 100, 40)
 
-	// July 4 2026 is a Saturday.
-	for _, want := range []string{"Sat 4", "Holiday", "9am", "Team sync"} {
+	// July 4 2026 is a Saturday; the whole day fits so midnight..11pm all show.
+	for _, want := range []string{"Sat 4", "Holiday", "12am", "9am", "11pm", "Team sync"} {
 		if !strings.Contains(out, want) {
 			t.Errorf("time-grid render missing %q:\n%s", want, out)
 		}
@@ -90,6 +90,33 @@ func TestTimeGridDrillIn(t *testing.T) {
 	handle(tcell.NewEventKey(tcell.KeyEscape, 0, tcell.ModNone), func(tview.Primitive) {})
 	if tg.eventMode {
 		t.Error("Esc did not exit event mode")
+	}
+}
+
+// TestTimeGridDrillsAllDayFirst checks all-day events are part of the drill
+// cycle (before timed events).
+func TestTimeGridDrillsAllDayFirst(t *testing.T) {
+	tg := newTimeGridView()
+	day := time.Date(2026, 7, 4, 0, 0, 0, 0, time.Local)
+	allEv := &model.Event{Summary: "Holiday", AllDay: true, Start: day}
+	timedEv := &model.Event{Summary: "Sync", Start: time.Date(2026, 7, 4, 9, 0, 0, 0, time.Local)}
+	allday := map[string][]model.Occurrence{
+		dayKey(day): {{Start: day, End: day.AddDate(0, 0, 1), Event: allEv}},
+	}
+	timed := map[string][]model.Occurrence{
+		dayKey(day): {{Start: timedEv.Start, End: timedEv.Start.Add(time.Hour), Event: timedEv}},
+	}
+	tg.setData([]time.Time{day}, timed, allday, day, day)
+
+	var got []*model.Event
+	tg.onSelectEvent = func(o model.Occurrence) { got = append(got, o.Event) }
+	handle := tg.InputHandler()
+
+	handle(tcell.NewEventKey(tcell.KeyEnter, 0, tcell.ModNone), func(tview.Primitive) {})
+	handle(tcell.NewEventKey(tcell.KeyDown, 0, tcell.ModNone), func(tview.Primitive) {})
+
+	if len(got) != 2 || got[0] != allEv || got[1] != timedEv {
+		t.Errorf("drill order = %v, want [Holiday(all-day), Sync(timed)]", got)
 	}
 }
 

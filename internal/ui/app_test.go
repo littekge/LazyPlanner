@@ -90,6 +90,20 @@ func TestAgendaSelectedBlockOutlined(t *testing.T) {
 	}
 }
 
+// TestNodeLabelCompletedGlyph locks the completed-task indicator to a filled box.
+func TestNodeLabelCompletedGlyph(t *testing.T) {
+	a := newTestApp(t, time.Date(2026, 7, 5, 12, 0, 0, 0, time.UTC))
+	a.treeFolders = map[string]bool{}
+	done := &model.Todo{Summary: "Done", Status: model.StatusCompleted}
+	todo := &model.Todo{Summary: "Todo"}
+	if got := a.nodeLabel(done, false); !strings.HasPrefix(got, "[■] ") {
+		t.Errorf("completed label = %q, want a filled box [■]", got)
+	}
+	if got := a.nodeLabel(todo, false); !strings.HasPrefix(got, "[ ] ") {
+		t.Errorf("incomplete label = %q, want an empty box [ ]", got)
+	}
+}
+
 // TestSelectionIsLegible guards that the highlighted list row uses reverse video
 // rather than tview's default selected style (which, with our terminal-default
 // background, draws terminal-default text on a light bar — illegible).

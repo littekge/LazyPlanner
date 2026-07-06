@@ -278,7 +278,11 @@ func (cv *calendarView) drawCell(screen tcell.Screen, day time.Time, cellX, cell
 func itemLabel(it model.AgendaItem) string {
 	switch {
 	case it.IsTodo():
-		return "[] " + nonEmpty(it.Title, "(untitled)")
+		box := "[ ] "
+		if it.Todo.Completed() {
+			box = "[■] "
+		}
+		return box + nonEmpty(it.Title, "(untitled)")
 	case it.AllDay:
 		return nonEmpty(it.Title, "(untitled)")
 	default:

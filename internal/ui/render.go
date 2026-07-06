@@ -250,7 +250,7 @@ func (a *app) nodeLabel(t *model.Todo, expanded bool) string {
 			mark = "▸ "
 		}
 	case t.Completed():
-		mark = "[x] "
+		mark = "[■] "
 	default:
 		mark = "[ ] "
 	}
@@ -414,6 +414,9 @@ func agendaLeftLabel(it model.AgendaItem) string {
 	mark := ""
 	if it.IsTodo() {
 		mark = "[ ] "
+		if it.Todo.Completed() {
+			mark = "[■] "
+		}
 	}
 	return fmt.Sprintf("%-8s %s%s", whenLabel(it), mark, nonEmpty(it.Title, "(untitled)"))
 }
