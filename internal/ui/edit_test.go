@@ -141,6 +141,36 @@ func TestReparentIndentAndUndo(t *testing.T) {
 	}
 }
 
+// TestReparentUsesOnScreenSibling locks the H/L fix: indent must nest under the
+// task shown directly above — even a just-completed (sticky) one — rather than a
+// separately-rebuilt forest that omits it.
+func TestReparentUsesOnScreenSibling(t *testing.T) {
+	now := time.Date(2026, 7, 5, 9, 0, 0, 0, time.UTC)
+	a := newWritableTestApp(t, now)
+	a.setMode(modeTasks)
+	a.showCompleted = false
+	calID := a.selectedTasklistID()
+
+	// Names sort after the fixture's "Buy groceries" so ordering is A, B, C.
+	a.createTask(calID, "", "Task A")
+	a.createTask(calID, "", "Task B")
+	a.createTask(calID, "", "Task C")
+
+	// Complete Task B while hidden -> it stays visible (sticky) directly above C.
+	a.selectTreeByUID(todoBySummary(a.store, "Task B").UID)
+	a.toggleComplete()
+
+	c := todoBySummary(a.store, "Task C")
+	a.selectTreeByUID(c.UID)
+	a.reparentSelected(indent)
+
+	got := todoBySummary(a.store, "Task C").ParentUID
+	want := todoBySummary(a.store, "Task B").UID // the row shown above C
+	if got != want {
+		t.Errorf("indent nested under %q, want the on-screen row above (Task B = %q)", got, want)
+	}
+}
+
 func TestFolderBlocksCompletionUntilChildrenDone(t *testing.T) {
 	now := time.Date(2026, 7, 5, 9, 0, 0, 0, time.UTC)
 	a := newWritableTestApp(t, now)

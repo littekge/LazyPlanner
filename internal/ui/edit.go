@@ -382,20 +382,13 @@ func (a *app) reparentSelected(dir reparentDir) {
 	if !ok {
 		return
 	}
-	calID := a.selectedTasklistID()
-	if calID == "" {
+	// Read parent / previous-sibling from the tree actually on screen so H/L
+	// always match what the user sees (folders, sticky-completed rows included),
+	// rather than a separately-rebuilt forest that can drift from the rendering.
+	parentNode, idx := treeNodeContext(a.tree.GetRoot(), node)
+	if parentNode == nil {
 		return
 	}
-	cal, ok := a.store.Calendar(calID)
-	if !ok {
-		return
-	}
-	var todos []*model.Todo
-	for _, r := range cal.Resources {
-		todos = append(todos, r.Object.Todos...)
-	}
-	roots := model.BuildTree(todos, a.showCompleted)
-	_, parent, siblings, idx := findInForest(roots, td.UID)
 
 	var newParent string
 	switch dir {
@@ -404,13 +397,21 @@ func (a *app) reparentSelected(dir reparentDir) {
 			a.flash("Can't indent: no task above at this level")
 			return
 		}
-		newParent = siblings[idx-1].Todo.UID
+		prev, ok := parentNode.GetChildren()[idx-1].GetReference().(*model.Todo)
+		if !ok {
+			a.flash("Can't indent: no task above at this level")
+			return
+		}
+		newParent = prev.UID
 	case outdent:
-		if parent == nil {
+		// If the parent node is the list root (not a task), we're already at the
+		// top level; otherwise the new parent is the current parent's parent.
+		pt, ok := parentNode.GetReference().(*model.Todo)
+		if !ok {
 			a.flash("Already at the top level")
 			return
 		}
-		newParent = parent.Todo.ParentUID // grandparent, or "" to become a root
+		newParent = pt.ParentUID // grandparent, or "" to become a root
 	}
 
 	loc, ok := a.store.Locate(td.UID)
@@ -432,24 +433,23 @@ func (a *app) reparentSelected(dir reparentDir) {
 	a.flash("Moved task")
 }
 
-// findInForest locates uid in a TodoNode forest, returning its node, its parent
-// (nil at the root level), the sibling slice it lives in, and its index there.
-func findInForest(roots []*model.TodoNode, uid string) (node, parent *model.TodoNode, siblings []*model.TodoNode, idx int) {
-	var rec func(list []*model.TodoNode, par *model.TodoNode) bool
-	rec = func(list []*model.TodoNode, par *model.TodoNode) bool {
-		for i, n := range list {
-			if n.Todo.UID == uid {
-				node, parent, siblings, idx = n, par, list, i
-				return true
-			}
-			if rec(n.Children, n) {
-				return true
-			}
-		}
-		return false
+// treeNodeContext finds target within the tview tree, returning its parent node
+// and its index among that parent's children (parent nil / idx -1 if not found).
+// It reads the tree exactly as displayed, so H/L stay consistent with what's on
+// screen regardless of how buildTree filters/renders.
+func treeNodeContext(root, target *tview.TreeNode) (parent *tview.TreeNode, idx int) {
+	if root == nil {
+		return nil, -1
 	}
-	rec(roots, nil)
-	return node, parent, siblings, idx
+	for i, child := range root.GetChildren() {
+		if child == target {
+			return root, i
+		}
+		if p, j := treeNodeContext(child, target); p != nil {
+			return p, j
+		}
+	}
+	return nil, -1
 }
 
 // --- edit (e) ---
