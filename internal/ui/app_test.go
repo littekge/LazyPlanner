@@ -90,6 +90,28 @@ func TestAgendaSelectedBlockOutlined(t *testing.T) {
 	}
 }
 
+// TestSelectionIsLegible guards that the highlighted list row uses reverse video
+// rather than tview's default selected style (which, with our terminal-default
+// background, draws terminal-default text on a light bar — illegible).
+func TestSelectionIsLegible(t *testing.T) {
+	a := newTestApp(t, time.Date(2026, 7, 5, 12, 0, 0, 0, time.UTC))
+	if a.calendars.GetItemCount() == 0 {
+		t.Fatal("fixture has no calendars")
+	}
+	cells, _, _ := drawCells(t, a.calendars, 30, 12)
+
+	reversed := false
+	for _, c := range cells {
+		if _, _, attr := c.Style.Decompose(); attr&tcell.AttrReverse != 0 {
+			reversed = true
+			break
+		}
+	}
+	if !reversed {
+		t.Error("selected row is not reverse-video — highlight would be illegible on some themes")
+	}
+}
+
 // TestTextInheritsPaneBackground guards against the "text in a shaded box"
 // artifact: a text cell must share the same background as the blank pane around
 // it, so the app inherits the terminal's background on any color scheme.

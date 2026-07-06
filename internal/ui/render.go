@@ -228,6 +228,9 @@ func folderSet(todos []*model.Todo) map[string]bool {
 
 func (a *app) treeNode(n *model.TodoNode) *tview.TreeNode {
 	node := tview.NewTreeNode(a.nodeLabel(n.Todo, true)).SetReference(n.Todo).SetExpanded(true)
+	// Reverse-video selection stays legible on any theme (tview's default selected
+	// style would draw terminal-default text on a light bar with our theming).
+	node.SetSelectedTextStyle(selectionStyle)
 	for _, c := range n.Children {
 		node.AddChild(a.treeNode(c))
 	}

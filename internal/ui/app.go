@@ -26,6 +26,11 @@ const (
 	eventColor    = tcell.ColorGreen
 )
 
+// selectionStyle marks the highlighted row in the lists and task tree. Reverse
+// video is theme-agnostic — it's the inverse of the (legible) normal text, so it
+// stays readable on any light or dark terminal background.
+var selectionStyle = tcell.StyleDefault.Reverse(true)
+
 // Which overview panel is active; the center Main pane follows it.
 const (
 	modeCalendar = iota
@@ -191,6 +196,12 @@ func (a *app) build() {
 	a.calendars.ShowSecondaryText(false).SetHighlightFullLine(true)
 	a.tasklists.ShowSecondaryText(false).SetHighlightFullLine(true)
 	a.agendaList.ShowSecondaryText(false).SetHighlightFullLine(true)
+	// Selections use reverse video so they stay legible on any terminal theme.
+	// (The tview default derives the selected foreground from the primitive
+	// background, which we set to the terminal default — leaving it illegible.)
+	a.calendars.SetSelectedStyle(selectionStyle)
+	a.tasklists.SetSelectedStyle(selectionStyle)
+	a.agendaList.SetSelectedStyle(selectionStyle)
 	a.detail.SetDynamicColors(true).SetWrap(true)
 	a.statusLeft.SetDynamicColors(true)
 	a.statusMid.SetDynamicColors(true).SetTextAlign(tview.AlignCenter)
