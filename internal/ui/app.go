@@ -116,11 +116,16 @@ type calGrid interface {
 	reDrill(day time.Time, index int)
 }
 
-// useRoundedBorders switches tview's global border runes to rounded (soft)
-// corners and keeps single-line edges even when a box is focused — focus is
-// shown by border color, not a heavier line. Set once at startup; tview.Borders
-// is the library's border-config surface (not app state).
-func useRoundedBorders() {
+// useTerminalTheme configures tview's globals once at startup: inherit the
+// terminal's default background everywhere, and use rounded (soft) border
+// corners. Inheriting the background is what keeps text from sitting in a shaded
+// box — tview's default primitive background is solid black, which mismatches the
+// terminal-default background of our text cells on non-black color schemes.
+// tview.Styles/Borders are the library's config surfaces (not app state); this
+// must run before any widget is created so NewBox picks up the background.
+func useTerminalTheme() {
+	tview.Styles.PrimitiveBackgroundColor = tcell.ColorDefault
+
 	tview.Borders.TopLeft = '╭'
 	tview.Borders.TopRight = '╮'
 	tview.Borders.BottomLeft = '╰'
@@ -135,7 +140,6 @@ func useRoundedBorders() {
 
 // Run builds the TUI over the given store and blocks until quit.
 func Run(s *store.Store, title string) error {
-	useRoundedBorders()
 	a := newApp(s, title, time.Now())
 	a.build()
 	a.reload()
@@ -154,6 +158,7 @@ func Run(s *store.Store, title string) error {
 // data load (reload) are separate so tests can drive them headlessly with a
 // fixed clock.
 func newApp(s *store.Store, title string, now time.Time) *app {
+	useTerminalTheme() // configure tview globals before any widget is created
 	return &app{
 		tv:              tview.NewApplication(),
 		store:           s,

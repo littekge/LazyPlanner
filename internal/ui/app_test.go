@@ -90,6 +90,58 @@ func TestAgendaSelectedBlockOutlined(t *testing.T) {
 	}
 }
 
+// TestTextInheritsPaneBackground guards against the "text in a shaded box"
+// artifact: a text cell must share the same background as the blank pane around
+// it, so the app inherits the terminal's background on any color scheme.
+func TestTextInheritsPaneBackground(t *testing.T) {
+	a := newTestApp(t, time.Date(2026, 7, 5, 12, 0, 0, 0, time.UTC))
+	a.buildAgendaCenter()
+	cells, cw, ch := drawCells(t, a.agenda, 80, 24)
+
+	row := -1
+	for r := 0; r < ch; r++ {
+		line := make([]rune, cw)
+		for c := 0; c < cw; c++ {
+			line[c] = ' '
+			if rs := cells[r*cw+c].Runes; len(rs) > 0 {
+				line[c] = rs[0]
+			}
+		}
+		if strings.Contains(string(line), "2026") {
+			row = r
+			break
+		}
+	}
+	if row < 0 {
+		t.Fatal("date header not found")
+	}
+
+	var textBg, blankBg tcell.Color
+	haveText, haveBlank := false, false
+	for c := 1; c < cw-1; c++ { // skip border columns
+		cell := cells[row*cw+c]
+		_, bg, _ := cell.Style.Decompose()
+		r := ' '
+		if len(cell.Runes) > 0 {
+			r = cell.Runes[0]
+		}
+		if r != ' ' && !haveText {
+			textBg, haveText = bg, true
+		} else if r == ' ' && !haveBlank {
+			blankBg, haveBlank = bg, true
+		}
+	}
+	if !haveText || !haveBlank {
+		t.Fatal("need both a text cell and a blank cell on the header row")
+	}
+	if textBg != blankBg {
+		t.Errorf("text background %v differs from pane background %v — renders as a shaded box", textBg, blankBg)
+	}
+	if textBg != tcell.ColorDefault {
+		t.Errorf("background = %v, want terminal default so it inherits the theme", textBg)
+	}
+}
+
 // TestTaskTreeRootIsListName guards that top-level tasks attach to the list's
 // name (the tree root), instead of dangling from an empty root node.
 func TestTaskTreeRootIsListName(t *testing.T) {
