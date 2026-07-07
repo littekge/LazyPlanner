@@ -8,8 +8,10 @@ import (
 	"fmt"
 	"os"
 
+	"github.com/littekge/LazyPlanner/internal/caldav"
 	"github.com/littekge/LazyPlanner/internal/config"
 	"github.com/littekge/LazyPlanner/internal/store"
+	"github.com/littekge/LazyPlanner/internal/sync"
 	"github.com/littekge/LazyPlanner/internal/ui"
 )
 
@@ -79,6 +81,31 @@ func runTUI() error {
 	if err != nil {
 		return err
 	}
+
+	syncFn := buildSyncFn(cfg.Server, s)
+
 	title := fmt.Sprintf("%s %s", appName, appVersion)
-	return ui.Run(s, title)
+	return ui.Run(s, title, syncFn)
+}
+
+// buildSyncFn returns a closure the UI calls to sync, or nil when no server is
+// configured (the app then runs fully offline). A failing password_command is a
+// warning, not a fatal error — the app still opens over the cache.
+func buildSyncFn(srv config.Server, s *store.Store) func(context.Context) (sync.SyncResult, error) {
+	if !srv.Configured() {
+		return nil
+	}
+	password, err := srv.ResolvePassword()
+	if err != nil {
+		fmt.Fprintln(os.Stderr, "lazyplanner:", err, "(starting offline)")
+		return nil
+	}
+	client, err := caldav.NewClient(caldav.Config{Endpoint: srv.URL, Username: srv.Username, Password: password})
+	if err != nil {
+		fmt.Fprintln(os.Stderr, "lazyplanner:", err, "(starting offline)")
+		return nil
+	}
+	return func(ctx context.Context) (sync.SyncResult, error) {
+		return sync.Sync(ctx, client, s)
+	}
 }

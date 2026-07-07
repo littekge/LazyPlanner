@@ -381,8 +381,7 @@ func (a *app) updateStatus() {
 	}
 	a.statusLeft.SetText(left)
 
-	// Sync is wired in step 9; show a neutral placeholder for now.
-	a.statusRight.SetText("[gray]— not synced[-]")
+	a.renderSyncStatus()
 
 	completed := "off"
 	if a.showCompleted {
@@ -390,7 +389,7 @@ func (a *app) updateStatus() {
 	}
 	// Plain text (no color tags) so the [ and ] calendar keys read literally.
 	// Kept short so it fits without truncation; the full keymap lives in ? help.
-	a.hints.SetText(fmt.Sprintf("1/2/3 panes · a/s add · e edit · d del · Space done · u undo · v view · [ ]/n/p/t cal · . completed:%s · q quit", completed))
+	a.hints.SetText(fmt.Sprintf("1/2/3 panes · a/s add · e edit · d del · Space done · u undo · r sync · v view · [ ]/n/p/t cal · . completed:%s · q quit", completed))
 }
 
 // --- shared helpers ---

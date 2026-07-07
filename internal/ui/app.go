@@ -5,6 +5,7 @@
 package ui
 
 import (
+	"context"
 	"fmt"
 	"time"
 
@@ -13,6 +14,7 @@ import (
 
 	"github.com/littekge/LazyPlanner/internal/model"
 	"github.com/littekge/LazyPlanner/internal/store"
+	"github.com/littekge/LazyPlanner/internal/sync"
 )
 
 // Colors are drawn from the terminal's 16-color palette so LazyPlanner inherits
@@ -103,6 +105,12 @@ type app struct {
 	suspendTree     bool            // ignore tasklist change events while the panel is rebuilt
 	stickyDone      map[string]bool // tasks completed while hidden, kept visible until the list is left
 	savedFocus      focusState      // where focus was before a modal opened, to restore on close
+
+	// Sync (wired in step 9). syncFn is nil when no server is configured.
+	syncFn      func(context.Context) (sync.SyncResult, error)
+	syncing     bool
+	lastSyncAt  time.Time
+	lastSyncErr error
 }
 
 // focusState remembers where focus was so closing a modal returns there — down
@@ -143,15 +151,23 @@ func useTerminalTheme() {
 	tview.Borders.VerticalFocus = tview.Borders.Vertical
 }
 
-// Run builds the TUI over the given store and blocks until quit.
-func Run(s *store.Store, title string) error {
+// Run builds the TUI over the given store and blocks until quit. syncFn performs
+// a two-way sync when invoked; it is nil when no server is configured (the app
+// still runs fully offline over the cache).
+func Run(s *store.Store, title string, syncFn func(context.Context) (sync.SyncResult, error)) error {
 	a := newApp(s, title, time.Now())
+	a.syncFn = syncFn
 	a.build()
 	a.reload()
 	a.setMode(modeCalendar)
 
 	a.root = tview.NewPages()
 	a.root.AddPage(pageMain, a.layout(), true, true)
+
+	// Sync on startup in the background: the UI opens instantly from cache and
+	// refreshes when the sync lands (offline-first). QueueUpdateDraw inside
+	// triggerSync waits for the event loop, so starting it now is safe.
+	a.triggerSync()
 
 	if err := a.tv.SetRoot(a.root, true).EnableMouse(true).SetInputCapture(a.globalKeys).Run(); err != nil {
 		return fmt.Errorf("running tui: %w", err)
@@ -406,6 +422,10 @@ func (a *app) globalKeys(ev *tcell.EventKey) *tcell.EventKey {
 			return nil
 		case 'u':
 			a.undoLast()
+			return nil
+		case 'r':
+			// Interim manual-sync trigger; step 10 replaces it with :sync.
+			a.triggerSync()
 			return nil
 		case 'H':
 			if a.mode == modeTasks {
