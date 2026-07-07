@@ -44,7 +44,8 @@ var helpSections = []struct {
 	}},
 	{"Sync & commands", [][2]string{
 		{"r", "sync now (= :sync)"},
-		{": ", "command line — :sync :view :goto :help :q"},
+		{": ", "command line — :sync :view :goto :conflicts :help :q"},
+		{":conflicts", "resolve items that changed on both sides"},
 		{"?", "this help"},
 	}},
 }

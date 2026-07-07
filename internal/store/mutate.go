@@ -68,8 +68,10 @@ func (s *Store) writeResource(ctx context.Context, calID, name string, obj *mode
 	res := build(cs.resources[name])
 	cs.resources[name] = res
 	// Writing a resource cancels any pending deletion of the same name — this is
-	// how undo (Restore) resurrects a just-deleted resource.
+	// how undo (Restore) resurrects a just-deleted resource — and supersedes any
+	// stashed conflict (a deliberate write resolves it).
 	delete(cs.tombstones, name)
+	delete(cs.conflicts, name)
 
 	if err := writeSidecar(s.root, cs); err != nil {
 		return nil, fmt.Errorf("updating sidecar for %q: %w", calID, err)

@@ -59,6 +59,8 @@ func (a *app) runCommand(line string) {
 		a.cmdView(args)
 	case "goto":
 		a.cmdGoto(args)
+	case "conflicts", "conflict":
+		a.showConflicts()
 	case "help", "h":
 		a.showHelp()
 		a.echo(":help")

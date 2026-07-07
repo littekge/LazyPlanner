@@ -4,6 +4,9 @@ import (
 	"context"
 	"fmt"
 	"sort"
+	"time"
+
+	"github.com/littekge/LazyPlanner/internal/model"
 )
 
 // Conflict is a resource whose local and server versions diverged (both edited
@@ -77,4 +80,71 @@ func (s *Store) Conflicts() []Conflict {
 		return out[i].Name < out[j].Name
 	})
 	return out
+}
+
+// ResolveKeepLocal resolves a conflict in favor of the local copy: it clears the
+// conflict and adopts the server's current ETag so the next sync's conditional
+// PUT overwrites the server with the local version. The local .ics is unchanged.
+func (s *Store) ResolveKeepLocal(ctx context.Context, calID, name string) error {
+	if err := ctx.Err(); err != nil {
+		return err
+	}
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	cs := s.cals[calID]
+	if cs == nil {
+		return fmt.Errorf("store: unknown calendar %q", calID)
+	}
+	cm, ok := cs.conflicts[name]
+	r := cs.resources[name]
+	if !ok || r == nil {
+		return fmt.Errorf("store: no conflict for %s/%s", calID, name)
+	}
+	nr := *r
+	nr.ETag = cm.ServerETag // so the next push's If-Match matches the server
+	nr.Dirty = true
+	nr.Conflicted = false
+	cs.resources[name] = &nr
+	delete(cs.conflicts, name)
+	if err := writeSidecar(s.root, cs); err != nil {
+		return fmt.Errorf("updating sidecar for %q: %w", calID, err)
+	}
+	return nil
+}
+
+// ResolveKeepServer resolves a conflict in favor of the server: it overwrites the
+// local copy with the stashed server version (written clean, with the server's
+// ETag) and clears the conflict. The next sync sees the local copy already
+// matching the server — a no-op.
+func (s *Store) ResolveKeepServer(ctx context.Context, calID, name string) error {
+	if err := ctx.Err(); err != nil {
+		return err
+	}
+	s.mu.RLock()
+	cs := s.cals[calID]
+	var (
+		cm   conflictMeta
+		href string
+		ok   bool
+	)
+	if cs != nil {
+		cm, ok = cs.conflicts[name]
+		if r := cs.resources[name]; r != nil {
+			href = r.Href
+		}
+	}
+	s.mu.RUnlock()
+	if !ok {
+		return fmt.Errorf("store: no conflict for %s/%s", calID, name)
+	}
+
+	parsed, err := model.Decode([]byte(cm.ServerData), time.Local)
+	if err != nil {
+		return fmt.Errorf("store: decoding server version of %s/%s: %w", calID, name, err)
+	}
+	// PutRemote writes clean and (via writeResource) clears the conflict stash.
+	if _, err := s.PutRemote(ctx, calID, name, parsed, cm.ServerETag, href); err != nil {
+		return err
+	}
+	return nil
 }
