@@ -34,18 +34,14 @@ func (a *app) guardWrite(calID string) bool {
 	return true
 }
 
-// createCollection (c) opens a form to create a calendar or task list locally.
-// It is created offline-first: the collection appears immediately and the server
-// MKCALENDAR happens on the next sync.
-func (a *app) createCollection() {
+// createCollection (ac/al) opens a form to create a calendar or task list
+// locally, offline-first: the collection appears immediately and the server
+// MKCALENDAR happens on the next sync. defaultType preselects the Type dropdown
+// (index into collectionTypes: 0 event calendar, 1 task list).
+func (a *app) createCollection(defaultType int) {
 	f := newCaretForm()
 	nameField := f.addInput("Name", "", 0)
-	// Default the type to match the active pane (a task list in Tasks mode).
-	def := 0
-	if a.mode == modeTasks {
-		def = 1
-	}
-	typeField := f.addDropDown("Type", collectionTypes, def)
+	typeField := f.addDropDown("Type", collectionTypes, defaultType)
 	f.stylePopup()
 
 	f.AddButton("Create", func() {

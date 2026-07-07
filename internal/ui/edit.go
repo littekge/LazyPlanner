@@ -96,20 +96,26 @@ func targetFromItem(it model.AgendaItem) editTarget {
 
 // --- quick add (a) ---
 
-// addQuick (a): quick-add a top-level task (Tasks) or an event (Calendar/Agenda).
-func (a *app) addQuick() {
-	if a.mode == modeTasks {
-		calID := a.selectedTasklistID()
-		if calID == "" {
-			a.flash("No task list selected — create one first")
-			return
-		}
-		if !a.guardWrite(calID) {
-			return
-		}
-		a.promptInput("New task", "Task: ", func(text string) { a.createTask(calID, "", text) })
+// addTaskQuick (at): quick-add a top-level task in the selected list.
+func (a *app) addTaskQuick() {
+	calID, ok := a.taskCreateContext()
+	if !ok {
 		return
 	}
+	a.promptInput("New task", "Task: ", func(text string) { a.createTask(calID, "", text) })
+}
+
+// addTaskFull (aT): full create form for a top-level task.
+func (a *app) addTaskFull() {
+	calID, ok := a.taskCreateContext()
+	if !ok {
+		return
+	}
+	a.showCreateTodoForm(calID, "")
+}
+
+// addEventQuick (ae): quick-add an event on the selected/current day.
+func (a *app) addEventQuick() {
 	calID, base, ok := a.eventCreateContext()
 	if !ok {
 		return
@@ -117,7 +123,29 @@ func (a *app) addQuick() {
 	a.promptInput("New event", "Event: ", func(text string) { a.createEvent(calID, base, text) })
 }
 
-// addSubtaskQuick (s): quick-add a subtask under the highlighted task.
+// addEventFull (aE): full create form for an event.
+func (a *app) addEventFull() {
+	calID, base, ok := a.eventCreateContext()
+	if !ok {
+		return
+	}
+	a.showCreateEventForm(calID, base)
+}
+
+// taskCreateContext resolves the writable target list for a new top-level task.
+func (a *app) taskCreateContext() (string, bool) {
+	calID := a.selectedTasklistID()
+	if calID == "" {
+		a.flash("Select a task list first (press 2)")
+		return "", false
+	}
+	if !a.guardWrite(calID) {
+		return "", false
+	}
+	return calID, true
+}
+
+// addSubtaskQuick (as): quick-add a subtask under the highlighted task.
 func (a *app) addSubtaskQuick() {
 	if a.mode != modeTasks {
 		return
@@ -129,28 +157,7 @@ func (a *app) addSubtaskQuick() {
 	a.promptInput("New subtask", "Subtask: ", func(text string) { a.createTask(calID, parentUID, text) })
 }
 
-// addFull (A): open the full create form for a top-level task or an event.
-func (a *app) addFull() {
-	if a.mode == modeTasks {
-		calID := a.selectedTasklistID()
-		if calID == "" {
-			a.flash("No task list selected — create one first")
-			return
-		}
-		if !a.guardWrite(calID) {
-			return
-		}
-		a.showCreateTodoForm(calID, "")
-		return
-	}
-	calID, base, ok := a.eventCreateContext()
-	if !ok {
-		return
-	}
-	a.showCreateEventForm(calID, base)
-}
-
-// addSubtaskFull (S): full create form for a subtask under the highlighted task.
+// addSubtaskFull (aS): full create form for a subtask under the highlighted task.
 func (a *app) addSubtaskFull() {
 	if a.mode != modeTasks {
 		return

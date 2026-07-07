@@ -49,10 +49,11 @@ const (
 
 // Page names for the top-level Pages: the main layout and the modal overlays.
 const (
-	pageMain    = "main"
-	pageInput   = "modal-input"
-	pageForm    = "modal-form"
-	pageConfirm = "modal-confirm"
+	pageMain     = "main"
+	pageInput    = "modal-input"
+	pageForm     = "modal-form"
+	pageConfirm  = "modal-confirm"
+	pageWhichKey = "which-key"
 )
 
 type bordered struct {
@@ -94,6 +95,7 @@ type app struct {
 	detailOn bool
 	undo     []undoStep // session undo stack (most recent last)
 
+	pendingPrefix   rune // active chord prefix (e.g. 'a'); 0 when none
 	mode            int
 	viewMode        int
 	anchor          time.Time
@@ -377,6 +379,11 @@ func (a *app) calendarPrimitive() tview.Primitive {
 }
 
 func (a *app) globalKeys(ev *tcell.EventKey) *tcell.EventKey {
+	// A pending chord prefix (e.g. `a`) claims the next key before anything else.
+	if a.pendingPrefix != 0 {
+		a.resolvePrefix(ev)
+		return nil
+	}
 	// While a modal (input/form/confirm) is open it owns all keys; app shortcuts
 	// must not fire, or typing "a"/"q"/digits would trigger them.
 	if a.modalOpen() {
@@ -400,22 +407,13 @@ func (a *app) globalKeys(ev *tcell.EventKey) *tcell.EventKey {
 			a.tv.Stop()
 			return nil
 		case 'a':
-			a.addQuick()
-			return nil
-		case 'A':
-			a.addFull()
-			return nil
-		case 's':
-			a.addSubtaskQuick()
-			return nil
-		case 'S':
-			a.addSubtaskFull()
+			a.startPrefix('a')
 			return nil
 		case 'e':
 			a.editSelected()
 			return nil
 		case 'd':
-			a.deleteSelected()
+			a.deleteContextual()
 			return nil
 		case ' ':
 			a.toggleComplete()
@@ -424,15 +422,8 @@ func (a *app) globalKeys(ev *tcell.EventKey) *tcell.EventKey {
 			a.undoLast()
 			return nil
 		case 'r':
-			// Interim manual-sync trigger; step 10 replaces it with :sync.
+			// Convenience alias for :sync (the command form echoes in the status bar).
 			a.triggerSync()
-			return nil
-		case 'c':
-			// Interim create-calendar/list key; folds into the a-prefix (ac/al) in step 10.
-			a.createCollection()
-			return nil
-		case 'D':
-			a.deleteCollection()
 			return nil
 		case 'H':
 			if a.mode == modeTasks {
