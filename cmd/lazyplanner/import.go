@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"os"
 	"os/signal"
+	"path/filepath"
 
 	"github.com/littekge/LazyPlanner/internal/config"
 	"github.com/littekge/LazyPlanner/internal/store"
@@ -29,6 +30,9 @@ func runImport(args []string) error {
 		return err
 	}
 
+	// Namespace the cache by account so import writes to the same place the TUI
+	// reads from (see the account-model decision in main.md).
+	accountID := config.AccountID(*conn.url, *conn.username)
 	dataDir := *data
 	if dataDir == "" {
 		d, err := config.DataDir()
@@ -37,6 +41,7 @@ func runImport(args []string) error {
 		}
 		dataDir = d
 	}
+	dataDir = filepath.Join(dataDir, accountID)
 
 	// Cancel cleanly on Ctrl-C so a long import never blocks uninterruptibly.
 	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt)
