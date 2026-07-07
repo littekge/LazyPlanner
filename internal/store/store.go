@@ -73,6 +73,7 @@ type calState struct {
 	syncToken   string
 	href        string
 	resources   map[string]*Resource
+	tombstones  map[string]tombstoneMeta // resource name -> pending server-side deletion
 }
 
 // Store is the vdir cache: a set of calendar directories under a data root,
@@ -132,6 +133,7 @@ func (s *Store) loadCalendar(ctx context.Context, id string) (*calState, []LoadE
 	cs.color = sc.Color
 	cs.syncToken = sc.SyncToken
 	cs.href = sc.Href
+	cs.tombstones = sc.Tombstones
 
 	entries, err := os.ReadDir(dir)
 	if err != nil {

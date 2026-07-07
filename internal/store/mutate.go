@@ -67,6 +67,9 @@ func (s *Store) writeResource(ctx context.Context, calID, name string, obj *mode
 
 	res := build(cs.resources[name])
 	cs.resources[name] = res
+	// Writing a resource cancels any pending deletion of the same name — this is
+	// how undo (Restore) resurrects a just-deleted resource.
+	delete(cs.tombstones, name)
 
 	if err := writeSidecar(s.root, cs); err != nil {
 		return nil, fmt.Errorf("updating sidecar for %q: %w", calID, err)
@@ -146,7 +149,8 @@ func (s *Store) Delete(ctx context.Context, calID, name string) error {
 	if cs == nil {
 		return fmt.Errorf("store: unknown calendar %q", calID)
 	}
-	if _, ok := cs.resources[name]; !ok {
+	r, ok := cs.resources[name]
+	if !ok {
 		return fmt.Errorf("store: unknown resource %s/%s", calID, name)
 	}
 
@@ -154,6 +158,15 @@ func (s *Store) Delete(ctx context.Context, calID, name string) error {
 		return fmt.Errorf("deleting %s/%s: %w", calID, name, err)
 	}
 	delete(cs.resources, name)
+
+	// If the resource had a server identity, remember to delete it there on the
+	// next sync. A never-synced local resource (no Href) leaves no tombstone.
+	if r.Href != "" {
+		if cs.tombstones == nil {
+			cs.tombstones = map[string]tombstoneMeta{}
+		}
+		cs.tombstones[name] = tombstoneMeta{Href: r.Href, ETag: r.ETag}
+	}
 
 	if err := writeSidecar(s.root, cs); err != nil {
 		return fmt.Errorf("updating sidecar for %q: %w", calID, err)

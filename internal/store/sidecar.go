@@ -18,12 +18,23 @@ type sidecar struct {
 	SyncToken   string                  `json:"sync_token,omitempty"`
 	Href        string                  `json:"href,omitempty"`
 	Resources   map[string]resourceMeta `json:"resources,omitempty"`
+	// Tombstones records resources deleted locally that still need to be deleted
+	// on the server, keyed by their (now-gone) .ics file name. They are kept
+	// until sync pushes the deletion, then cleared.
+	Tombstones map[string]tombstoneMeta `json:"tombstones,omitempty"`
 }
 
 type resourceMeta struct {
 	ETag  string `json:"etag,omitempty"`
 	Href  string `json:"href,omitempty"`
 	Dirty bool   `json:"dirty,omitempty"`
+}
+
+// tombstoneMeta is the server identity of a locally-deleted resource, enough to
+// issue a conditional DELETE (If-Match: ETag) on the next sync.
+type tombstoneMeta struct {
+	Href string `json:"href,omitempty"`
+	ETag string `json:"etag,omitempty"`
 }
 
 // readSidecar loads a calendar's sidecar. A missing sidecar is normal (a vdir
@@ -55,6 +66,12 @@ func writeSidecar(root string, cs *calState) error {
 	}
 	for name, r := range cs.resources {
 		sc.Resources[name] = resourceMeta{ETag: r.ETag, Href: r.Href, Dirty: r.Dirty}
+	}
+	if len(cs.tombstones) > 0 {
+		sc.Tombstones = make(map[string]tombstoneMeta, len(cs.tombstones))
+		for name, tm := range cs.tombstones {
+			sc.Tombstones[name] = tm
+		}
 	}
 	data, err := json.MarshalIndent(sc, "", "  ")
 	if err != nil {
