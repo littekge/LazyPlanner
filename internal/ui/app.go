@@ -425,6 +425,15 @@ func (a *app) globalKeys(ev *tcell.EventKey) *tcell.EventKey {
 			// Convenience alias for :sync (the command form echoes in the status bar).
 			a.triggerSync()
 			return nil
+		case ':':
+			a.openCommandLine("")
+			return nil
+		case '?':
+			a.showHelp()
+			return nil
+		case 'g':
+			a.openCommandLine("goto ")
+			return nil
 		case 'H':
 			if a.mode == modeTasks {
 				a.reparentSelected(outdent)
