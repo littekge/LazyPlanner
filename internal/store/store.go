@@ -43,6 +43,10 @@ type Calendar struct {
 	SyncToken   string
 	Href        string
 	Resources   []*Resource
+	// PendingCreate is true for a locally-created calendar not yet pushed to the
+	// server; Components is the iCalendar component set to create it with.
+	PendingCreate bool
+	Components    []string
 }
 
 // LoadError records a resource (or sidecar) that could not be read or parsed
@@ -76,6 +80,10 @@ type calState struct {
 	resources   map[string]*Resource
 	tombstones  map[string]tombstoneMeta // resource name -> pending server-side deletion
 	conflicts   map[string]conflictMeta  // resource name -> stashed server version awaiting resolution
+
+	pendingCreate bool     // created locally, awaiting MKCALENDAR on the next sync
+	pendingDelete bool     // marked for deletion, awaiting server DELETE then local removal
+	components    []string // iCalendar component set to create (VEVENT/VTODO)
 }
 
 // Store is the vdir cache: a set of calendar directories under a data root,
@@ -137,6 +145,9 @@ func (s *Store) loadCalendar(ctx context.Context, id string) (*calState, []LoadE
 	cs.href = sc.Href
 	cs.tombstones = sc.Tombstones
 	cs.conflicts = map[string]conflictMeta{}
+	cs.pendingCreate = sc.PendingCreate
+	cs.pendingDelete = sc.PendingDelete
+	cs.components = sc.Components
 
 	entries, err := os.ReadDir(dir)
 	if err != nil {
@@ -193,6 +204,9 @@ func (s *Store) Calendars() []Calendar {
 	defer s.mu.RUnlock()
 	out := make([]Calendar, 0, len(s.cals))
 	for _, cs := range s.cals {
+		if cs.pendingDelete {
+			continue // hidden from the UI and sync-reconcile until removed
+		}
 		out = append(out, cs.snapshot())
 	}
 	sort.Slice(out, func(i, j int) bool { return out[i].ID < out[j].ID })
@@ -221,12 +235,14 @@ func (cs *calState) snapshot() Calendar {
 	}
 	sort.Slice(res, func(i, j int) bool { return res[i].Name < res[j].Name })
 	return Calendar{
-		ID:          cs.id,
-		DisplayName: name,
-		Color:       cs.color,
-		SyncToken:   cs.syncToken,
-		Href:        cs.href,
-		Resources:   res,
+		ID:            cs.id,
+		DisplayName:   name,
+		Color:         cs.color,
+		SyncToken:     cs.syncToken,
+		Href:          cs.href,
+		Resources:     res,
+		PendingCreate: cs.pendingCreate,
+		Components:    append([]string(nil), cs.components...),
 	}
 }
 

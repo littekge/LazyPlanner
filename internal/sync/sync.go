@@ -23,6 +23,13 @@ type Syncer interface {
 	PutObject(ctx context.Context, href string, data []byte, ifMatch string, create bool) (string, error)
 	// DeleteObject removes a resource, conditional on ifMatch when set.
 	DeleteObject(ctx context.Context, href, ifMatch string) error
+	// CalendarHomeSet returns the collection under which calendars live, used to
+	// place a newly-created calendar.
+	CalendarHomeSet(ctx context.Context) (string, error)
+	// CreateCalendar issues MKCALENDAR for a locally-created calendar.
+	CreateCalendar(ctx context.Context, path string, spec caldav.CalendarSpec) error
+	// DeleteCalendar removes a calendar collection on the server.
+	DeleteCalendar(ctx context.Context, path string) error
 }
 
 // SyncError records one resource that could not be synced. The rest of the sync
@@ -38,13 +45,15 @@ func (e SyncError) Unwrap() error { return e.Err }
 
 // SyncResult summarizes one two-way sync.
 type SyncResult struct {
-	Calendars     int         // calendars reconciled
-	Pushed        int         // local creates/edits sent to the server
-	Pulled        int         // remote creates/edits fetched into the cache
-	PushedDeletes int         // local deletions applied on the server
-	PulledDeletes int         // server deletions applied locally
-	Conflicts     int         // conflicts detected this run
-	Skipped       []SyncError // per-resource failures (sync still completed)
+	Calendars        int         // calendars reconciled
+	CalendarsCreated int         // local calendars created on the server (MKCALENDAR)
+	CalendarsDeleted int         // local calendar deletions applied on the server
+	Pushed           int         // local creates/edits sent to the server
+	Pulled           int         // remote creates/edits fetched into the cache
+	PushedDeletes    int         // local deletions applied on the server
+	PulledDeletes    int         // server deletions applied locally
+	Conflicts        int         // conflicts detected this run
+	Skipped          []SyncError // per-resource failures (sync still completed)
 }
 
 // Sync reconciles the local cache with the server in both directions, resource
@@ -65,6 +74,12 @@ type SyncResult struct {
 func Sync(ctx context.Context, client Syncer, st *store.Store) (SyncResult, error) {
 	var res SyncResult
 
+	// Push in-app calendar management first, so discovery reflects it: deletes
+	// remove the collection server-side (and locally), creates issue MKCALENDAR
+	// so the new calendar is then reconciled like any other.
+	pendingDeleteHref := pushCalendarDeletes(ctx, client, st, &res)
+	pushCalendarCreates(ctx, client, st, &res)
+
 	serverCals, err := client.DiscoverCalendars(ctx)
 	if err != nil {
 		return res, fmt.Errorf("sync: discovering calendars: %w", err)
@@ -83,6 +98,9 @@ func Sync(ctx context.Context, client Syncer, st *store.Store) (SyncResult, erro
 		if err := ctx.Err(); err != nil {
 			return res, err
 		}
+		if pendingDeleteHref[sc.Path] {
+			continue // a deletion is pending (or failed); don't re-import it
+		}
 
 		localID, known := localByHref[sc.Path]
 		if !known {
@@ -100,6 +118,60 @@ func Sync(ctx context.Context, client Syncer, st *store.Store) (SyncResult, erro
 		res.Calendars++
 	}
 	return res, nil
+}
+
+// pushCalendarDeletes applies calendars marked for deletion: it deletes the
+// collection on the server (when it was ever pushed) and removes it locally. It
+// returns the set of server hrefs that are pending deletion, so a delete that
+// fails is not re-imported by discovery. Per-calendar failures are recorded and
+// leave the calendar pending for a later retry.
+func pushCalendarDeletes(ctx context.Context, client Syncer, st *store.Store, res *SyncResult) map[string]bool {
+	pending := map[string]bool{}
+	for _, d := range st.PendingCalendarDeletes() {
+		if d.Href != "" {
+			pending[d.Href] = true
+			if err := client.DeleteCalendar(ctx, d.Href); err != nil {
+				recordSkip(res, d.ID, d.Href, err)
+				continue // keep it pending; skip local removal so we retry next sync
+			}
+		}
+		if err := st.RemoveCalendarLocal(ctx, d.ID); err != nil {
+			recordSkip(res, d.ID, "calendar", err)
+			continue
+		}
+		res.CalendarsDeleted++
+	}
+	return pending
+}
+
+// pushCalendarCreates issues MKCALENDAR for every locally-created calendar, then
+// records its server href so the following reconcile pushes its resources.
+func pushCalendarCreates(ctx context.Context, client Syncer, st *store.Store, res *SyncResult) {
+	var homeSet string
+	for _, c := range st.Calendars() {
+		if !c.PendingCreate {
+			continue
+		}
+		if homeSet == "" {
+			hs, err := client.CalendarHomeSet(ctx)
+			if err != nil {
+				recordSkip(res, c.ID, "calendar", err)
+				return // no home set → can't create any; discovery will surface the error
+			}
+			homeSet = hs
+		}
+		path := joinHref(homeSet, c.ID) + "/"
+		spec := caldav.CalendarSpec{DisplayName: c.DisplayName, Color: c.Color, Components: c.Components}
+		if err := client.CreateCalendar(ctx, path, spec); err != nil {
+			recordSkip(res, c.ID, "calendar", err)
+			continue
+		}
+		if err := st.MarkCalendarSynced(ctx, c.ID, path); err != nil {
+			recordSkip(res, c.ID, "calendar", err)
+			continue
+		}
+		res.CalendarsCreated++
+	}
 }
 
 // reconcileCalendar performs the two-way merge for one calendar. It aborts only

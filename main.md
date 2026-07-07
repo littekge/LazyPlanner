@@ -189,6 +189,8 @@ Chosen sizes are remembered across launches in the state file under the data dir
 | `>` / `<` | Zoom into / out of task subtree |
 | `H` / `L` | Outdent / indent task (re-parent) |
 | `u` | Undo last local change (session stack) |
+| `r` | Sync now (two-way); interim — becomes `:sync` in step 10 |
+| `c` / `D` | Create / delete a calendar or task list (offline-first); interim — folds into `ac`/`al` in step 10 |
 | `.` | Show/hide completed tasks |
 | `v` | Cycle calendar view: month → week → day |
 | `[` / `]` | Cycle the highlighted calendar (calendar mode; works from the grid too) |

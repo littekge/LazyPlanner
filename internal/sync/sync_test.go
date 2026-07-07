@@ -55,13 +55,17 @@ func mkICal(t *testing.T, ics string) *ical.Calendar {
 // and DeleteObject mutate its state (so idempotency and round-trips can be
 // checked), and failPut/failDel inject conditional-write failures.
 type fakeServer struct {
-	cals    []caldav.Calendar
-	data    map[string]caldav.Object // href -> object
-	puts    int
-	deletes int
-	failPut map[string]error
-	failDel map[string]error
-	seq     int
+	cals        []caldav.Calendar
+	data        map[string]caldav.Object // href -> object
+	puts        int
+	deletes     int
+	failPut     map[string]error
+	failDel     map[string]error
+	seq         int
+	homeSet     string
+	created     []caldav.CalendarSpec // MKCALENDAR calls, by path order
+	createdPath []string
+	deletedCals []string // DeleteCalendar paths
 }
 
 func newFakeServer() *fakeServer {
@@ -70,7 +74,29 @@ func newFakeServer() *fakeServer {
 		data:    map[string]caldav.Object{},
 		failPut: map[string]error{},
 		failDel: map[string]error{},
+		homeSet: "/dav/cal/",
 	}
+}
+
+func (f *fakeServer) CalendarHomeSet(context.Context) (string, error) { return f.homeSet, nil }
+
+func (f *fakeServer) CreateCalendar(_ context.Context, path string, spec caldav.CalendarSpec) error {
+	f.created = append(f.created, spec)
+	f.createdPath = append(f.createdPath, path)
+	// The new calendar now appears in discovery.
+	f.cals = append(f.cals, caldav.Calendar{Path: path, Name: spec.DisplayName})
+	return nil
+}
+
+func (f *fakeServer) DeleteCalendar(_ context.Context, path string) error {
+	f.deletedCals = append(f.deletedCals, path)
+	for i, c := range f.cals {
+		if c.Path == path {
+			f.cals = append(f.cals[:i], f.cals[i+1:]...)
+			break
+		}
+	}
+	return nil
 }
 
 func (f *fakeServer) DiscoverCalendars(context.Context) ([]caldav.Calendar, error) {
@@ -426,4 +452,120 @@ func TestSyncCreatesNewServerCalendar(t *testing.T) {
 	if !ok || cal.DisplayName != "Personal" || len(cal.Resources) != 1 {
 		t.Errorf("calendar not created from server: %+v", cal)
 	}
+}
+
+func TestSyncCreatesLocalCalendarAndPushesItsResources(t *testing.T) {
+	ctx := context.Background()
+	st, err := store.Open(ctx, t.TempDir())
+	if err != nil {
+		t.Fatal(err)
+	}
+	srv := newFakeServer()
+	srv.cals = nil // server starts with no calendars
+
+	// A calendar created in-app (offline), holding one local task, awaiting push.
+	if err := st.CreateCalendarLocal(ctx, "errands", store.CalendarMeta{DisplayName: "Errands"}, []string{"VTODO"}); err != nil {
+		t.Fatal(err)
+	}
+	name := store.ResourceName("t1@test")
+	if _, err := st.Put(ctx, "errands", name, mkParsed(t, eventICS("t1@test", "Buy milk"))); err != nil {
+		t.Fatal(err)
+	}
+
+	res, err := sync.Sync(ctx, srv, st)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if res.CalendarsCreated != 1 {
+		t.Fatalf("CalendarsCreated = %d, want 1", res.CalendarsCreated)
+	}
+	if len(srv.created) != 1 || srv.created[0].DisplayName != "Errands" || srv.created[0].Components[0] != "VTODO" {
+		t.Fatalf("MKCALENDAR spec = %+v", srv.created)
+	}
+	// The calendar is no longer pending, has a server href, and its resource was pushed.
+	cal, _ := st.Calendar("errands")
+	if cal.PendingCreate || cal.Href == "" {
+		t.Errorf("calendar still pending after create: %+v", cal)
+	}
+	if res.Pushed != 1 {
+		t.Errorf("Pushed = %d, want 1 (the task in the new calendar)", res.Pushed)
+	}
+	if r := findResByName(t, st, "errands", name); r == nil || r.Dirty || r.Href == "" {
+		t.Errorf("task not pushed clean: %+v", r)
+	}
+}
+
+func TestSyncDeletesLocalCalendarOnServer(t *testing.T) {
+	ctx := context.Background()
+	st := newStore(t) // has "personal" at calPath
+	srv := newFakeServer()
+	// Seed one synced resource so the calendar isn't empty.
+	name := store.ResourceName("e1@test")
+	href := calPath + name
+	if _, err := st.PutRemote(ctx, "personal", name, mkParsed(t, eventICS("e1@test", "Base")), "srv-1", href); err != nil {
+		t.Fatal(err)
+	}
+	srv.data[href] = caldav.Object{Path: href, ETag: "srv-1", Data: mkICal(t, eventICS("e1@test", "Base"))}
+
+	// Delete the calendar in-app.
+	if err := st.MarkCalendarDeleted(ctx, "personal"); err != nil {
+		t.Fatal(err)
+	}
+	// It vanishes from the UI immediately.
+	if len(st.Calendars()) != 0 {
+		t.Fatalf("deleted calendar still listed: %+v", st.Calendars())
+	}
+
+	res, err := sync.Sync(ctx, srv, st)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if res.CalendarsDeleted != 1 || len(srv.deletedCals) != 1 || srv.deletedCals[0] != calPath {
+		t.Fatalf("DeleteCalendar not issued: res=%+v deleted=%+v", res, srv.deletedCals)
+	}
+	if _, ok := st.Calendar("personal"); ok {
+		t.Error("calendar still present locally after delete+sync")
+	}
+	// It must not be re-imported by the same sync's discovery pass.
+	if res.Calendars != 0 {
+		t.Errorf("deleted calendar was reconciled: Calendars=%d", res.Calendars)
+	}
+}
+
+func TestSyncDeleteNeverPushedCalendarSkipsServer(t *testing.T) {
+	ctx := context.Background()
+	st, err := store.Open(ctx, t.TempDir())
+	if err != nil {
+		t.Fatal(err)
+	}
+	srv := newFakeServer()
+	srv.cals = nil
+	if err := st.CreateCalendarLocal(ctx, "temp", store.CalendarMeta{DisplayName: "Temp"}, nil); err != nil {
+		t.Fatal(err)
+	}
+	// Delete it before it was ever synced → removed outright, no server call.
+	if err := st.MarkCalendarDeleted(ctx, "temp"); err != nil {
+		t.Fatal(err)
+	}
+	if _, ok := st.Calendar("temp"); ok {
+		t.Fatal("never-pushed calendar should be removed immediately on delete")
+	}
+	res, err := sync.Sync(ctx, srv, st)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(srv.deletedCals) != 0 || res.CalendarsDeleted != 0 || res.CalendarsCreated != 0 {
+		t.Errorf("unexpected server calendar ops: deleted=%+v res=%+v", srv.deletedCals, res)
+	}
+}
+
+func findResByName(t *testing.T, st *store.Store, calID, name string) *store.Resource {
+	t.Helper()
+	cal, _ := st.Calendar(calID)
+	for _, r := range cal.Resources {
+		if r.Name == name {
+			return r
+		}
+	}
+	return nil
 }

@@ -18,6 +18,13 @@ type sidecar struct {
 	SyncToken   string                  `json:"sync_token,omitempty"`
 	Href        string                  `json:"href,omitempty"`
 	Resources   map[string]resourceMeta `json:"resources,omitempty"`
+	// Calendar-level pending state for offline-first in-app management: a
+	// locally-created calendar awaits MKCALENDAR on the next sync; one marked
+	// for deletion awaits a server DELETE then local removal. Components is the
+	// iCalendar component set (VEVENT/VTODO) to create.
+	PendingCreate bool     `json:"pending_create,omitempty"`
+	PendingDelete bool     `json:"pending_delete,omitempty"`
+	Components    []string `json:"components,omitempty"`
 	// Tombstones records resources deleted locally that still need to be deleted
 	// on the server, keyed by their (now-gone) .ics file name. They are kept
 	// until sync pushes the deletion, then cleared.
@@ -70,11 +77,14 @@ func readSidecar(dir string) (*sidecar, error) {
 // atomically.
 func writeSidecar(root string, cs *calState) error {
 	sc := sidecar{
-		DisplayName: cs.displayName,
-		Color:       cs.color,
-		SyncToken:   cs.syncToken,
-		Href:        cs.href,
-		Resources:   make(map[string]resourceMeta, len(cs.resources)),
+		DisplayName:   cs.displayName,
+		Color:         cs.color,
+		SyncToken:     cs.syncToken,
+		Href:          cs.href,
+		Resources:     make(map[string]resourceMeta, len(cs.resources)),
+		PendingCreate: cs.pendingCreate,
+		PendingDelete: cs.pendingDelete,
+		Components:    cs.components,
 	}
 	for name, r := range cs.resources {
 		m := resourceMeta{ETag: r.ETag, Href: r.Href, Dirty: r.Dirty}

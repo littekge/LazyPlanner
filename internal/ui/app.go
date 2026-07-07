@@ -427,6 +427,13 @@ func (a *app) globalKeys(ev *tcell.EventKey) *tcell.EventKey {
 			// Interim manual-sync trigger; step 10 replaces it with :sync.
 			a.triggerSync()
 			return nil
+		case 'c':
+			// Interim create-calendar/list key; folds into the a-prefix (ac/al) in step 10.
+			a.createCollection()
+			return nil
+		case 'D':
+			a.deleteCollection()
+			return nil
 		case 'H':
 			if a.mode == modeTasks {
 				a.reparentSelected(outdent)

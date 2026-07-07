@@ -2,7 +2,7 @@
 
 A terminal-based todo-list and calendar manager with offline-first CalDAV sync — a full-screen interactive TUI in the style of [lazygit](https://github.com/jesseduffield/lazygit), written in Go.
 
-> **Status: early build.** The spec is complete (see [`main.md`](main.md)). Done so far: build steps 1–8 — the Go module, packages, vendored deps, and CI (step 1); the `model` layer parsing iCalendar events and todos (step 2); timezone-aware recurrence expansion (step 3); the local vdir cache with an in-memory index and atomic writes (step 4); one-way CalDAV import from NextCloud (step 5); a read-only TUI with a calendar subtask tree and today's agenda (step 6); **month/week/day calendar views** with movement keys (step 7); and **editing** — create/edit/complete/delete tasks and events, indent/outdent subtasks, and a session undo (step 8). **Step 9 (two-way sync) is in progress**: a `config.toml` (generated on first run), an ETag-based **two-way sync engine** that never silently overwrites (pushes local changes, pulls remote ones, keeps both sides of a conflict), the account-namespaced local cache, and an in-app sync trigger with a sync-status indicator are all in. Remaining in step 9: in-app calendar/list creation & deletion.
+> **Status: early build.** The spec is complete (see [`main.md`](main.md)). Done so far: build steps 1–8 — the Go module, packages, vendored deps, and CI (step 1); the `model` layer parsing iCalendar events and todos (step 2); timezone-aware recurrence expansion (step 3); the local vdir cache with an in-memory index and atomic writes (step 4); one-way CalDAV import from NextCloud (step 5); a read-only TUI with a calendar subtask tree and today's agenda (step 6); **month/week/day calendar views** with movement keys (step 7); and **editing** — create/edit/complete/delete tasks and events, indent/outdent subtasks, and a session undo (step 8). **Step 9 (two-way sync) is complete**: a `config.toml` (generated on first run), an ETag-based **two-way sync engine** that never silently overwrites (pushes local changes, pulls remote ones, keeps both sides of a conflict), the account-namespaced local cache, an in-app sync trigger with a sync-status indicator, and offline-first in-app calendar/task-list creation & deletion. Next up: step 10 (`:` command mode + a vim-style chorded keymap).
 
 ## What it does
 
@@ -31,6 +31,7 @@ Run `lazyplanner` with no arguments to open the TUI. It reads the local cache (p
 - **`H` / `L`** — outdent / indent the selected task (re-parent in the subtask tree).
 - **`u`** — undo the last create/edit/complete/delete this session (multi-level).
 - **`r`** — sync now (two-way) with the server. LazyPlanner also syncs in the background on startup, and the status bar's right section shows the state (`syncing…`, `synced HH:MM`, `! N conflict(s)`, `offline`, or `not configured`). *(Interim key; the `:sync` command arrives with command mode.)*
+- **`c` / `D`** — create / delete a calendar or task list, offline-first (the collection appears immediately; the server `MKCALENDAR`/`DELETE` happens on the next sync). Create prompts for a name and type (event calendar / task list / both). *(Interim keys; fold into the `a`-prefix in step 10.)*
 
 Full key list:
 
@@ -52,6 +53,7 @@ Full key list:
 | `H` / `L` | Outdent / indent task (re-parent) |
 | `u` | Undo last local change (this session) |
 | `r` | Sync now (two-way) — interim key; `:sync` lands with command mode |
+| `c` / `D` | Create / delete a calendar or task list (offline-first) — interim keys |
 | `PageUp` / `PageDown` | Scroll the week/day time-grid or the agenda |
 | `.` | Show/hide completed tasks |
 | `q` / `Ctrl-C` | Quit |
@@ -94,7 +96,7 @@ lazyplanner sync \
 
 ### Managing calendars (early)
 
-LazyPlanner can create and delete calendars/task lists directly on the server (via CalDAV `MKCALENDAR`), so you never have to use the NextCloud web UI. Connection flags/env vars are the same as `import`.
+You can create and delete calendars/task lists in-app (the `c` / `D` keys — offline-first), so you never need the NextCloud web UI. These CLI subcommands do the same directly on the server (via CalDAV `MKCALENDAR` / `DELETE`); connection flags/env vars are the same as `import`.
 
 ```sh
 lazyplanner calendar list                          # show calendars + their server paths
