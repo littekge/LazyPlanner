@@ -80,6 +80,8 @@ The local cache is **namespaced by account** (a stable id derived from the serve
 
 Once `[server]` is set, LazyPlanner syncs **both ways** on startup and whenever you press `r` (or run the `sync` command below). Sync is ETag-based and **never silently overwrites**: it pushes local creates/edits/deletes, pulls remote changes, and when the same item changed on both sides it keeps both versions and flags the conflict (interactive resolution arrives with command mode).
 
+**Read-only calendars** (like NextCloud's generated "Contact Birthdays" calendar, or read-only shares) are detected automatically and marked `[ro]` in the overview. LazyPlanner never writes to them — creating/editing/deleting there is blocked with a hint, and sync mirrors them one-way — exactly as the NextCloud web UI treats them.
+
 ```sh
 lazyplanner sync      # two-way sync of the local cache against the server
 lazyplanner import    # one-way pull only (server → local), e.g. for a first seed

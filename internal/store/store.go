@@ -47,6 +47,9 @@ type Calendar struct {
 	// server; Components is the iCalendar component set to create it with.
 	PendingCreate bool
 	Components    []string
+	// ReadOnly is true when the server grants no write privilege (e.g. the
+	// generated birthday calendar); the UI blocks writes and sync is pull-only.
+	ReadOnly bool
 }
 
 // LoadError records a resource (or sidecar) that could not be read or parsed
@@ -84,6 +87,7 @@ type calState struct {
 	pendingCreate bool     // created locally, awaiting MKCALENDAR on the next sync
 	pendingDelete bool     // marked for deletion, awaiting server DELETE then local removal
 	components    []string // iCalendar component set to create (VEVENT/VTODO)
+	readOnly      bool     // server grants no write privilege; the app never writes here
 }
 
 // Store is the vdir cache: a set of calendar directories under a data root,
@@ -148,6 +152,7 @@ func (s *Store) loadCalendar(ctx context.Context, id string) (*calState, []LoadE
 	cs.pendingCreate = sc.PendingCreate
 	cs.pendingDelete = sc.PendingDelete
 	cs.components = sc.Components
+	cs.readOnly = sc.ReadOnly
 
 	entries, err := os.ReadDir(dir)
 	if err != nil {
@@ -243,6 +248,7 @@ func (cs *calState) snapshot() Calendar {
 		Resources:     res,
 		PendingCreate: cs.pendingCreate,
 		Components:    append([]string(nil), cs.components...),
+		ReadOnly:      cs.readOnly,
 	}
 }
 

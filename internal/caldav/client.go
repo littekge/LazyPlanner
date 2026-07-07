@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"net/http"
 	"net/url"
+	"strings"
 	"time"
 
 	"github.com/emersion/go-ical"
@@ -49,6 +50,10 @@ type Calendar struct {
 	Name                  string
 	Description           string
 	SupportedComponentSet []string
+	// ReadOnly is true when the current user lacks write privileges on the
+	// collection (e.g. NextCloud's generated "Contact Birthdays" calendar, or a
+	// share mounted read-only). LazyPlanner never writes to such calendars.
+	ReadOnly bool
 }
 
 // Object is a downloaded calendar resource with its server identity. Data is
@@ -114,13 +119,24 @@ func (c *Client) DiscoverCalendars(ctx context.Context) ([]Calendar, error) {
 		return nil, fmt.Errorf("caldav: listing calendars: %w", err)
 	}
 
+	// Best-effort read-only detection: a failed or unsupported privilege query
+	// must not break discovery — enforcement also has a reactive 403 safety net.
+	writable, _ := c.discoverWritable(ctx, homeSet)
+
 	cals := make([]Calendar, 0, len(davCals))
 	for _, dc := range davCals {
+		readOnly := false
+		if writable != nil {
+			if w, ok := writable[strings.TrimRight(dc.Path, "/")]; ok && !w {
+				readOnly = true
+			}
+		}
 		cals = append(cals, Calendar{
 			Path:                  dc.Path,
 			Name:                  dc.Name,
 			Description:           dc.Description,
 			SupportedComponentSet: dc.SupportedComponentSet,
+			ReadOnly:              readOnly,
 		})
 	}
 	return cals, nil

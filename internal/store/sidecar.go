@@ -25,6 +25,9 @@ type sidecar struct {
 	PendingCreate bool     `json:"pending_create,omitempty"`
 	PendingDelete bool     `json:"pending_delete,omitempty"`
 	Components    []string `json:"components,omitempty"`
+	// ReadOnly caches the server's read-only status (no write privilege) so the
+	// UI knows not to allow writes even before the first sync of a session.
+	ReadOnly bool `json:"read_only,omitempty"`
 	// Tombstones records resources deleted locally that still need to be deleted
 	// on the server, keyed by their (now-gone) .ics file name. They are kept
 	// until sync pushes the deletion, then cleared.
@@ -85,6 +88,7 @@ func writeSidecar(root string, cs *calState) error {
 		PendingCreate: cs.pendingCreate,
 		PendingDelete: cs.pendingDelete,
 		Components:    cs.components,
+		ReadOnly:      cs.readOnly,
 	}
 	for name, r := range cs.resources {
 		m := resourceMeta{ETag: r.ETag, Href: r.Href, Dirty: r.Dirty}

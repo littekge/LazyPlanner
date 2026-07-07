@@ -104,6 +104,9 @@ func (a *app) addQuick() {
 			a.flash("No task list selected — create one first")
 			return
 		}
+		if !a.guardWrite(calID) {
+			return
+		}
 		a.promptInput("New task", "Task: ", func(text string) { a.createTask(calID, "", text) })
 		return
 	}
@@ -132,6 +135,9 @@ func (a *app) addFull() {
 		calID := a.selectedTasklistID()
 		if calID == "" {
 			a.flash("No task list selected — create one first")
+			return
+		}
+		if !a.guardWrite(calID) {
 			return
 		}
 		a.showCreateTodoForm(calID, "")
@@ -163,6 +169,9 @@ func (a *app) eventCreateContext() (calID string, base time.Time, ok bool) {
 		a.flash("No calendar selected")
 		return "", time.Time{}, false
 	}
+	if !a.guardWrite(calID) {
+		return "", time.Time{}, false
+	}
 	base = a.anchor
 	if a.mode == modeAgenda {
 		base = model.DayStart(a.now)
@@ -175,6 +184,9 @@ func (a *app) subtaskContext() (calID, parentUID string, ok bool) {
 	calID = a.selectedTasklistID()
 	if calID == "" {
 		a.flash("No task list selected")
+		return "", "", false
+	}
+	if !a.guardWrite(calID) {
 		return "", "", false
 	}
 	node := a.tree.GetCurrentNode()
@@ -265,6 +277,9 @@ func (a *app) toggleComplete() {
 		a.flash("Task not found")
 		return
 	}
+	if !a.guardWrite(loc.CalID) {
+		return
+	}
 	td := findTodo(loc.Object, t.uid)
 	if td == nil {
 		a.flash("Task not found")
@@ -343,6 +358,9 @@ func (a *app) deleteSelected() {
 		a.flash("Item not found")
 		return
 	}
+	if !a.guardWrite(loc.CalID) {
+		return
+	}
 	what := summaryOf(loc.Object, t.uid)
 
 	// A task's subtree is deleted with it (deleting a folder is recursive).
@@ -419,6 +437,9 @@ func (a *app) reparentSelected(dir reparentDir) {
 		a.flash("Task not found")
 		return
 	}
+	if !a.guardWrite(loc.CalID) {
+		return
+	}
 	newObj, err := model.SetTodoParent(loc.Object, td.UID, newParent, a.now, a.loc)
 	if err != nil {
 		a.flash(err.Error())
@@ -463,6 +484,9 @@ func (a *app) editSelected() {
 	loc, ok := a.store.Locate(t.uid)
 	if !ok {
 		a.flash("Item not found")
+		return
+	}
+	if !a.guardWrite(loc.CalID) {
 		return
 	}
 	if t.isTodo {

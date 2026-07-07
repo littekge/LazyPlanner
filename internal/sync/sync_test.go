@@ -559,6 +559,80 @@ func TestSyncDeleteNeverPushedCalendarSkipsServer(t *testing.T) {
 	}
 }
 
+func TestSyncReadOnlyDiscardsStuckAndMirrors(t *testing.T) {
+	ctx := context.Background()
+	st := newStore(t)
+	srv := newFakeServer()
+	srv.cals[0].ReadOnly = true // Personal is read-only for this test
+
+	// A stuck local event the user added to the read-only calendar (never synced).
+	stuck := store.ResourceName("stuck@test")
+	if _, err := st.Put(ctx, "personal", stuck, mkParsed(t, eventICS("stuck@test", "Junk"))); err != nil {
+		t.Fatal(err)
+	}
+	// A real server event that should be mirrored in.
+	href := calPath + "bday.ics"
+	srv.data[href] = caldav.Object{Path: href, ETag: "srv-1", Data: mkICal(t, eventICS("bday@test", "Alice's Birthday"))}
+
+	res, err := sync.Sync(ctx, srv, st)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if srv.puts != 0 || srv.deletes != 0 {
+		t.Errorf("read-only calendar was written to: puts=%d deletes=%d", srv.puts, srv.deletes)
+	}
+	if res.Discarded != 1 {
+		t.Errorf("Discarded = %d, want 1 (the stuck event)", res.Discarded)
+	}
+	if findResByName(t, st, "personal", stuck) != nil {
+		t.Error("stuck local event was not discarded")
+	}
+	// The server's birthday event is pulled in.
+	cal, _ := st.Calendar("personal")
+	found := false
+	for _, r := range cal.Resources {
+		if len(r.Object.Events) > 0 && r.Object.Events[0].Summary == "Alice's Birthday" {
+			found = true
+		}
+	}
+	if !found {
+		t.Errorf("server event not mirrored into the read-only calendar: %+v", cal.Resources)
+	}
+	// The calendar is flagged read-only locally for the UI.
+	if !cal.ReadOnly {
+		t.Error("calendar not flagged read-only in the store")
+	}
+}
+
+func TestSyncReactiveReadOnlyOn403(t *testing.T) {
+	ctx := context.Background()
+	st := newStore(t)
+	srv := newFakeServer() // Personal reports writable (privilege detection missed it)
+
+	name := store.ResourceName("e1@test")
+	if _, err := st.Put(ctx, "personal", name, mkParsed(t, eventICS("e1@test", "Local"))); err != nil {
+		t.Fatal(err)
+	}
+	// But the server refuses the write with 403.
+	srv.failPut[calPath+name] = caldav.ErrReadOnly
+
+	res, err := sync.Sync(ctx, srv, st)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if res.Discarded != 1 {
+		t.Fatalf("Discarded = %d, want 1", res.Discarded)
+	}
+	if findResByName(t, st, "personal", name) != nil {
+		t.Error("stuck event not discarded after 403")
+	}
+	// The calendar is now flagged read-only so future syncs won't retry.
+	cal, _ := st.Calendar("personal")
+	if !cal.ReadOnly {
+		t.Error("calendar not marked read-only after a 403 write")
+	}
+}
+
 func findResByName(t *testing.T, st *store.Store, calID, name string) *store.Resource {
 	t.Helper()
 	cal, _ := st.Calendar(calID)

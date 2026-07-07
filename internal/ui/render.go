@@ -17,7 +17,11 @@ func (a *app) buildCalendars() {
 	a.calendars.Clear()
 	for _, cal := range a.store.Calendars() {
 		events, todos := calCounts(cal)
-		a.calendars.AddItem(fmt.Sprintf("%s  (%de %dt)", cal.DisplayName, events, todos), "", 0, nil)
+		label := fmt.Sprintf("%s  (%de %dt)", cal.DisplayName, events, todos)
+		if cal.ReadOnly {
+			label += " [ro]"
+		}
+		a.calendars.AddItem(label, "", 0, nil)
 	}
 	if a.calendars.GetItemCount() == 0 {
 		a.calendars.AddItem("(no calendars)", "", 0, nil)
@@ -34,7 +38,11 @@ func (a *app) buildTasklists() {
 	a.tasklistIDs = a.tasklistIDs[:0]
 	for _, cal := range a.store.Calendars() {
 		if _, todos := calCounts(cal); todos > 0 {
-			a.tasklists.AddItem(cal.DisplayName, "", 0, nil)
+			label := cal.DisplayName
+			if cal.ReadOnly {
+				label += " [ro]"
+			}
+			a.tasklists.AddItem(label, "", 0, nil)
 			a.tasklistIDs = append(a.tasklistIDs, cal.ID)
 		}
 	}

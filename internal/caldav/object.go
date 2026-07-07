@@ -21,6 +21,12 @@ const icsContentType = ical.MIMEType
 // the app never silently discards either side's changes.
 var ErrPreconditionFailed = errors.New("caldav: precondition failed (server copy changed)")
 
+// ErrReadOnly is returned by PutObject and DeleteObject when the server refuses
+// the write with HTTP 403 Forbidden — typically a read-only calendar (e.g.
+// NextCloud's generated birthday calendar). The sync layer treats the calendar
+// as read-only and stops writing to it.
+var ErrReadOnly = errors.New("caldav: calendar is read-only (server refused the write)")
+
 // PutObject writes a calendar resource at href with a conditional header so the
 // app never blindly overwrites the server:
 //   - ifMatch != "": sent as If-Match, so the write applies only while the
@@ -60,6 +66,9 @@ func (c *Client) PutObject(ctx context.Context, href string, data []byte, ifMatc
 	if resp.StatusCode == http.StatusPreconditionFailed {
 		return "", ErrPreconditionFailed
 	}
+	if resp.StatusCode == http.StatusForbidden {
+		return "", ErrReadOnly
+	}
 	// 201 Created (new), 204 No Content (updated), or 200 OK are all success.
 	if resp.StatusCode != http.StatusCreated && resp.StatusCode != http.StatusNoContent && resp.StatusCode != http.StatusOK {
 		return "", fmt.Errorf("caldav: PUT %q: %s%s", href, resp.Status, responseHint(resp.Body))
@@ -92,6 +101,9 @@ func (c *Client) DeleteObject(ctx context.Context, href, ifMatch string) error {
 
 	if resp.StatusCode == http.StatusPreconditionFailed {
 		return ErrPreconditionFailed
+	}
+	if resp.StatusCode == http.StatusForbidden {
+		return ErrReadOnly
 	}
 	if resp.StatusCode != http.StatusNoContent && resp.StatusCode != http.StatusOK && resp.StatusCode != http.StatusNotFound {
 		return fmt.Errorf("caldav: DELETE %q: %s%s", href, resp.Status, responseHint(resp.Body))

@@ -23,6 +23,17 @@ func componentsForType(label string) []string {
 	}
 }
 
+// guardWrite flashes a hint and returns false when calID is a read-only
+// calendar (e.g. NextCloud's generated birthdays) — writes there are refused by
+// the server and discarded on sync, so the UI blocks them at the source.
+func (a *app) guardWrite(calID string) bool {
+	if cal, ok := a.store.Calendar(calID); ok && cal.ReadOnly {
+		a.flash("That calendar is read-only")
+		return false
+	}
+	return true
+}
+
 // createCollection (c) opens a form to create a calendar or task list locally.
 // It is created offline-first: the collection appears immediately and the server
 // MKCALENDAR happens on the next sync.
@@ -81,6 +92,10 @@ func (a *app) deleteCollection() {
 	cal, ok := a.store.Calendar(id)
 	if !ok {
 		a.flash("Calendar not found")
+		return
+	}
+	if cal.ReadOnly {
+		a.flash("That calendar is read-only and can't be deleted")
 		return
 	}
 

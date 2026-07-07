@@ -116,6 +116,29 @@ func (s *Store) MarkCalendarSynced(ctx context.Context, id, href string) error {
 	return nil
 }
 
+// SetCalendarReadOnly records the server's read-only status for a calendar
+// (whether the user has write privilege). It is a no-op if the value is
+// unchanged, so a routine sync doesn't rewrite the sidecar needlessly.
+func (s *Store) SetCalendarReadOnly(ctx context.Context, calID string, readOnly bool) error {
+	if err := ctx.Err(); err != nil {
+		return err
+	}
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	cs := s.cals[calID]
+	if cs == nil {
+		return fmt.Errorf("store: unknown calendar %q", calID)
+	}
+	if cs.readOnly == readOnly {
+		return nil
+	}
+	cs.readOnly = readOnly
+	if err := writeSidecar(s.root, cs); err != nil {
+		return fmt.Errorf("updating sidecar for %q: %w", calID, err)
+	}
+	return nil
+}
+
 // CalendarDeletion is a calendar marked for deletion that the sync layer must
 // remove on the server. Href is empty for a calendar that was never pushed.
 type CalendarDeletion struct {

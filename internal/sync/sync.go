@@ -53,6 +53,7 @@ type SyncResult struct {
 	PushedDeletes    int         // local deletions applied on the server
 	PulledDeletes    int         // server deletions applied locally
 	Conflicts        int         // conflicts detected this run
+	Discarded        int         // local changes dropped because the calendar is read-only
 	Skipped          []SyncError // per-resource failures (sync still completed)
 }
 
@@ -110,6 +111,10 @@ func Sync(ctx context.Context, client Syncer, st *store.Store) (SyncResult, erro
 			if err := st.SetCalendarMeta(ctx, localID, store.CalendarMeta{DisplayName: sc.Name, Href: sc.Path}); err != nil {
 				return res, fmt.Errorf("sync: recording calendar %q: %w", localID, err)
 			}
+		}
+		// Keep the local read-only status in step with the server so the UI knows.
+		if err := st.SetCalendarReadOnly(ctx, localID, sc.ReadOnly); err != nil {
+			return res, fmt.Errorf("sync: recording read-only status for %q: %w", localID, err)
 		}
 
 		if err := reconcileCalendar(ctx, client, st, localID, sc, &res); err != nil {
@@ -184,6 +189,12 @@ func reconcileCalendar(ctx context.Context, client Syncer, st *store.Store, calI
 	serverByHref := make(map[string]caldav.Object, len(serverObjs))
 	for _, o := range serverObjs {
 		serverByHref[o.Path] = o
+	}
+
+	if sc.ReadOnly {
+		// Read-only calendar (e.g. NextCloud's generated birthdays): never write
+		// to the server. Mirror it one-way and discard any stuck local changes.
+		return reconcileReadOnly(ctx, st, calID, serverObjs, serverByHref, res)
 	}
 
 	cal, ok := st.Calendar(calID)
@@ -267,6 +278,73 @@ func reconcileCalendar(ctx context.Context, client Syncer, st *store.Store, calI
 	return nil
 }
 
+// reconcileReadOnly mirrors a read-only calendar one-way (server → local). Any
+// local change that can never be pushed is discarded: dirty or never-synced
+// resources are dropped, and local deletions (tombstones) are reverted by
+// re-pulling the server's copy. Clean resources track the server as usual.
+func reconcileReadOnly(ctx context.Context, st *store.Store, calID string, serverObjs []caldav.Object, serverByHref map[string]caldav.Object, res *SyncResult) error {
+	cal, ok := st.Calendar(calID)
+	if !ok {
+		return nil
+	}
+	localByHref := map[string]bool{}
+	for _, r := range cal.Resources {
+		if err := ctx.Err(); err != nil {
+			return err
+		}
+		if r.Dirty || r.Href == "" {
+			// A local add/edit on a read-only calendar can never sync → discard.
+			if err := st.Forget(ctx, calID, r.Name); err != nil {
+				recordSkip(res, calID, r.Name, err)
+			} else {
+				res.Discarded++
+			}
+			continue
+		}
+		localByHref[r.Href] = true
+		serverObj, onServer := serverByHref[r.Href]
+		switch {
+		case !onServer:
+			if err := st.Forget(ctx, calID, r.Name); err != nil {
+				recordSkip(res, calID, r.Name, err)
+			} else {
+				res.PulledDeletes++
+			}
+		case serverObj.ETag != r.ETag:
+			pullInto(ctx, st, calID, r.Name, serverObj, res)
+		}
+	}
+
+	// A local deletion of a read-only item can't be pushed; drop the tombstone
+	// and let the pull below restore the item.
+	for _, t := range st.Tombstones() {
+		if t.CalID == calID {
+			_ = st.ClearTombstone(ctx, calID, t.Name)
+			res.Discarded++
+		}
+	}
+
+	for _, o := range serverObjs {
+		if localByHref[o.Path] {
+			continue
+		}
+		pullInto(ctx, st, calID, resourceFileName(o.Path), o, res)
+	}
+	return nil
+}
+
+// markReadOnlyDiscard is the reactive safety net: a write refused with 403
+// (ErrReadOnly) means the calendar is read-only after all (privilege discovery
+// missed it). Flag it and discard the stuck local change.
+func markReadOnlyDiscard(ctx context.Context, st *store.Store, calID, name string, res *SyncResult) {
+	_ = st.SetCalendarReadOnly(ctx, calID, true)
+	if err := st.Forget(ctx, calID, name); err != nil {
+		recordSkip(res, calID, name, err)
+		return
+	}
+	res.Discarded++
+}
+
 func pushCreate(ctx context.Context, client Syncer, st *store.Store, calID, calPath string, r *store.Resource, res *SyncResult) {
 	data, err := r.Object.Encode()
 	if err != nil {
@@ -275,6 +353,10 @@ func pushCreate(ctx context.Context, client Syncer, st *store.Store, calID, calP
 	}
 	href := joinHref(calPath, r.Name)
 	etag, err := client.PutObject(ctx, href, data, "", true)
+	if errors.Is(err, caldav.ErrReadOnly) {
+		markReadOnlyDiscard(ctx, st, calID, r.Name, res)
+		return
+	}
 	if errors.Is(err, caldav.ErrPreconditionFailed) {
 		// Something already exists at that href (unexpected for a fresh UID).
 		recordSkip(res, calID, r.Name, err)
@@ -298,6 +380,10 @@ func pushUpdate(ctx context.Context, client Syncer, st *store.Store, calID strin
 		return
 	}
 	etag, err := client.PutObject(ctx, r.Href, data, r.ETag, false)
+	if errors.Is(err, caldav.ErrReadOnly) {
+		markReadOnlyDiscard(ctx, st, calID, r.Name, res)
+		return
+	}
 	if errors.Is(err, caldav.ErrPreconditionFailed) {
 		// The server changed between our download and this write → conflict.
 		stashServerConflict(ctx, st, calID, r.Name, serverObj, res)
@@ -316,6 +402,16 @@ func pushUpdate(ctx context.Context, client Syncer, st *store.Store, calID strin
 
 func pushDelete(ctx context.Context, client Syncer, st *store.Store, calID string, t store.Tombstone, serverByHref map[string]caldav.Object, res *SyncResult) {
 	err := client.DeleteObject(ctx, t.Href, t.ETag)
+	if errors.Is(err, caldav.ErrReadOnly) {
+		// Can't delete on a read-only calendar; flag it and restore the item.
+		_ = st.SetCalendarReadOnly(ctx, calID, true)
+		if serverObj, ok := serverByHref[t.Href]; ok {
+			pullInto(ctx, st, calID, t.Name, serverObj, res)
+		}
+		_ = st.ClearTombstone(ctx, calID, t.Name)
+		res.Discarded++
+		return
+	}
 	if errors.Is(err, caldav.ErrPreconditionFailed) {
 		// Deleted locally but changed on the server → conflict. Resurrect the
 		// server version so its change is not lost, flag it, and drop the
