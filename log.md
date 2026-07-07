@@ -4,6 +4,13 @@
 
 ---
 
+## 2026-07-07 — Spec: account model (single-account, server-keyed cache) folded into step 9
+
+- Owner asked to record the account-switching plan before starting step 9. Decision: LazyPlanner stays **single-account** (one `[server]`, no in-app switcher), but account switching — expected rare — **must be safe**, so the local vdir cache is namespaced by a stable `<account-id>` derived from server URL + username (`<dataDir>/<account-id>/calendars/…`). Changing the server connection then maps to a separate cache; two accounts can never share one directory. Rationale: sidecar ETags/hrefs are server-specific, so a mixed cache would corrupt two-way-sync conflict detection.
+- Scoped as a **cheap safeguard, not a feature**: full multi-account profiles (`[[account]]` blocks + `:account` switcher) are noted as a future enhancement, explicitly out of initial scope.
+- `main.md`: new **Account model** entry in Settled Decisions; **Build Plan step 9** folds in the account-keyed cache path (wired with two-way sync, when a mismatched cache first becomes dangerous).
+- Spec-only change (no code). Verified `main.md` reads cleanly and `log.md` heading count matches entry count.
+
 ## 2026-07-06 — UI: all-day drill, filled-box completed glyph, full-day time-grid
 
 - Three owner-requested UI changes before step 9.
