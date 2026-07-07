@@ -28,6 +28,18 @@ type resourceMeta struct {
 	ETag  string `json:"etag,omitempty"`
 	Href  string `json:"href,omitempty"`
 	Dirty bool   `json:"dirty,omitempty"`
+	// Conflict, when set, means the local resource and the server diverged (both
+	// edited between syncs). The local .ics stays as the working copy; the
+	// server's diverging version is stashed here losslessly until the user
+	// resolves the conflict.
+	Conflict *conflictMeta `json:"conflict,omitempty"`
+}
+
+// conflictMeta stashes the server's diverging version of a resource so nothing
+// is lost while a conflict awaits resolution.
+type conflictMeta struct {
+	ServerETag string `json:"server_etag,omitempty"`
+	ServerData string `json:"server_data,omitempty"` // raw iCalendar of the server's version
 }
 
 // tombstoneMeta is the server identity of a locally-deleted resource, enough to
@@ -65,7 +77,12 @@ func writeSidecar(root string, cs *calState) error {
 		Resources:   make(map[string]resourceMeta, len(cs.resources)),
 	}
 	for name, r := range cs.resources {
-		sc.Resources[name] = resourceMeta{ETag: r.ETag, Href: r.Href, Dirty: r.Dirty}
+		m := resourceMeta{ETag: r.ETag, Href: r.Href, Dirty: r.Dirty}
+		if cm, ok := cs.conflicts[name]; ok {
+			c := cm
+			m.Conflict = &c
+		}
+		sc.Resources[name] = m
 	}
 	if len(cs.tombstones) > 0 {
 		sc.Tombstones = make(map[string]tombstoneMeta, len(cs.tombstones))

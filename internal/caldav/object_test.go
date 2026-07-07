@@ -4,17 +4,14 @@ import (
 	"context"
 	"net/http"
 	"net/http/httptest"
-	"strings"
 	"testing"
-
-	"github.com/emersion/go-ical"
 
 	"github.com/littekge/LazyPlanner/internal/caldav"
 )
 
-func sampleCal(t *testing.T) *ical.Calendar {
-	t.Helper()
-	const ics = `BEGIN:VCALENDAR
+// sampleICS is an encoded iCalendar body; PutObject takes bytes so the caldav
+// package stays free of iCalendar parsing on the write path.
+var sampleICS = []byte(`BEGIN:VCALENDAR
 VERSION:2.0
 PRODID:-//test//EN
 BEGIN:VEVENT
@@ -25,13 +22,7 @@ DTEND:20260704T133000Z
 SUMMARY:Sample
 END:VEVENT
 END:VCALENDAR
-`
-	cal, err := ical.NewDecoder(strings.NewReader(ics)).Decode()
-	if err != nil {
-		t.Fatalf("decoding sample: %v", err)
-	}
-	return cal
-}
+`)
 
 func TestPutObjectCreate(t *testing.T) {
 	var gotMethod, gotIfNoneMatch, gotIfMatch string
@@ -45,7 +36,7 @@ func TestPutObjectCreate(t *testing.T) {
 	defer srv.Close()
 
 	c, _ := caldav.NewClient(caldav.Config{Endpoint: srv.URL})
-	etag, err := c.PutObject(context.Background(), "/dav/cal/e1.ics", sampleCal(t), "", true)
+	etag, err := c.PutObject(context.Background(), "/dav/cal/e1.ics", sampleICS, "", true)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -74,7 +65,7 @@ func TestPutObjectUpdateSendsQuotedIfMatch(t *testing.T) {
 
 	c, _ := caldav.NewClient(caldav.Config{Endpoint: srv.URL})
 	// The store holds a bare etag; PutObject must quote it for the header.
-	etag, err := c.PutObject(context.Background(), "/dav/cal/e1.ics", sampleCal(t), "srv-1", false)
+	etag, err := c.PutObject(context.Background(), "/dav/cal/e1.ics", sampleICS, "srv-1", false)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -93,7 +84,7 @@ func TestPutObjectPreconditionFailed(t *testing.T) {
 	defer srv.Close()
 
 	c, _ := caldav.NewClient(caldav.Config{Endpoint: srv.URL})
-	_, err := c.PutObject(context.Background(), "/dav/cal/e1.ics", sampleCal(t), "srv-1", false)
+	_, err := c.PutObject(context.Background(), "/dav/cal/e1.ics", sampleICS, "srv-1", false)
 	if err != caldav.ErrPreconditionFailed {
 		t.Errorf("err = %v, want ErrPreconditionFailed", err)
 	}

@@ -26,11 +26,12 @@ const (
 // replaced wholesale on write, never mutated in place, so a snapshot handed to
 // a reader stays valid even as the store changes underneath it.
 type Resource struct {
-	Name   string        // file name within the calendar dir, e.g. "abc.ics"
-	ETag   string        // server ETag from the last sync; "" if never pushed
-	Href   string        // server resource path; "" until first sync
-	Dirty  bool          // written locally, not yet pushed to the server
-	Object *model.Parsed // parsed events/todos + the raw calendar for re-encode
+	Name       string        // file name within the calendar dir, e.g. "abc.ics"
+	ETag       string        // server ETag from the last sync; "" if never pushed
+	Href       string        // server resource path; "" until first sync
+	Dirty      bool          // written locally, not yet pushed to the server
+	Conflicted bool          // local and server diverged; awaiting resolution
+	Object     *model.Parsed // parsed events/todos + the raw calendar for re-encode
 }
 
 // Calendar is an immutable snapshot of a cached collection: server-owned
@@ -74,6 +75,7 @@ type calState struct {
 	href        string
 	resources   map[string]*Resource
 	tombstones  map[string]tombstoneMeta // resource name -> pending server-side deletion
+	conflicts   map[string]conflictMeta  // resource name -> stashed server version awaiting resolution
 }
 
 // Store is the vdir cache: a set of calendar directories under a data root,
@@ -134,6 +136,7 @@ func (s *Store) loadCalendar(ctx context.Context, id string) (*calState, []LoadE
 	cs.syncToken = sc.SyncToken
 	cs.href = sc.Href
 	cs.tombstones = sc.Tombstones
+	cs.conflicts = map[string]conflictMeta{}
 
 	entries, err := os.ReadDir(dir)
 	if err != nil {
@@ -154,6 +157,9 @@ func (s *Store) loadCalendar(ctx context.Context, id string) (*calState, []LoadE
 			continue
 		}
 		cs.resources[name] = res
+		if meta := sc.Resources[name]; meta.Conflict != nil {
+			cs.conflicts[name] = *meta.Conflict
+		}
 	}
 	return cs, errs
 }
@@ -172,11 +178,12 @@ func loadResource(dir, name string, sc *sidecar) (*Resource, error) {
 	}
 	meta := sc.Resources[name]
 	return &Resource{
-		Name:   name,
-		ETag:   meta.ETag,
-		Href:   meta.Href,
-		Dirty:  meta.Dirty,
-		Object: obj,
+		Name:       name,
+		ETag:       meta.ETag,
+		Href:       meta.Href,
+		Dirty:      meta.Dirty,
+		Conflicted: meta.Conflict != nil,
+		Object:     obj,
 	}, nil
 }
 

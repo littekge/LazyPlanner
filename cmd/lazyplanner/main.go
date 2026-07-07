@@ -26,6 +26,9 @@ func main() {
 		case "import":
 			exitOnError(runImport(os.Args[2:]))
 			return
+		case "sync":
+			exitOnError(runSync(os.Args[2:]))
+			return
 		case "calendar":
 			exitOnError(runCalendar(os.Args[2:]))
 			return

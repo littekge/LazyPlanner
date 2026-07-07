@@ -136,8 +136,21 @@ func (s *Store) Restore(ctx context.Context, calID, name string, res *Resource) 
 }
 
 // Delete removes calID/name from disk and the in-memory index. This is a local
-// deletion; propagating it to the server is the sync layer's job.
+// deletion; propagating it to the server is the sync layer's job. If the
+// resource had a server identity, a tombstone is left so the next sync deletes
+// it there too.
 func (s *Store) Delete(ctx context.Context, calID, name string) error {
+	return s.remove(ctx, calID, name, true)
+}
+
+// Forget removes calID/name locally without leaving a tombstone. The sync layer
+// uses it when the server no longer has the resource (deleted remotely), so the
+// local copy is dropped without a pointless server DELETE.
+func (s *Store) Forget(ctx context.Context, calID, name string) error {
+	return s.remove(ctx, calID, name, false)
+}
+
+func (s *Store) remove(ctx context.Context, calID, name string, tombstone bool) error {
 	if err := ctx.Err(); err != nil {
 		return err
 	}
@@ -158,10 +171,12 @@ func (s *Store) Delete(ctx context.Context, calID, name string) error {
 		return fmt.Errorf("deleting %s/%s: %w", calID, name, err)
 	}
 	delete(cs.resources, name)
+	// A removed resource carries no unresolved conflict with it.
+	delete(cs.conflicts, name)
 
 	// If the resource had a server identity, remember to delete it there on the
 	// next sync. A never-synced local resource (no Href) leaves no tombstone.
-	if r.Href != "" {
+	if tombstone && r.Href != "" {
 		if cs.tombstones == nil {
 			cs.tombstones = map[string]tombstoneMeta{}
 		}

@@ -11,6 +11,9 @@ import (
 	"github.com/emersion/go-ical"
 )
 
+// icsContentType is the MIME type for an iCalendar resource body.
+const icsContentType = ical.MIMEType
+
 // ErrPreconditionFailed is returned by PutObject and DeleteObject when the
 // server rejects a conditional write with HTTP 412 — the resource changed on the
 // server since our last sync (If-Match), or already exists (If-None-Match on a
@@ -25,25 +28,22 @@ var ErrPreconditionFailed = errors.New("caldav: precondition failed (server copy
 //   - ifMatch == "" && create: sent as If-None-Match: *, so a create fails if a
 //     resource already exists there.
 //
-// It returns the new server ETag in the store's bare (unquoted) form. Some
-// servers omit the ETag on PUT; then it returns "" and the next pull reconciles
-// it. go-webdav's PutCalendarObject cannot set these headers, so we issue the
-// request over the authenticated HTTP client directly (as with MKCALENDAR).
-func (c *Client) PutObject(ctx context.Context, href string, cal *ical.Calendar, ifMatch string, create bool) (string, error) {
-	var buf bytes.Buffer
-	if err := ical.NewEncoder(&buf).Encode(cal); err != nil {
-		return "", fmt.Errorf("caldav: encoding object for %q: %w", href, err)
-	}
-
+// data is the encoded iCalendar body (from model.Parsed.Encode), so this package
+// stays free of iCalendar parsing on the write path. It returns the new server
+// ETag in the store's bare (unquoted) form. Some servers omit the ETag on PUT;
+// then it returns "" and the next pull reconciles it. go-webdav's
+// PutCalendarObject cannot set these headers, so we issue the request over the
+// authenticated HTTP client directly (as with MKCALENDAR).
+func (c *Client) PutObject(ctx context.Context, href string, data []byte, ifMatch string, create bool) (string, error) {
 	target, err := c.resolve(href)
 	if err != nil {
 		return "", err
 	}
-	req, err := http.NewRequestWithContext(ctx, http.MethodPut, target, bytes.NewReader(buf.Bytes()))
+	req, err := http.NewRequestWithContext(ctx, http.MethodPut, target, bytes.NewReader(data))
 	if err != nil {
 		return "", fmt.Errorf("caldav: building PUT request: %w", err)
 	}
-	req.Header.Set("Content-Type", ical.MIMEType)
+	req.Header.Set("Content-Type", icsContentType)
 	switch {
 	case ifMatch != "":
 		req.Header.Set("If-Match", httpETag(ifMatch))
