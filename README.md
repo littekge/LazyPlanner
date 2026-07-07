@@ -2,7 +2,7 @@
 
 A terminal-based todo-list and calendar manager with offline-first CalDAV sync — a full-screen interactive TUI in the style of [lazygit](https://github.com/jesseduffield/lazygit), written in Go.
 
-> **Status: early build.** The spec is complete (see [`main.md`](main.md)). Done so far: build steps 1–8 — the Go module, packages, vendored deps, and CI (step 1); the `model` layer parsing iCalendar events and todos (step 2); timezone-aware recurrence expansion (step 3); the local vdir cache with an in-memory index and atomic writes (step 4); one-way CalDAV import from NextCloud (step 5); a read-only TUI with a calendar subtask tree and today's agenda (step 6); **month/week/day calendar views** with movement keys (step 7); and **editing** — create/edit/complete/delete tasks and events, indent/outdent subtasks, and a session undo (step 8). **Step 9 (two-way sync) is complete**: a `config.toml` (generated on first run), an ETag-based **two-way sync engine** that never silently overwrites (pushes local changes, pulls remote ones, keeps both sides of a conflict), the account-namespaced local cache, an in-app sync trigger with a sync-status indicator, and offline-first in-app calendar/task-list creation & deletion. Next up: step 10 (`:` command mode + a vim-style chorded keymap).
+> **Status: early build.** The spec is complete (see [`main.md`](main.md)). Done so far: build steps 1–8 — the Go module, packages, vendored deps, and CI (step 1); the `model` layer parsing iCalendar events and todos (step 2); timezone-aware recurrence expansion (step 3); the local vdir cache with an in-memory index and atomic writes (step 4); one-way CalDAV import from NextCloud (step 5); a read-only TUI with a calendar subtask tree and today's agenda (step 6); **month/week/day calendar views** with movement keys (step 7); and **editing** — create/edit/complete/delete tasks and events, indent/outdent subtasks, and a session undo (step 8). **Step 9 (two-way sync) is complete**: a `config.toml` (generated on first run), an ETag-based **two-way sync engine** that never silently overwrites, the account-namespaced local cache, an in-app sync trigger with a sync-status indicator, and offline-first calendar/task-list creation & deletion. **Step 10 (command mode & keybinding polish) is complete**: a **vim-style chorded keymap** with a which-key popup, a `:` **command line** with a status-bar command view, a `?` **help** overlay, interactive **conflict resolution** (`:conflicts`), **pane sizing** (accordion + keyboard resize, remembered), and a mouse pass. Read-only calendars (e.g. NextCloud birthdays) are detected and respected.
 
 ## What it does
 
@@ -20,18 +20,25 @@ Run `lazyplanner` with no arguments to open the TUI. It reads the local cache (p
 - **`2` Tasks** → pick a list on the left; its full subtask tree opens in the center (with inline priority/due/status). The Detail pane shows the highlighted task's full description and fields.
 - **`3` Agenda** → focus the agenda list on the left; moving its highlight highlights the matching block in the center (which auto-scrolls). The center shows the day's events and tasks with full descriptions, at full width (the Detail pane hides).
 
-**Creating and editing** (writes to the local cache only until two-way sync lands):
+**Creating and editing** — create actions are grouped under the **`a` prefix** pressed as a short chord; a **which-key** hint pops up after `a` so you don't have to memorize them. Capitalize the object for the full form.
 
-- **`a`** — quick-add. A top-level task (Tasks) or an event on the selected/current day (Calendar/Agenda). One line; it parses smart tokens and leaves anything ambiguous in the title: dates (`today`, `tomorrow`, `fri`, `jul 20`, `7/20`, `2026-07-20`), times (`3pm`, `3:30pm`, `15:00` — a bare number stays a number), `!1`–`!9` / `!high` / `!med` / `!low` priority, and `#tag`.
-- **`s`** — quick-add a **subtask** under the highlighted task.
-- **`A` / `S`** — the same as `a` / `s` but opening the **full form** (all fields) instead of the quick line.
-- **`e`** — full edit form for the selected item. `Esc` or Cancel to back out.
-- **`Space`** — toggle a task complete/incomplete. A task with unfinished subtasks is a **folder** (shown with `▸`/`▾`) and can't be completed until they are.
-- **`d`** — delete the selected item (with a confirm; deleting a folder removes its whole subtree).
-- **`H` / `L`** — outdent / indent the selected task (re-parent in the subtask tree).
-- **`u`** — undo the last create/edit/complete/delete this session (multi-level).
-- **`r`** — sync now (two-way) with the server. LazyPlanner also syncs in the background on startup, and the status bar's right section shows the state (`syncing…`, `synced HH:MM`, `! N conflict(s)`, `offline`, or `not configured`). *(Interim key; the `:sync` command arrives with command mode.)*
-- **`c` / `D`** — create / delete a calendar or task list, offline-first (the collection appears immediately; the server `MKCALENDAR`/`DELETE` happens on the next sync). Create prompts for a name and type (event calendar / task list / both). *(Interim keys; fold into the `a`-prefix in step 10.)*
+- **`a` then `t` / `T`** — add a top-level **task** (quick line / full form) to the selected list.
+- **`a` then `e` / `E`** — add an **event** (quick / full) on the selected/current day.
+- **`a` then `s` / `S`** — add a **subtask** (quick / full) under the highlighted task.
+- **`a` then `c` / `l`** — create a **calendar** / **task list**, offline-first (it appears immediately; the server `MKCALENDAR` happens on the next sync).
+- Quick-add parses smart tokens and leaves anything ambiguous in the title: dates (`today`, `tomorrow`, `fri`, `jul 20`, `7/20`, `2026-07-20`), times (`3pm`, `3:30pm`, `15:00` — a bare number stays a number), `!1`–`!9` / `!high` / `!med` / `!low` priority, and `#tag`.
+- **`e`** — full edit form for the selected item. **`d`** — delete: the selected item, or the calendar/list when its overview panel is focused (with a confirm; deleting a folder removes its whole subtree).
+- **`Space`** — toggle a task complete/incomplete. A task with unfinished subtasks is a **folder** (`▸`/`▾`) and can't be completed until they are.
+- **`H` / `L`** — outdent / indent the selected task (re-parent). **`u`** — undo the last change this session (multi-level).
+
+**Commands, help & layout:**
+
+- **`:`** opens a command line: `:sync`, `:view month|week|day`, `:goto <date>`, `:conflicts`, `:help`, `:q`. The status bar's middle section echoes the last action in command form. **`g`** opens `:goto` prefilled.
+- **`?`** opens the full help cheat sheet.
+- **`:conflicts`** resolves items that changed on both sides (keep local / keep server); the status bar shows the live conflict count.
+- **`+` / `-`** collapse / restore the overview so the calendar or tree fills the width; **`Ctrl-←` / `Ctrl-→`** narrow / widen the overview column (remembered across launches).
+- **`r`** — sync now (alias for `:sync`). LazyPlanner also syncs in the background on startup; the status bar's right section shows the state (`syncing…`, `synced HH:MM`, `! N conflict(s)`, `offline`, or `not configured`).
+- **Mouse**: click a panel to switch to it, click to select, double-click the tree/agenda to edit, wheel to scroll.
 
 Full key list:
 
@@ -39,26 +46,24 @@ Full key list:
 |---|---|
 | `1` `2` `3` | Focus the Calendars / Tasks / Agenda overview panel |
 | `Tab` / `Shift-Tab` | Cycle those three |
-| `↑` `↓` `←` `→` / `j` `k` `h` `l` | Move the highlight in the focused pane (overview rows, days in the grid, nodes in the tree) |
-| `v` | Cycle calendar view: month → week → day |
-| `[` / `]` | Cycle the highlighted calendar (calendar mode; works from the grid too) |
-| `n` / `p` | Next / previous month·week·day |
-| `t` | Jump to today |
-| `Enter` | Dive into the center; on a day (month **or** week/day grid) cycle its events; open a list / expand a task |
-| `Esc` | Back out to the overview (event cycling, grid, task tree) · cancel a form/dialog |
-| `a` / `A` | Add task/event — quick line / full form |
-| `s` / `S` | Add subtask — quick line / full form |
-| `e` `d` | Edit / delete selected |
+| `↑` `↓` `←` `→` / `j` `k` `h` `l` | Move the highlight in the focused pane |
+| `Enter` | Dive into the center; cycle a day's events; open a list / expand a task |
+| `Esc` | Back out to the overview · cancel a form/dialog/chord |
+| `a` … | Create prefix — `t`/`T` task, `e`/`E` event, `s`/`S` subtask, `c` calendar, `l` list (Shift = full form) |
+| `e` | Edit selected (full form) |
+| `d` | Delete selected item — or the calendar/list when its panel is focused |
 | `Space` | Toggle task done (folders can't complete until their subtasks do) |
 | `H` / `L` | Outdent / indent task (re-parent) |
 | `u` | Undo last local change (this session) |
-| `r` | Sync now (two-way) — interim key; `:sync` lands with command mode |
-| `c` / `D` | Create / delete a calendar or task list (offline-first) — interim keys |
-| `PageUp` / `PageDown` | Scroll the week/day time-grid or the agenda |
+| `v` | Cycle calendar view: month → week → day |
+| `[` / `]` | Cycle the highlighted calendar |
+| `n` / `p` · `t` | Next / previous period · jump to today |
+| `+` / `-` | Collapse / restore the overview (accordion) |
+| `Ctrl-←` / `Ctrl-→` | Narrow / widen the overview column (remembered) |
+| `r` | Sync now (= `:sync`) |
+| `:` · `g` · `?` | Command line · goto date · help |
 | `.` | Show/hide completed tasks |
-| `q` / `Ctrl-C` | Quit |
-
-Navigation is still being refined — the full keymap and a `:` command mode arrive with later build steps.
+| `q` / `Ctrl-C` | Quit / back out |
 
 ### Configuration
 
@@ -78,7 +83,7 @@ The local cache is **namespaced by account** (a stable id derived from the serve
 
 ### Syncing
 
-Once `[server]` is set, LazyPlanner syncs **both ways** on startup and whenever you press `r` (or run the `sync` command below). Sync is ETag-based and **never silently overwrites**: it pushes local creates/edits/deletes, pulls remote changes, and when the same item changed on both sides it keeps both versions and flags the conflict (interactive resolution arrives with command mode).
+Once `[server]` is set, LazyPlanner syncs **both ways** on startup and whenever you press `r` (or run the `sync` command below). Sync is ETag-based and **never silently overwrites**: it pushes local creates/edits/deletes, pulls remote changes, and when the same item changed on both sides it keeps both versions and flags the conflict — resolve them in-app with `:conflicts` (keep local / keep server).
 
 **Read-only calendars** (like NextCloud's generated "Contact Birthdays" calendar, or read-only shares) are detected automatically and marked `[ro]` in the overview. LazyPlanner never writes to them — creating/editing/deleting there is blocked with a hint, and sync mirrors them one-way — exactly as the NextCloud web UI treats them.
 

@@ -211,6 +211,8 @@ func Run(opts Options) error {
 	// triggerSync waits for the event loop, so starting it now is safe.
 	a.triggerSync()
 
+	a.tv.SetMouseCapture(a.mouseCapture)
+
 	if err := a.tv.SetRoot(a.root, true).EnableMouse(true).SetInputCapture(a.globalKeys).Run(); err != nil {
 		return fmt.Errorf("running tui: %w", err)
 	}
