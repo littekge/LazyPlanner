@@ -89,6 +89,54 @@ func (a *app) deleteContextual() {
 // middle "command view" (lazygit-style).
 func (a *app) echo(cmd string) { a.statusMid.SetText(cmd) }
 
+// resizeLeft grows/shrinks the left overview column by delta (clamped) and
+// persists the new width. It is a no-op while the column is collapsed.
+func (a *app) resizeLeft(delta int) {
+	if a.accordion || a.leftCol == nil {
+		return
+	}
+	w := clampLeftWidth(a.leftWidth + delta)
+	if w == a.leftWidth {
+		return
+	}
+	a.leftWidth = w
+	a.body.ResizeItem(a.leftCol, a.leftWidth, 0)
+	if a.saveState != nil {
+		a.saveState(a.leftWidth)
+	}
+}
+
+// setAccordion collapses (on) or restores (off) the left overview column so the
+// Main view can fill the width — the lazygit +/- idiom. Collapsing moves focus
+// into the center so a hidden pane isn't focused. Not available in Agenda mode,
+// whose center navigation is driven by the (left) agenda list.
+func (a *app) setAccordion(on bool) {
+	if a.leftCol == nil {
+		return
+	}
+	if on && a.mode == modeAgenda {
+		a.flash("Expand isn't available in Agenda")
+		return
+	}
+	a.accordion = on
+	if on {
+		a.body.ResizeItem(a.leftCol, 0, 0)
+		a.setFocus(a.mainPrimitive())
+	} else {
+		a.body.ResizeItem(a.leftCol, a.leftWidth, 0)
+		a.setFocus(a.focusForMode())
+	}
+}
+
+// mainPrimitive is the focusable center widget for the current mode (used when
+// the overview is collapsed).
+func (a *app) mainPrimitive() tview.Primitive {
+	if a.mode == modeTasks {
+		return a.tree
+	}
+	return a.calendarPrimitive()
+}
+
 // showWhichKey draws a transient hint listing a prefix's continuations. It is a
 // non-focused overlay; the next keystroke is intercepted by globalKeys (which
 // checks pendingPrefix before anything else), so the popup never needs focus.

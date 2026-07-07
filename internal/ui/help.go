@@ -42,6 +42,10 @@ var helpSections = []struct {
 		{"n / p", "next / previous period"},
 		{"t", "jump to today"},
 	}},
+	{"Layout", [][2]string{
+		{"+ / -", "collapse / restore the overview (accordion)"},
+		{"Ctrl-← / Ctrl-→", "narrow / widen the overview column"},
+	}},
 	{"Sync & commands", [][2]string{
 		{"r", "sync now (= :sync)"},
 		{": ", "command line — :sync :view :goto :conflicts :help :q"},

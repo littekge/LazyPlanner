@@ -113,6 +113,33 @@ type app struct {
 	syncing     bool
 	lastSyncAt  time.Time
 	lastSyncErr error
+
+	// Pane sizing (step 10). leftCol is the left overview column so its width can
+	// be resized (Ctrl-←/→) or collapsed (accordion +/-). saveState persists the
+	// chosen width.
+	leftCol   *tview.Flex
+	leftWidth int
+	accordion bool
+	saveState func(leftWidth int)
+}
+
+// Left-column sizing bounds (columns).
+const (
+	defaultLeftWidth = 26
+	minLeftWidth     = 16
+	maxLeftWidth     = 50
+	leftWidthStep    = 3
+)
+
+func clampLeftWidth(w int) int {
+	switch {
+	case w < minLeftWidth:
+		return minLeftWidth
+	case w > maxLeftWidth:
+		return maxLeftWidth
+	default:
+		return w
+	}
 }
 
 // focusState remembers where focus was so closing a modal returns there — down
@@ -153,12 +180,25 @@ func useTerminalTheme() {
 	tview.Borders.VerticalFocus = tview.Borders.Vertical
 }
 
-// Run builds the TUI over the given store and blocks until quit. syncFn performs
-// a two-way sync when invoked; it is nil when no server is configured (the app
-// still runs fully offline over the cache).
-func Run(s *store.Store, title string, syncFn func(context.Context) (sync.SyncResult, error)) error {
-	a := newApp(s, title, time.Now())
-	a.syncFn = syncFn
+// Options bundles the dependencies the TUI needs from main (thin wiring): the
+// store, a sync closure (nil = offline), and the persisted UI state plus a
+// callback to save it — so the UI never touches disk itself.
+type Options struct {
+	Store     *store.Store
+	Title     string
+	Sync      func(context.Context) (sync.SyncResult, error)
+	LeftWidth int                 // remembered left-column width (0 = default)
+	SaveState func(leftWidth int) // persist a size change (nil = don't persist)
+}
+
+// Run builds the TUI and blocks until quit.
+func Run(opts Options) error {
+	a := newApp(opts.Store, opts.Title, time.Now())
+	a.syncFn = opts.Sync
+	a.saveState = opts.SaveState
+	if opts.LeftWidth != 0 {
+		a.leftWidth = clampLeftWidth(opts.LeftWidth)
+	}
 	a.build()
 	a.reload()
 	a.setMode(modeCalendar)
@@ -202,6 +242,7 @@ func newApp(s *store.Store, title string, now time.Time) *app {
 		statusRight:     tview.NewTextView(),
 		hints:           tview.NewTextView(),
 		detailOn:        true,
+		leftWidth:       defaultLeftWidth,
 		viewMode:        viewMonth,
 		anchor:          model.DayStart(now),
 		weekStartMonday: true,
@@ -296,9 +337,10 @@ func (a *app) layout() tview.Primitive {
 		AddItem(a.calendars, 0, 1, false).
 		AddItem(a.tasklists, 0, 1, false).
 		AddItem(a.agendaList, 0, 1, false)
+	a.leftCol = left
 
 	a.body = tview.NewFlex(). // default FlexColumn: side by side
-					AddItem(left, 26, 0, false).
+					AddItem(left, a.leftWidth, 0, false).
 					AddItem(a.center, 0, 3, true).
 					AddItem(a.detail, 0, 1, false)
 
@@ -350,6 +392,13 @@ func (a *app) setMode(m int) {
 	// Switching panes counts as leaving the list: stop keeping just-completed
 	// tasks pinned visible.
 	a.stickyDone = map[string]bool{}
+	// Switching panels restores the overview if it was collapsed (accordion),
+	// since the mode change focuses that overview panel. Guarded: leftCol is nil
+	// during the first setMode (before layout builds it).
+	if a.accordion && a.leftCol != nil {
+		a.accordion = false
+		a.body.ResizeItem(a.leftCol, a.leftWidth, 0)
+	}
 	switch m {
 	case modeCalendar:
 		a.showDetail(true)
@@ -396,6 +445,16 @@ func (a *app) globalKeys(ev *tcell.EventKey) *tcell.EventKey {
 	case tcell.KeyBacktab:
 		a.setMode((a.mode + 2) % 3)
 		return nil
+	case tcell.KeyLeft:
+		if ev.Modifiers()&tcell.ModCtrl != 0 {
+			a.resizeLeft(-leftWidthStep)
+			return nil
+		}
+	case tcell.KeyRight:
+		if ev.Modifiers()&tcell.ModCtrl != 0 {
+			a.resizeLeft(leftWidthStep)
+			return nil
+		}
 	case tcell.KeyEscape:
 		if a.mode == modeTasks {
 			a.setFocus(a.tasklists)
@@ -433,6 +492,12 @@ func (a *app) globalKeys(ev *tcell.EventKey) *tcell.EventKey {
 			return nil
 		case 'g':
 			a.openCommandLine("goto ")
+			return nil
+		case '+':
+			a.setAccordion(true)
+			return nil
+		case '-':
+			a.setAccordion(false)
 			return nil
 		case 'H':
 			if a.mode == modeTasks {

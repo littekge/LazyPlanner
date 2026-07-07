@@ -7,6 +7,7 @@ import (
 	"context"
 	"fmt"
 	"os"
+	"path/filepath"
 
 	// Embed the IANA time-zone database in the binary so time.LoadLocation
 	// resolves zones even where the OS ships none (a minimal Pi image, Windows),
@@ -16,6 +17,7 @@ import (
 
 	"github.com/littekge/LazyPlanner/internal/caldav"
 	"github.com/littekge/LazyPlanner/internal/config"
+	"github.com/littekge/LazyPlanner/internal/state"
 	"github.com/littekge/LazyPlanner/internal/store"
 	"github.com/littekge/LazyPlanner/internal/sync"
 	"github.com/littekge/LazyPlanner/internal/ui"
@@ -88,10 +90,21 @@ func runTUI() error {
 		return err
 	}
 
-	syncFn := buildSyncFn(cfg.Server, s)
+	// Remembered UI state (pane sizes) lives beside the cache, under the data
+	// dir — never the config file, which the app must not write.
+	statePath := filepath.Join(dataDir, state.FileName)
+	uiState := state.Load(statePath)
 
 	title := fmt.Sprintf("%s %s", appName, appVersion)
-	return ui.Run(s, title, syncFn)
+	return ui.Run(ui.Options{
+		Store:     s,
+		Title:     title,
+		Sync:      buildSyncFn(cfg.Server, s),
+		LeftWidth: uiState.LeftWidth,
+		SaveState: func(leftWidth int) {
+			_ = state.Save(statePath, state.State{LeftWidth: leftWidth})
+		},
+	})
 }
 
 // buildSyncFn returns a closure the UI calls to sync, or nil when no server is
