@@ -73,7 +73,7 @@ func ParseTodo(comp *ical.Component, loc *time.Location) (*Todo, error) {
 	}
 
 	if dueProp := comp.Props.Get(ical.PropDue); dueProp != nil {
-		due, err := dueProp.DateTime(loc)
+		due, err := resolveDateTime(dueProp, loc)
 		if err != nil {
 			return nil, fmt.Errorf("VTODO %q: parsing DUE: %w", td.UID, err)
 		}

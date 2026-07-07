@@ -8,6 +8,12 @@ import (
 	"fmt"
 	"os"
 
+	// Embed the IANA time-zone database in the binary so time.LoadLocation
+	// resolves zones even where the OS ships none (a minimal Pi image, Windows),
+	// keeping LazyPlanner a robust single static binary. Without this, timed
+	// events carrying a TZID could fail to resolve and be dropped.
+	_ "time/tzdata"
+
 	"github.com/littekge/LazyPlanner/internal/caldav"
 	"github.com/littekge/LazyPlanner/internal/config"
 	"github.com/littekge/LazyPlanner/internal/store"

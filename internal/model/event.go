@@ -43,7 +43,7 @@ func ParseEvent(comp *ical.Component, loc *time.Location) (*Event, error) {
 	if startProp == nil {
 		return nil, fmt.Errorf("VEVENT %q: missing DTSTART", uid)
 	}
-	start, err := startProp.DateTime(loc)
+	start, err := resolveDateTime(startProp, loc)
 	if err != nil {
 		return nil, fmt.Errorf("VEVENT %q: parsing DTSTART: %w", uid, err)
 	}
@@ -61,10 +61,15 @@ func ParseEvent(comp *ical.Component, loc *time.Location) (*Event, error) {
 	}
 
 	// DTEND/DURATION are optional. Reuse go-ical's derivation, which handles
-	// DTEND, DURATION, and the all-day one-day default. Leave End zero if it
-	// cannot be derived rather than failing the whole parse.
+	// DTEND, DURATION, and the all-day one-day default. If that fails on an
+	// explicit DTEND (e.g. an unloadable TZID), recover it the same way as
+	// DTSTART. Leave End zero only if it truly can't be derived.
 	if end, err := (&ical.Event{Component: comp}).DateTimeEnd(loc); err == nil {
 		ev.End = end
+	} else if endProp := comp.Props.Get(ical.PropDateTimeEnd); endProp != nil {
+		if end, err := resolveDateTime(endProp, loc); err == nil {
+			ev.End = end
+		}
 	}
 
 	return ev, nil
