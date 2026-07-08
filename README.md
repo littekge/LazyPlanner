@@ -29,7 +29,7 @@ Run `lazyplanner` with no arguments to open the TUI. It reads the local cache (p
 - Quick-add parses smart tokens and leaves anything ambiguous in the title: dates (`today`, `tomorrow`, `fri`, `jul 20`, `7/20`, `2026-07-20`), times (`3pm`, `3:30pm`, `15:00` — a bare number stays a number), `!1`–`!9` / `!high` / `!med` / `!low` priority, and `#tag`.
 - **`e`** — full edit form for the selected item. **`s`** quick-sets one task field without the full form: **`sp`** priority (`1`–`9` / `high`/`med`/`low`), **`sd`** due date (smart-parsed; blank clears). **`d`** — delete: the selected item, or the calendar/list when its overview panel is focused (with a confirm; deleting a folder removes its whole subtree).
 - **`Space`** — toggle a task complete/incomplete. A task with unfinished subtasks is a **folder** (`▸`/`▾`) and can't be completed until they are.
-- **`H` / `L`** — outdent / indent the selected task (re-parent). **`u`** — undo the last change this session (multi-level).
+- **`H` / `L`** — outdent / indent the selected task (re-parent). **`y` / `p`** — yank a task then paste it under another task or list (moves the whole subtree; a cross-list paste moves it to that calendar). **`u`** — undo the last change this session (multi-level).
 
 **Commands, help & layout:**
 
@@ -58,6 +58,7 @@ Full key list:
 | `Space` | Toggle task done — or hide/show the highlighted calendar (Calendar view) |
 | `/` · `n` / `N` | Search the current view · next / prev match |
 | `H` / `L` | Outdent / indent task (re-parent) |
+| `y` / `p` | Yank / paste a task — move it (and its subtree) to another parent or list |
 | `z` … | Fold the tree — `zR` expand-all, `zM` collapse-all, `za` toggle |
 | `u` | Undo last local change (this session) |
 | `v` | Cycle calendar view: month → week → day |
