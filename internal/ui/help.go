@@ -21,6 +21,7 @@ var helpSections = []struct {
 		{"h j k l / arrows", "move; expand/collapse tree nodes"},
 		{"3j 5k …", "count prefix — repeat a motion"},
 		{"g g / G", "go to top / bottom"},
+		{"/ then n / N", "search; next / prev match"},
 		{"Enter", "dive in / open; cycle a day's events"},
 		{"Esc / q", "back out / quit"},
 	}},
@@ -52,7 +53,7 @@ var helpSections = []struct {
 	}},
 	{"Sync & commands", [][2]string{
 		{"r", "sync now (= :sync)"},
-		{": ", "command line — :sync :view :goto :conflicts :help :q"},
+		{": ", "command line — :sync :view :goto :search :conflicts :help :q"},
 		{":conflicts", "resolve items that changed on both sides"},
 		{"?", "this help"},
 	}},

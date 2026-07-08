@@ -59,6 +59,16 @@ func (a *app) runCommand(line string) {
 		a.cmdView(args)
 	case "goto":
 		a.cmdGoto(args)
+	case "search", "find":
+		if args == "" {
+			a.flash("search <text>")
+			return
+		}
+		a.runSearch(args)
+		if a.searchQuery != "" {
+			a.setFocus(a.searchWidget())
+		}
+		a.echo(":search " + args)
 	case "conflicts", "conflict":
 		a.showConflicts()
 	case "help", "h":

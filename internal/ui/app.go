@@ -97,6 +97,9 @@ type app struct {
 
 	pendingPrefix   rune // active chord prefix (e.g. 'i'); 0 when none
 	pendingCount    int  // accumulated vim count (e.g. 3 in "3j"); 0 when none
+	searchQuery     string
+	searchIdx       int    // which match n/N is currently on
+	searchRestore   func() // restores the pre-search selection on cancel
 	mode            int
 	viewMode        int
 	anchor          time.Time
@@ -512,6 +515,15 @@ func (a *app) globalKeys(ev *tcell.EventKey) *tcell.EventKey {
 			} else {
 				a.flash("fold: Tasks view only")
 			}
+			return nil
+		case '/':
+			a.openSearch()
+			return nil
+		case 'n':
+			a.searchNext(1)
+			return nil
+		case 'N':
+			a.searchNext(-1)
 			return nil
 		case 'e':
 			a.editSelected()
