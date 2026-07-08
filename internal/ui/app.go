@@ -478,9 +478,18 @@ func (a *app) globalKeys(ev *tcell.EventKey) *tcell.EventKey {
 	// Any non-digit key ends the count. A motion applies it; otherwise it's dropped.
 	count := a.pendingCount
 	a.pendingCount = 0
-	if count > 1 && isMotion(ev) {
-		a.repeatKey(ev, count)
-		a.updateStatus()
+	// hjkl are aliases for the arrow keys in every pane (so movement is uniform,
+	// incl. the overview lists); arrow keys themselves are only intercepted here to
+	// apply a repeat count. A pending count applies to either.
+	if arrow, isLetter, ok := motionArrow(ev); ok && (isLetter || count > 1) {
+		n := count
+		if n < 1 {
+			n = 1
+		}
+		a.repeatKey(tcell.NewEventKey(arrow, 0, tcell.ModNone), n)
+		if count > 1 {
+			a.updateStatus()
+		}
 		return nil
 	}
 	switch ev.Key() {

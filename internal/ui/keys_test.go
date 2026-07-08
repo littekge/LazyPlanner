@@ -114,6 +114,40 @@ func TestCountPrefixRepeatsMotion(t *testing.T) {
 	}
 }
 
+func TestHJKLMovesOverviewList(t *testing.T) {
+	a := newRootedTestApp(t, time.Date(2026, 7, 5, 12, 0, 0, 0, time.UTC))
+	lst := focusableList(4) // stands in for an overview list (arrows-only natively)
+	a.tv.SetFocus(lst)
+	lst.SetCurrentItem(0)
+
+	// j / k move the highlight even though tview.List binds only the arrow keys.
+	a.globalKeys(runeKey('j'))
+	if got := lst.GetCurrentItem(); got != 1 {
+		t.Fatalf("after j, current = %d, want 1", got)
+	}
+	a.globalKeys(runeKey('j'))
+	if got := lst.GetCurrentItem(); got != 2 {
+		t.Fatalf("after jj, current = %d, want 2", got)
+	}
+	a.globalKeys(runeKey('k'))
+	if got := lst.GetCurrentItem(); got != 1 {
+		t.Errorf("after k, current = %d, want 1", got)
+	}
+}
+
+func TestCountAppliesToLetterMotion(t *testing.T) {
+	a := newRootedTestApp(t, time.Date(2026, 7, 5, 12, 0, 0, 0, time.UTC))
+	lst := focusableList(6)
+	a.tv.SetFocus(lst)
+	lst.SetCurrentItem(0)
+
+	a.globalKeys(runeKey('3'))
+	a.globalKeys(runeKey('j')) // 3j via the letter alias
+	if got := lst.GetCurrentItem(); got != 3 {
+		t.Errorf("after 3j, current = %d, want 3", got)
+	}
+}
+
 func TestGotoTopAndBottom(t *testing.T) {
 	a := newRootedTestApp(t, time.Date(2026, 7, 5, 12, 0, 0, 0, time.UTC))
 	lst := focusableList(6)

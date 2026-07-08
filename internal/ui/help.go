@@ -18,7 +18,7 @@ var helpSections = []struct {
 	{"Panels & navigation", [][2]string{
 		{"c t a", "focus Calendars / Tasks / Agenda"},
 		{"Tab / Shift-Tab", "cycle panels"},
-		{"h j k l / arrows", "move; expand/collapse tree nodes"},
+		{"h j k l / arrows", "move the highlight (Enter expands/collapses a tree node)"},
 		{"3j 5k …", "count prefix — repeat a motion"},
 		{"g g / G", "go to top / bottom"},
 		{"/ then n / N", "search; next / prev match"},

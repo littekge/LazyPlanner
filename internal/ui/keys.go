@@ -110,19 +110,29 @@ func (a *app) echo(cmd string) { a.statusMid.SetText(cmd) }
 // maxCount bounds an accumulated vim count so a fat-fingered "999999j" can't spin.
 const maxCount = 999
 
-// isMotion reports whether ev is a cursor-movement key (hjkl or an arrow) that a
-// count prefix should repeat.
-func isMotion(ev *tcell.EventKey) bool {
+// motionArrow maps a movement key to the arrow key it should act as. hjkl are
+// aliases for the arrows so they move the highlight in every pane — including
+// tview's List (the overview lists) and TreeView, which natively bind only the
+// arrows / a subset of letters. isLetter is true for hjkl (always translated so
+// the movement works everywhere); an actual arrow is reported too, but is only
+// intercepted to apply a repeat count. ok is false for non-movement keys.
+func motionArrow(ev *tcell.EventKey) (key tcell.Key, isLetter, ok bool) {
 	switch ev.Key() {
 	case tcell.KeyUp, tcell.KeyDown, tcell.KeyLeft, tcell.KeyRight:
-		return true
+		return ev.Key(), false, true
 	case tcell.KeyRune:
 		switch ev.Rune() {
-		case 'h', 'j', 'k', 'l':
-			return true
+		case 'h':
+			return tcell.KeyLeft, true, true
+		case 'j':
+			return tcell.KeyDown, true, true
+		case 'k':
+			return tcell.KeyUp, true, true
+		case 'l':
+			return tcell.KeyRight, true, true
 		}
 	}
-	return false
+	return 0, false, false
 }
 
 // repeatKey feeds ev to the focused primitive n times. Counts and gg/G reuse the

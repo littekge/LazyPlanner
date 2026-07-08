@@ -4,6 +4,14 @@
 
 ---
 
+## 2026-07-08 — hjkl move the highlight in every pane (incl. the overview lists)
+
+- Follow-up: the keymap advertised `hjkl` as movement, but the three overview lists (Calendars/Tasks/Agenda) took **arrows only** — tview's `List` binds no `hjkl` (and `TreeView` binds `j`/`k` but not `h`/`l`). So `hjkl` movement was inconsistent across panes.
+- **Fix** (`internal/ui/keys.go` `motionArrow`, `app.go` `globalKeys`): `hjkl` are now global **aliases for the arrow keys** — after the modal guard (so typing into forms is unaffected) and the count accumulator, a movement key is translated to its arrow and fed to the focused widget. `h`→Left, `j`→Down, `k`→Up, `l`→Right. This makes movement uniform in the lists, tree, and calendar grids without touching each widget, and a pending **count applies to `hjkl` too** (`3j` now works in a list). Arrow keys themselves are still only intercepted to apply a count (single presses fall through natively). Replaced the old `isMotion` helper.
+- In a vertical list `j`/`k` move the selection; `h`/`l` map to the list's horizontal scroll (a no-op when content fits) — the meaningful "move the highlight" is `j`/`k`, matching vim. In the tree/grids all four move.
+- Help overlay text corrected: `hjkl` "move the highlight (Enter expands/collapses a tree node)" — the previous "expand/collapse tree nodes" was wrong (Enter does that, not `hjkl`).
+- Tests (`keys_test.go`): `j`/`k` move a stand-in overview list (which natively ignores them), and `3j` via the letter alias moves three rows. Full gate + `-race` pass. (Interactive pty verification was flaky in this environment again; the `globalKeys` dispatch is covered directly by the headless tests.)
+
 ## 2026-07-08 — Lock item creation to a calendar's type (events vs tasks)
 
 - Owner request: sharpen the fuzzy calendar/task-list split — events only on event calendars, tasks/subtasks only on todo lists, either on a "both" calendar — using the component set now tracked per calendar.
