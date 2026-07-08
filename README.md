@@ -27,7 +27,7 @@ Run `lazyplanner` with no arguments to open the TUI. It reads the local cache (p
 - **`i` then `s` / `S`** — add a **subtask** (quick / full) under the highlighted task.
 - **`i` then `c` / `l`** — create a **calendar** / **task list**, offline-first (it appears immediately; the server `MKCALENDAR` happens on the next sync).
 - Quick-add parses smart tokens and leaves anything ambiguous in the title: dates (`today`, `tomorrow`, `fri`, `jul 20`, `7/20`, `2026-07-20`), times (`3pm`, `3:30pm`, `15:00` — a bare number stays a number), `!1`–`!9` / `!high` / `!med` / `!low` priority, and `#tag`.
-- **`e`** — full edit form for the selected item. **`d`** — delete: the selected item, or the calendar/list when its overview panel is focused (with a confirm; deleting a folder removes its whole subtree).
+- **`e`** — full edit form for the selected item. **`s`** quick-sets one task field without the full form: **`sp`** priority (`1`–`9` / `high`/`med`/`low`), **`sd`** due date (smart-parsed; blank clears). **`d`** — delete: the selected item, or the calendar/list when its overview panel is focused (with a confirm; deleting a folder removes its whole subtree).
 - **`Space`** — toggle a task complete/incomplete. A task with unfinished subtasks is a **folder** (`▸`/`▾`) and can't be completed until they are.
 - **`H` / `L`** — outdent / indent the selected task (re-parent). **`u`** — undo the last change this session (multi-level).
 
@@ -53,6 +53,7 @@ Full key list:
 | `Esc` | Back out to the overview · cancel a form/dialog/chord |
 | `i` … | Create prefix — `t`/`T` task, `e`/`E` event, `s`/`S` subtask, `c` calendar, `l` list (Shift = full form) |
 | `e` | Edit selected (full form) |
+| `s` … | Quick-set a task field — `p` priority, `d` due date (blank clears) |
 | `d` | Delete selected item — or the calendar/list when its panel is focused |
 | `Space` | Toggle task done — or hide/show the highlighted calendar (Calendar view) |
 | `/` · `n` / `N` | Search the current view · next / prev match |

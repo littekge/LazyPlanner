@@ -47,10 +47,14 @@ var chords = map[rune][]chordEntry{
 		{'M', "collapse all", func(a *app) { a.setFoldAll(false) }},
 		{'a', "toggle fold", (*app).toggleFold},
 	},
+	's': {
+		{'p', "priority", (*app).setPriorityPrompt},
+		{'d', "due date", (*app).setDuePrompt},
+	},
 }
 
 // prefixLabel names each prefix for the which-key title.
-var prefixLabel = map[rune]string{'i': "new", 'g': "go", 'z': "fold"}
+var prefixLabel = map[rune]string{'i': "new", 'g': "go", 'z': "fold", 's': "set"}
 
 // startPrefix enters a chord prefix and shows its which-key hint.
 func (a *app) startPrefix(p rune) {

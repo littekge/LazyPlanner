@@ -527,6 +527,13 @@ func (a *app) globalKeys(ev *tcell.EventKey) *tcell.EventKey {
 				a.flash("fold: Tasks view only")
 			}
 			return nil
+		case 's':
+			if a.mode == modeTasks {
+				a.startPrefix('s')
+			} else {
+				a.flash("set: Tasks view only")
+			}
+			return nil
 		case '/':
 			a.openSearch()
 			return nil

@@ -33,6 +33,7 @@ var helpSections = []struct {
 	}},
 	{"Edit & organize", [][2]string{
 		{"e", "edit selected (full form)"},
+		{"s p / s d", "quick-set task priority / due date"},
 		{"d", "delete (item, or calendar/list when its panel is focused)"},
 		{"Space", "toggle task done (hide/show calendar in Calendar view)"},
 		{"H / L", "outdent / indent task (re-parent)"},

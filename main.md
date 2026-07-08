@@ -187,6 +187,7 @@ The keyboard interface feels like **vim, not lazygit**: single keys for panel fo
 | `Enter` | Select / open in Main (drill into a day and cycle its events) |
 | `i` prefix | Create: `it`/`iT` task, `ie`/`iE` event, `is`/`iS` subtask (Shift = full form), `ic` calendar, `il` list |
 | `e` | Edit selected (full form) |
+| `s` prefix | Quick-set a task field: `sp` priority, `sd` due date (one-line inputs; blank clears) |
 | `Space` | Toggle task done — or, in Calendar view, hide/show the highlighted calendar (remembered in the state file) |
 | `d` | Delete selected (item, or calendar/list when its panel is focused; recursive confirm for a non-empty folder) |
 | `>` / `<` | Zoom into / out of task subtree |
