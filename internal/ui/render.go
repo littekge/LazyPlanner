@@ -18,6 +18,9 @@ func (a *app) buildCalendars() {
 	for _, cal := range a.store.Calendars() {
 		events, todos := calCounts(cal)
 		label := fmt.Sprintf("%s  (%de %dt)", cal.DisplayName, events, todos)
+		if m := calTypeMarker(cal); m != "" {
+			label += " " + m
+		}
 		if cal.ReadOnly {
 			label += " [ro]"
 		}
@@ -411,6 +414,24 @@ func (a *app) dayItems(day time.Time) []model.AgendaItem {
 	end := start.AddDate(0, 0, 1)
 	occs, _ := a.store.EventOccurrencesVisible(start, end, a.hidden)
 	return model.DayAgenda(occs, a.store.TodosVisible(a.hidden), start, end)
+}
+
+// calTypeMarker labels a calendar by what it can hold, from its supported
+// component set: [events], [tasks], [both], or [?] when the set is unknown (a
+// foreign vdir, or a calendar not yet synced) — which is also why creation is
+// blocked there until a sync confirms the type.
+func calTypeMarker(cal store.Calendar) string {
+	ev, td := hasComponent(cal, compEvent), hasComponent(cal, compTodo)
+	switch {
+	case ev && td:
+		return "[both]"
+	case ev:
+		return "[events]"
+	case td:
+		return "[tasks]"
+	default:
+		return "[?]"
+	}
 }
 
 // supportsTodos reports whether a calendar belongs in the Tasks panel — i.e. it

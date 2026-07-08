@@ -2,6 +2,7 @@ package ui
 
 import (
 	"context"
+	"strings"
 	"testing"
 	"time"
 
@@ -73,5 +74,24 @@ func TestHideKeepsCalendarSelection(t *testing.T) {
 	}
 	if got := a.selectedCalendarID(); got != want {
 		t.Errorf("selected calendar = %q after hiding, want %q (stay put)", got, want)
+	}
+}
+
+func TestCalendarsPanelShowsTypeMarkers(t *testing.T) {
+	a := newWritableTestApp(t, time.Date(2026, 7, 5, 12, 0, 0, 0, time.UTC))
+	a.buildCalendars()
+	cals := a.store.Calendars()
+	byID := map[string]string{}
+	for i := 0; i < a.calendars.GetItemCount() && i < len(cals); i++ {
+		main, _ := a.calendars.GetItemText(i)
+		byID[cals[i].ID] = main
+	}
+	// Fixture: "personal" holds an event + a todo and its sidecar declares both;
+	// "work" has no declared component set (unknown).
+	if got := byID["personal"]; !strings.Contains(got, "[both]") {
+		t.Errorf("personal row = %q, want a [both] marker", got)
+	}
+	if got := byID["work"]; !strings.Contains(got, "[?]") {
+		t.Errorf("work row = %q, want a [?] marker (type unknown)", got)
 	}
 }

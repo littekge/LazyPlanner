@@ -136,10 +136,10 @@ func (a *app) addEventFull() {
 func (a *app) taskCreateContext() (string, bool) {
 	calID := a.selectedTasklistID()
 	if calID == "" {
-		a.flash("Select a task list first (press 2)")
+		a.flash("Select a task list first (press t)")
 		return "", false
 	}
-	if !a.guardWrite(calID) {
+	if !a.guardWrite(calID) || !a.guardComponent(calID, compTodo) {
 		return "", false
 	}
 	return calID, true
@@ -176,7 +176,7 @@ func (a *app) eventCreateContext() (calID string, base time.Time, ok bool) {
 		a.flash("No calendar selected")
 		return "", time.Time{}, false
 	}
-	if !a.guardWrite(calID) {
+	if !a.guardWrite(calID) || !a.guardComponent(calID, compEvent) {
 		return "", time.Time{}, false
 	}
 	base = a.anchor
@@ -193,7 +193,7 @@ func (a *app) subtaskContext() (calID, parentUID string, ok bool) {
 		a.flash("No task list selected")
 		return "", "", false
 	}
-	if !a.guardWrite(calID) {
+	if !a.guardWrite(calID) || !a.guardComponent(calID, compTodo) {
 		return "", "", false
 	}
 	node := a.tree.GetCurrentNode()

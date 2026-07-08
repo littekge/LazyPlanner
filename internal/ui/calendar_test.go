@@ -5,6 +5,8 @@ import (
 	"strings"
 	"testing"
 	"time"
+
+	"github.com/littekge/LazyPlanner/internal/store"
 )
 
 func TestComponentsForType(t *testing.T) {
@@ -14,12 +16,70 @@ func TestComponentsForType(t *testing.T) {
 	}{
 		{"Event calendar", []string{"VEVENT"}},
 		{"Task list", []string{"VTODO"}},
-		{"Both", nil},
+		{"Both", []string{"VEVENT", "VTODO"}}, // explicit so the type is "known"
 	}
 	for _, tc := range tests {
 		got := componentsForType(tc.label)
-		if len(got) != len(tc.want) || (len(got) == 1 && got[0] != tc.want[0]) {
+		if !equalStringSlice(got, tc.want) {
 			t.Errorf("componentsForType(%q) = %v, want %v", tc.label, got, tc.want)
+		}
+	}
+}
+
+func equalStringSlice(a, b []string) bool {
+	if len(a) != len(b) {
+		return false
+	}
+	for i := range a {
+		if a[i] != b[i] {
+			return false
+		}
+	}
+	return true
+}
+
+func TestGuardComponentLocksItemTypeToCalendar(t *testing.T) {
+	a := newWritableTestApp(t, time.Date(2026, 7, 5, 12, 0, 0, 0, time.UTC))
+	ctx := context.Background()
+	mk := func(id string, comps []string) {
+		if err := a.store.CreateCalendarLocal(ctx, id, store.CalendarMeta{DisplayName: id}, comps); err != nil {
+			t.Fatalf("create %s: %v", id, err)
+		}
+	}
+	mk("ev", []string{"VEVENT"})
+	mk("td", []string{"VTODO"})
+	mk("both", []string{"VEVENT", "VTODO"})
+	mk("unk", nil) // unknown/unconfirmed type
+
+	cases := []struct {
+		cal, want string
+		ok        bool
+	}{
+		{"ev", compEvent, true}, {"ev", compTodo, false},
+		{"td", compTodo, true}, {"td", compEvent, false},
+		{"both", compEvent, true}, {"both", compTodo, true},
+		{"unk", compEvent, false}, {"unk", compTodo, false}, // blocked until known
+	}
+	for _, c := range cases {
+		if got := a.guardComponent(c.cal, c.want); got != c.ok {
+			t.Errorf("guardComponent(%q, %q) = %v, want %v", c.cal, c.want, got, c.ok)
+		}
+	}
+}
+
+func TestCalTypeMarker(t *testing.T) {
+	cases := []struct {
+		comps []string
+		want  string
+	}{
+		{[]string{"VEVENT"}, "[events]"},
+		{[]string{"VTODO"}, "[tasks]"},
+		{[]string{"VEVENT", "VTODO"}, "[both]"},
+		{nil, "[?]"},
+	}
+	for _, c := range cases {
+		if got := calTypeMarker(store.Calendar{Components: c.comps}); got != c.want {
+			t.Errorf("calTypeMarker(%v) = %q, want %q", c.comps, got, c.want)
 		}
 	}
 }

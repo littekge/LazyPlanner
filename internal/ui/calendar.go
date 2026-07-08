@@ -19,7 +19,9 @@ func componentsForType(label string) []string {
 	case "Task list":
 		return []string{"VTODO"}
 	default:
-		return nil // both (the server default)
+		// "Both" is recorded explicitly (not left empty) so the calendar's type
+		// is *known* — creation gating treats an empty set as unknown/blocked.
+		return []string{"VEVENT", "VTODO"}
 	}
 }
 
@@ -32,6 +34,50 @@ func (a *app) guardWrite(calID string) bool {
 		return false
 	}
 	return true
+}
+
+// Component names for the two kinds of item LazyPlanner creates.
+const (
+	compEvent = "VEVENT"
+	compTodo  = "VTODO"
+)
+
+// hasComponent reports whether a calendar's (known) supported component set
+// includes want.
+func hasComponent(cal store.Calendar, want string) bool {
+	for _, c := range cal.Components {
+		if strings.EqualFold(c, want) {
+			return true
+		}
+	}
+	return false
+}
+
+// guardComponent refuses creation of the wrong kind of item for a calendar's
+// type, keeping events on event calendars and tasks on task lists (a "both"
+// calendar allows either). The component set must be *known*: an empty set means
+// the type is unconfirmed (a foreign vdir, or not yet synced), and creation is
+// blocked until a sync settles it — the owner's choice over guessing from
+// contents.
+func (a *app) guardComponent(calID, want string) bool {
+	cal, ok := a.store.Calendar(calID)
+	if !ok {
+		a.flash("Calendar not found")
+		return false
+	}
+	if len(cal.Components) == 0 {
+		a.flash("\"" + cal.DisplayName + "\": unknown type — sync it first")
+		return false
+	}
+	if hasComponent(cal, want) {
+		return true
+	}
+	if want == compEvent {
+		a.flash("\"" + cal.DisplayName + "\" is a task list — can't add events")
+	} else {
+		a.flash("\"" + cal.DisplayName + "\" is an event calendar — can't add tasks")
+	}
+	return false
 }
 
 // createCollection (ac/al) opens a form to create a calendar or task list

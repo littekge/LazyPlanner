@@ -1,6 +1,7 @@
 {
   "display_name": "Personal",
   "color": "#3366cc",
+  "components": ["VEVENT", "VTODO"],
   "sync_token": "http://sabre.io/ns/sync/42",
   "href": "/remote.php/dav/calendars/gabriel/personal/",
   "resources": {
