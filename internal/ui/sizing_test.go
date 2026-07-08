@@ -8,7 +8,7 @@ import (
 func TestResizeLeftClampsAndPersists(t *testing.T) {
 	a := newRootedTestApp(t, time.Date(2026, 7, 5, 12, 0, 0, 0, time.UTC))
 	var saved int
-	a.saveState = func(w int) { saved = w }
+	a.saveState = func(w int, _ []string) { saved = w }
 
 	start := a.leftWidth
 	a.resizeLeft(leftWidthStep)

@@ -34,7 +34,7 @@ var helpSections = []struct {
 	{"Edit & organize", [][2]string{
 		{"e", "edit selected (full form)"},
 		{"d", "delete (item, or calendar/list when its panel is focused)"},
-		{"Space", "toggle task done"},
+		{"Space", "toggle task done (hide/show calendar in Calendar view)"},
 		{"H / L", "outdent / indent task (re-parent)"},
 		{"z R / z M / z a", "fold — expand all / collapse all / toggle"},
 		{"u", "undo last local change"},
@@ -43,6 +43,7 @@ var helpSections = []struct {
 	{"Calendar", [][2]string{
 		{"v", "cycle month / week / day"},
 		{"[ / ]", "cycle highlighted calendar"},
+		{"Space", "hide / show the highlighted calendar"},
 		{"f / b", "forward / back one period"},
 		{"g t", "jump to today"},
 		{"g d", "go to date (smart-parsed)"},

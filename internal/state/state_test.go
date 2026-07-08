@@ -12,14 +12,18 @@ func TestRoundTrip(t *testing.T) {
 	// Nested path exercises MkdirAll in Save.
 	p := filepath.Join(t.TempDir(), "acct", state.FileName)
 
-	if got := state.Load(p); got != (state.State{}) {
+	if got := state.Load(p); got.LeftWidth != 0 || len(got.HiddenCalendars) != 0 {
 		t.Errorf("missing file loaded %+v, want zero", got)
 	}
-	if err := state.Save(p, state.State{LeftWidth: 33}); err != nil {
+	if err := state.Save(p, state.State{LeftWidth: 33, HiddenCalendars: []string{"work"}}); err != nil {
 		t.Fatal(err)
 	}
-	if got := state.Load(p); got.LeftWidth != 33 {
+	got := state.Load(p)
+	if got.LeftWidth != 33 {
 		t.Errorf("LeftWidth = %d, want 33", got.LeftWidth)
+	}
+	if len(got.HiddenCalendars) != 1 || got.HiddenCalendars[0] != "work" {
+		t.Errorf("HiddenCalendars = %v, want [work]", got.HiddenCalendars)
 	}
 }
 
@@ -28,7 +32,7 @@ func TestLoadBadFileIsZero(t *testing.T) {
 	if err := os.WriteFile(p, []byte("{ not json"), 0o600); err != nil {
 		t.Fatal(err)
 	}
-	if got := state.Load(p); got != (state.State{}) {
+	if got := state.Load(p); got.LeftWidth != 0 || len(got.HiddenCalendars) != 0 {
 		t.Errorf("bad file loaded %+v, want zero (best-effort)", got)
 	}
 }

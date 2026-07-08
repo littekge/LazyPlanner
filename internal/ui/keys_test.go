@@ -2,6 +2,7 @@ package ui
 
 import (
 	"fmt"
+	"strings"
 	"testing"
 	"time"
 
@@ -166,5 +167,62 @@ func TestFoldAllAndToggle(t *testing.T) {
 	a.toggleFold()
 	if pnode.IsExpanded() {
 		t.Error("za should collapse the current (expanded) folder")
+	}
+}
+
+func TestToggleCalendarVisibility(t *testing.T) {
+	now := time.Date(2026, 7, 5, 9, 0, 0, 0, time.UTC)
+	a := newWritableTestApp(t, now)
+	a.setMode(modeCalendar)
+	if a.calendars.GetItemCount() == 0 {
+		t.Skip("fixture has no calendars")
+	}
+	var savedHidden []string
+	a.saveState = func(_ int, hidden []string) { savedHidden = hidden }
+
+	a.calendars.SetCurrentItem(0)
+	id := a.selectedCalendarID()
+	if id == "" {
+		t.Fatal("no calendar id for row 0")
+	}
+
+	a.toggleCalendarVisibility()
+	if !a.hidden[id] {
+		t.Errorf("calendar %q should be hidden after toggle", id)
+	}
+	if len(savedHidden) != 1 || savedHidden[0] != id {
+		t.Errorf("saved hidden = %v, want [%s]", savedHidden, id)
+	}
+	main, _ := a.calendars.GetItemText(0)
+	if !strings.Contains(main, "(hidden)") {
+		t.Errorf("hidden calendar row = %q, want a (hidden) marker", main)
+	}
+
+	a.toggleCalendarVisibility() // toggle back
+	if a.hidden[id] {
+		t.Errorf("calendar %q should be visible again", id)
+	}
+	if len(savedHidden) != 0 {
+		t.Errorf("saved hidden = %v, want empty after un-hiding", savedHidden)
+	}
+}
+
+func TestHiddenCalendarDropsFromAgenda(t *testing.T) {
+	now := time.Date(2026, 7, 5, 9, 0, 0, 0, time.UTC)
+	a := newWritableTestApp(t, now)
+
+	from := time.Date(2000, 1, 1, 0, 0, 0, 0, time.UTC)
+	to := time.Date(2100, 1, 1, 0, 0, 0, 0, time.UTC)
+	base, _ := a.store.EventOccurrences(from, to)
+	if len(base) == 0 {
+		t.Skip("fixture has no events")
+	}
+	// Hide every calendar; no occurrences should survive the filter.
+	for _, cal := range a.store.Calendars() {
+		a.hidden[cal.ID] = true
+	}
+	got, _ := a.store.EventOccurrencesVisible(from, to, a.hidden)
+	if len(got) != 0 {
+		t.Errorf("hiding all calendars left %d occurrences (of %d)", len(got), len(base))
 	}
 }

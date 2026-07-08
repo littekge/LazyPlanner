@@ -21,6 +21,9 @@ func (a *app) buildCalendars() {
 		if cal.ReadOnly {
 			label += " [ro]"
 		}
+		if a.hidden[cal.ID] {
+			label += " (hidden)"
+		}
 		a.calendars.AddItem(label, "", 0, nil)
 	}
 	if a.calendars.GetItemCount() == 0 {
@@ -142,8 +145,8 @@ func (a *app) calItems(weeks [][]time.Time) map[string][]model.AgendaItem {
 	}
 	start := weeks[0][0]
 	end := weeks[len(weeks)-1][6].AddDate(0, 0, 1)
-	occs, _ := a.store.EventOccurrences(start, end)
-	todos := a.store.Todos()
+	occs, _ := a.store.EventOccurrencesVisible(start, end, a.hidden)
+	todos := a.store.TodosVisible(a.hidden)
 	for _, week := range weeks {
 		for _, day := range week {
 			ds := model.DayStart(day)
@@ -166,7 +169,7 @@ func (a *app) splitOccs(days []time.Time) (timed, allday map[string][]model.Occu
 	}
 	start := days[0]
 	end := days[len(days)-1].AddDate(0, 0, 1)
-	occs, _ := a.store.EventOccurrences(start, end)
+	occs, _ := a.store.EventOccurrencesVisible(start, end, a.hidden)
 	for _, o := range occs {
 		if o.Event.AllDay {
 			for d := model.DayStart(o.Start); d.Before(o.End); d = d.AddDate(0, 0, 1) {
@@ -397,7 +400,7 @@ func (a *app) updateStatus() {
 	}
 	// Plain text (no color tags) so the [ and ] calendar keys read literally.
 	// Kept short so it fits without truncation; the full keymap lives in ? help.
-	a.hints.SetText(fmt.Sprintf("c/t/a panes · i… new · e edit · d del · Space done · u undo · r sync · v view · [ ]/f/b/gt cal · . comp:%s · : cmd · ? help · q quit", completed))
+	a.hints.SetText(fmt.Sprintf("c/t/a panes · i… new · e edit · d del · Space done/hide · / find · u undo · r sync · v view · [ ]/f/b/gt cal · . comp:%s · : cmd · ? help · q quit", completed))
 }
 
 // --- shared helpers ---
@@ -405,8 +408,8 @@ func (a *app) updateStatus() {
 func (a *app) dayItems(day time.Time) []model.AgendaItem {
 	start := model.DayStart(day)
 	end := start.AddDate(0, 0, 1)
-	occs, _ := a.store.EventOccurrences(start, end)
-	return model.DayAgenda(occs, a.store.Todos(), start, end)
+	occs, _ := a.store.EventOccurrencesVisible(start, end, a.hidden)
+	return model.DayAgenda(occs, a.store.TodosVisible(a.hidden), start, end)
 }
 
 func calCounts(cal store.Calendar) (events, todos int) {

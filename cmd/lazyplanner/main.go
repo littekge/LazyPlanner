@@ -101,8 +101,9 @@ func runTUI() error {
 		Title:     title,
 		Sync:      buildSyncFn(cfg.Server, s),
 		LeftWidth: uiState.LeftWidth,
-		SaveState: func(leftWidth int) {
-			_ = state.Save(statePath, state.State{LeftWidth: leftWidth})
+		Hidden:    uiState.HiddenCalendars,
+		SaveState: func(leftWidth int, hidden []string) {
+			_ = state.Save(statePath, state.State{LeftWidth: leftWidth, HiddenCalendars: hidden})
 		},
 	})
 }

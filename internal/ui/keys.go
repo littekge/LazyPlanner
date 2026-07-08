@@ -1,6 +1,8 @@
 package ui
 
 import (
+	"sort"
+
 	"github.com/gdamore/tcell/v2"
 	"github.com/rivo/tview"
 
@@ -224,9 +226,42 @@ func (a *app) resizeLeft(delta int) {
 	}
 	a.leftWidth = w
 	a.body.ResizeItem(a.leftCol, a.leftWidth, 0)
-	if a.saveState != nil {
-		a.saveState(a.leftWidth)
+	a.persistState()
+}
+
+// persistState saves the remembered UI prefs (pane width + hidden calendars) via
+// the callback wired from main. No-op when persistence is disabled.
+func (a *app) persistState() {
+	if a.saveState == nil {
+		return
 	}
+	hidden := make([]string, 0, len(a.hidden))
+	for id, on := range a.hidden {
+		if on {
+			hidden = append(hidden, id)
+		}
+	}
+	sort.Strings(hidden) // stable file output
+	a.saveState(a.leftWidth, hidden)
+}
+
+// toggleCalendarVisibility hides or shows the highlighted calendar's items on the
+// calendar and agenda views (Space in Calendar mode). The choice is remembered in
+// the state file; the underlying data and server sync are untouched.
+func (a *app) toggleCalendarVisibility() {
+	id := a.selectedCalendarID()
+	if id == "" {
+		return
+	}
+	if a.hidden[id] {
+		delete(a.hidden, id)
+	} else {
+		a.hidden[id] = true
+	}
+	a.persistState()
+	a.buildCalendars()
+	a.buildAgendaLeft()
+	a.reloadCurrent()
 }
 
 // setAccordion collapses (on) or restores (off) the left overview column so the

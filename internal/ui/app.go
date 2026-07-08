@@ -124,7 +124,11 @@ type app struct {
 	leftCol   *tview.Flex
 	leftWidth int
 	accordion bool
-	saveState func(leftWidth int)
+	saveState func(leftWidth int, hidden []string)
+
+	// hidden holds the calendar ids the user has hidden from the calendar/agenda
+	// views (persisted in the state file). A local view preference, not server data.
+	hidden map[string]bool
 }
 
 // Left-column sizing bounds (columns).
@@ -191,8 +195,11 @@ type Options struct {
 	Store     *store.Store
 	Title     string
 	Sync      func(context.Context) (sync.SyncResult, error)
-	LeftWidth int                 // remembered left-column width (0 = default)
-	SaveState func(leftWidth int) // persist a size change (nil = don't persist)
+	LeftWidth int      // remembered left-column width (0 = default)
+	Hidden    []string // calendar ids hidden from the calendar/agenda views
+	// SaveState persists remembered UI state (nil = don't persist). Every save
+	// passes the full state, so the caller can rewrite the file wholesale.
+	SaveState func(leftWidth int, hidden []string)
 }
 
 // Run builds the TUI and blocks until quit.
@@ -200,6 +207,9 @@ func Run(opts Options) error {
 	a := newApp(opts.Store, opts.Title, time.Now())
 	a.syncFn = opts.Sync
 	a.saveState = opts.SaveState
+	for _, id := range opts.Hidden {
+		a.hidden[id] = true
+	}
 	if opts.LeftWidth != 0 {
 		a.leftWidth = clampLeftWidth(opts.LeftWidth)
 	}
@@ -254,6 +264,7 @@ func newApp(s *store.Store, title string, now time.Time) *app {
 		weekStartMonday: true,
 		treeFolders:     map[string]bool{},
 		stickyDone:      map[string]bool{},
+		hidden:          map[string]bool{},
 	}
 }
 
@@ -532,7 +543,13 @@ func (a *app) globalKeys(ev *tcell.EventKey) *tcell.EventKey {
 			a.deleteContextual()
 			return nil
 		case ' ':
-			a.toggleComplete()
+			// In Calendar mode Space toggles the highlighted calendar's visibility;
+			// elsewhere it toggles a task's done state.
+			if a.mode == modeCalendar {
+				a.toggleCalendarVisibility()
+			} else {
+				a.toggleComplete()
+			}
 			return nil
 		case 'u':
 			a.undoLast()
@@ -630,7 +647,7 @@ func (a *app) gridFocused() bool {
 }
 
 // cycleCalendar moves the highlight in the Calendars overview (wrapping), usable
-// from the grid too. Toggling a calendar's visibility arrives in step 10.
+// from the grid too. Space toggles the highlighted calendar's visibility.
 func (a *app) cycleCalendar(delta int) {
 	n := a.calendars.GetItemCount()
 	if n == 0 {

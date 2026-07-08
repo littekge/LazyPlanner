@@ -254,11 +254,19 @@ func (cs *calState) snapshot() Calendar {
 
 // Todos returns every cached todo across all calendars. Callers build the
 // subtask tree and apply visibility/sort rules on top of this.
-func (s *Store) Todos() []*model.Todo {
+func (s *Store) Todos() []*model.Todo { return s.TodosVisible(nil) }
+
+// TodosVisible is Todos restricted to calendars not present in hidden (keyed by
+// calendar id). A nil/empty set returns every todo. The UI passes its set of
+// locally-hidden calendars so the calendar/agenda views can omit them.
+func (s *Store) TodosVisible(hidden map[string]bool) []*model.Todo {
 	s.mu.RLock()
 	defer s.mu.RUnlock()
 	var out []*model.Todo
-	for _, cs := range s.cals {
+	for calID, cs := range s.cals {
+		if hidden[calID] {
+			continue
+		}
 		for _, r := range cs.resources {
 			out = append(out, r.Object.Todos...)
 		}
@@ -270,9 +278,18 @@ func (s *Store) Todos() []*model.Todo {
 // overlapping [from, to), across all calendars, sorted by start. This is the
 // date-range query backing the calendar views.
 func (s *Store) EventOccurrences(from, to time.Time) ([]model.Occurrence, error) {
+	return s.EventOccurrencesVisible(from, to, nil)
+}
+
+// EventOccurrencesVisible is EventOccurrences restricted to calendars not present
+// in hidden (keyed by calendar id). A nil/empty set includes every calendar.
+func (s *Store) EventOccurrencesVisible(from, to time.Time, hidden map[string]bool) ([]model.Occurrence, error) {
 	s.mu.RLock()
 	objs := make([]*model.Parsed, 0, len(s.cals))
-	for _, cs := range s.cals {
+	for calID, cs := range s.cals {
+		if hidden[calID] {
+			continue
+		}
 		for _, r := range cs.resources {
 			objs = append(objs, r.Object)
 		}

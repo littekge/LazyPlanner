@@ -18,6 +18,9 @@ const FileName = "state.json"
 type State struct {
 	// LeftWidth is the remembered width of the left overview column, in columns.
 	LeftWidth int `json:"left_width,omitempty"`
+	// HiddenCalendars are the ids of calendars the user has hidden locally from
+	// the calendar/agenda views. This is a local view preference, not server data.
+	HiddenCalendars []string `json:"hidden_calendars,omitempty"`
 }
 
 // Load reads the state file at path. Any problem (missing file, bad JSON) yields
