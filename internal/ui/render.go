@@ -40,14 +40,15 @@ func (a *app) buildTasklists() {
 	a.tasklists.Clear()
 	a.tasklistIDs = a.tasklistIDs[:0]
 	for _, cal := range a.store.Calendars() {
-		if _, todos := calCounts(cal); todos > 0 {
-			label := cal.DisplayName
-			if cal.ReadOnly {
-				label += " [ro]"
-			}
-			a.tasklists.AddItem(label, "", 0, nil)
-			a.tasklistIDs = append(a.tasklistIDs, cal.ID)
+		if !supportsTodos(cal) {
+			continue
 		}
+		label := cal.DisplayName
+		if cal.ReadOnly {
+			label += " [ro]"
+		}
+		a.tasklists.AddItem(label, "", 0, nil)
+		a.tasklistIDs = append(a.tasklistIDs, cal.ID)
 	}
 	if len(a.tasklistIDs) == 0 {
 		a.tasklists.AddItem("(no task lists)", "", 0, nil)
@@ -410,6 +411,24 @@ func (a *app) dayItems(day time.Time) []model.AgendaItem {
 	end := start.AddDate(0, 0, 1)
 	occs, _ := a.store.EventOccurrencesVisible(start, end, a.hidden)
 	return model.DayAgenda(occs, a.store.TodosVisible(a.hidden), start, end)
+}
+
+// supportsTodos reports whether a calendar belongs in the Tasks panel — i.e. it
+// can hold todos, so an empty task list still shows (and can receive tasks). A
+// calendar whose server component set is known lists in Tasks iff it includes
+// VTODO; when the component set is unknown (a vdir populated by another tool, or
+// imported before component capture) fall back to whether it currently holds todos.
+func supportsTodos(cal store.Calendar) bool {
+	if len(cal.Components) > 0 {
+		for _, c := range cal.Components {
+			if strings.EqualFold(c, "VTODO") {
+				return true
+			}
+		}
+		return false
+	}
+	_, todos := calCounts(cal)
+	return todos > 0
 }
 
 func calCounts(cal store.Calendar) (events, todos int) {

@@ -118,7 +118,7 @@ The vdir data lives under *data* paths, **not** `~/.cache` — it can hold offli
  a:add  e:edit  space:done  ::cmd  ?:help       ✓ synced 2m ago
 ```
 
-- **Left column (the "overview")** — three small panels: **Calendars** (list, with visibility toggles), **Tasks** (the **task lists** — top-level calendars that contain todos, *not* the full tree), **Agenda** (today's events + due tasks). `c`/`t`/`a` **focus the corresponding overview panel** — the highlight lives there and moves through its rows — while the Main pane shows the matching view. `Enter` dives from the overview into the Main pane where that makes sense; `Esc` backs out to the overview.
+- **Left column (the "overview")** — three small panels: **Calendars** (list, with visibility toggles), **Tasks** (the **task lists** — calendars that support todos, incl. empty ones, *not* the full tree), **Agenda** (today's events + due tasks). `c`/`t`/`a` **focus the corresponding overview panel** — the highlight lives there and moves through its rows — while the Main pane shows the matching view. `Enter` dives from the overview into the Main pane where that makes sense; `Esc` backs out to the overview.
 - **Main pane** — follows the active overview panel:
   - **Calendars** → focus lands on the **Calendars list** (arrow keys highlight each calendar; `Space` hides/shows the highlighted calendar on the calendar+agenda views, remembered in the state file). The Main pane shows the calendar view: month grid (default) or the week/day hourly time-grid. `Enter` dives into the grid (arrows move days, `Enter` cycles the selected day's events, `Esc` returns to the list); `[` / `]` cycle the highlighted calendar from anywhere in calendar mode, and `v`/`f`/`b`/`gt` (view/forward/back/today) work regardless of where focus sits.
   - **Tasks** → focus lands on the **Tasks list**; selecting a list opens its full collapsible subtask tree in the Main pane, with inline priority / due date / completion status.
@@ -139,7 +139,7 @@ All timed values are stored in UTC and **displayed in the local timezone**; all-
 
 ### Task tree: lists in the overview, tree in Main
 
-The left **Tasks** panel lists the task lists (calendars containing todos). Selecting a list opens its full collapsible subtask tree in the **Main** pane, **rooted at the list's own name** so the top-level tasks attach to it (`→`/`←` expand/collapse), with inline priority/due/status; the Detail pane shows the highlighted task's full fields. `>` **zooms** — re-roots the Main tree at the selected task like `cd`-ing into a directory (breadcrumb shows `School / ECE384`); `<` zooms back out.
+The left **Tasks** panel lists the task lists (calendars whose supported component set includes VTODO — an empty list still appears so you can add to it; when the component set is unknown, a calendar shows once it holds a todo). Selecting a list opens its full collapsible subtask tree in the **Main** pane, **rooted at the list's own name** so the top-level tasks attach to it (`→`/`←` expand/collapse), with inline priority/due/status; the Detail pane shows the highlighted task's full fields. `>` **zooms** — re-roots the Main tree at the selected task like `cd`-ing into a directory (breadcrumb shows `School / ECE384`); `<` zooms back out.
 
 **Folders**: a task with at least one *incomplete* child is a "folder" and behaves like one:
 

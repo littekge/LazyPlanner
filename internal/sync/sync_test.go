@@ -703,3 +703,25 @@ func TestSyncPushesCalendarRename(t *testing.T) {
 		t.Errorf("re-pushed PROPPATCH after it was synced: %d", len(srv.propPatched))
 	}
 }
+
+func TestSyncRecordsComponentSet(t *testing.T) {
+	ctx := context.Background()
+	st, err := store.Open(ctx, t.TempDir())
+	if err != nil {
+		t.Fatal(err)
+	}
+	srv := newFakeServer()
+	// Server reports this calendar as a task list (VTODO), and it's empty.
+	srv.cals = []caldav.Calendar{{Path: calPath, Name: "Personal", SupportedComponentSet: []string{"VTODO"}}}
+
+	if _, err := sync.Sync(ctx, srv, st); err != nil {
+		t.Fatal(err)
+	}
+	cal, ok := st.Calendar("personal")
+	if !ok {
+		t.Fatal("calendar not imported")
+	}
+	if len(cal.Components) != 1 || cal.Components[0] != "VTODO" {
+		t.Errorf("Components = %v, want [VTODO] (so an empty task list is recognizable)", cal.Components)
+	}
+}

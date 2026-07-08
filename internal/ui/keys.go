@@ -267,9 +267,16 @@ func (a *app) toggleCalendarVisibility() {
 
 // afterVisibilityChange persists the hidden set and rebuilds every view that
 // filters on it. Shared by the Space toggle and the :calendar hide/show commands.
+// Rebuilding the Calendars list resets its selection to the top, so the current
+// row is captured and restored — hiding a calendar keeps the cursor on it (its
+// index is unchanged, since hiding marks it rather than removing it).
 func (a *app) afterVisibilityChange() {
+	calIdx := a.calendars.GetCurrentItem()
 	a.persistState()
 	a.buildCalendars()
+	if calIdx >= 0 && calIdx < a.calendars.GetItemCount() {
+		a.calendars.SetCurrentItem(calIdx)
+	}
 	a.buildAgendaLeft()
 	a.reloadCurrent()
 }

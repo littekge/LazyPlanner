@@ -120,6 +120,11 @@ func Sync(ctx context.Context, client Syncer, st *store.Store) (SyncResult, erro
 		if err := st.SetCalendarReadOnly(ctx, localID, sc.ReadOnly); err != nil {
 			return res, fmt.Errorf("sync: recording read-only status for %q: %w", localID, err)
 		}
+		// Record the supported component set so the UI can list an empty task
+		// list (VTODO) even before it holds anything.
+		if err := st.SetCalendarComponents(ctx, localID, sc.SupportedComponentSet); err != nil {
+			return res, fmt.Errorf("sync: recording components for %q: %w", localID, err)
+		}
 
 		if err := reconcileCalendar(ctx, client, st, localID, sc, &res); err != nil {
 			return res, err

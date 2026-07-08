@@ -213,6 +213,46 @@ func (s *Store) PendingCalendarProps() []CalendarPropUpdate {
 	return out
 }
 
+// SetCalendarComponents records the calendar's supported iCalendar component set
+// (from the server's supported-calendar-component-set), so the UI can tell a task
+// list from an event calendar even when it is empty. It is a no-op when unchanged
+// so a routine sync doesn't rewrite the sidecar needlessly, and it leaves a
+// locally-created calendar's own component set untouched (empty input).
+func (s *Store) SetCalendarComponents(ctx context.Context, calID string, components []string) error {
+	if err := ctx.Err(); err != nil {
+		return err
+	}
+	if len(components) == 0 {
+		return nil
+	}
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	cs := s.cals[calID]
+	if cs == nil {
+		return fmt.Errorf("store: unknown calendar %q", calID)
+	}
+	if equalStrings(cs.components, components) {
+		return nil
+	}
+	cs.components = append([]string(nil), components...)
+	if err := writeSidecar(s.root, cs); err != nil {
+		return fmt.Errorf("updating sidecar for %q: %w", calID, err)
+	}
+	return nil
+}
+
+func equalStrings(a, b []string) bool {
+	if len(a) != len(b) {
+		return false
+	}
+	for i := range a {
+		if a[i] != b[i] {
+			return false
+		}
+	}
+	return true
+}
+
 // CalendarDeletion is a calendar marked for deletion that the sync layer must
 // remove on the server. Href is empty for a calendar that was never pushed.
 type CalendarDeletion struct {

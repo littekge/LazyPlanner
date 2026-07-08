@@ -292,9 +292,9 @@ func (a *app) build() {
 	a.statusRight.SetDynamicColors(true).SetTextAlign(tview.AlignRight)
 	a.hints.SetWrap(false) // plain text so [ and ] render literally; always-visible controls
 
-	decorate(a.calendars.Box, "1 Calendars")
-	decorate(a.tasklists.Box, "2 Tasks")
-	decorate(a.agendaList.Box, "3 Agenda")
+	decorate(a.calendars.Box, "c Calendars")
+	decorate(a.tasklists.Box, "t Tasks")
+	decorate(a.agendaList.Box, "a Agenda")
 	decorate(a.month.Box, "Calendar")
 	decorate(a.timegrid.Box, "Calendar")
 	decorate(a.tree.Box, "Tasks")
