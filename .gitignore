@@ -14,3 +14,8 @@ coverage.txt
 *.swp
 *~
 .DS_Store
+
+# Claude Code settings are committed so they sync across machines. The global
+# git ignore hides settings.local.json (Claude's auto-saved "always allow"
+# grants); re-include it here so those get committed too.
+!.claude/settings.local.json
