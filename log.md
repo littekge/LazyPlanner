@@ -4,6 +4,14 @@
 
 ---
 
+## 2026-07-08 — `i!` force override for creating on unknown-type calendars
+
+- Owner request: a manual escape hatch from the block-until-known creation gate, for a calendar whose type isn't confirmed (`[?]`). Read-only stays hard-locked (no override), and a *known* wrong type is still refused.
+- **Force chord** (`internal/ui/keys.go` `resolvePrefix`): after the `i` create prefix, `!` arms a one-shot force and keeps the prefix pending, so `i!e`/`i!t`/`i!s` (and the `i!E`/`i!T`/`i!S` full-form variants) force the create. New `pendingForce` (armed) and `forceCreate` (set for the duration of the action) app flags; the which-key hint shows `new (force)` and the command view echoes `i!e`. `startPrefix`/`clearPrefix` reset the flag.
+- **Gate** (`calendar.go` `guardComponent`): honors `forceCreate` **only** in the unknown-type branch (empty component set → allow). A known wrong type still returns false regardless of force, and read-only is unaffected because `guardWrite` (checked first, ignores force) handles it. Blocked-flash now hints "(i! to force)".
+- Docs: help overlay (`i ! e / i ! t` row), `main.md` (`i` keymap row + Creation section), `README.md`, `CLAUDE.md`. Memory: recorded the gating + force boundaries ([[creation-gated-by-component-set]]).
+- Tests (`calendar_test.go`): `guardComponent` under `forceCreate` allows unknown-type but not a known wrong type; the `i` `!` `e` sequence arms force (prefix stays pending) and opens the event prompt on the fixture's unknown-type `work` calendar, while a plain `ie` there is refused. Full gate + `-race` pass.
+
 ## 2026-07-08 — hjkl move the highlight in every pane (incl. the overview lists)
 
 - Follow-up: the keymap advertised `hjkl` as movement, but the three overview lists (Calendars/Tasks/Agenda) took **arrows only** — tview's `List` binds no `hjkl` (and `TreeView` binds `j`/`k` but not `h`/`l`). So `hjkl` movement was inconsistent across panes.

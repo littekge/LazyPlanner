@@ -62,11 +62,13 @@ func (a *app) startPrefix(p rune) {
 		return
 	}
 	a.pendingPrefix = p
+	a.pendingForce = false
 	a.showWhichKey(p)
 }
 
 // clearPrefix leaves chord mode and removes the which-key hint.
 func (a *app) clearPrefix() {
+	a.pendingForce = false
 	if a.pendingPrefix == 0 {
 		return
 	}
@@ -78,14 +80,30 @@ func (a *app) clearPrefix() {
 // unknown continuation.
 func (a *app) resolvePrefix(ev *tcell.EventKey) {
 	p := a.pendingPrefix
+	// `!` after the create prefix arms a one-shot force: the next create bypasses
+	// the unknown-type ([?]) block. Read-only and a known-wrong-type calendar are
+	// never forced. The prefix stays pending for the object key.
+	if p == 'i' && !a.pendingForce && ev.Key() == tcell.KeyRune && ev.Rune() == '!' {
+		a.pendingForce = true
+		a.showWhichKey(p) // re-render the hint, now flagged "force"
+		return
+	}
+	force := a.pendingForce
+	a.pendingForce = false
 	a.clearPrefix()
 	if ev.Key() != tcell.KeyRune {
 		return // Esc (or any non-rune) cancels
 	}
 	for _, e := range chords[p] {
 		if e.key == ev.Rune() {
+			a.forceCreate = force
 			e.run(a)
-			a.echo(string(p) + string(e.key) + " " + e.label)
+			a.forceCreate = false
+			seq := string(p) + string(e.key)
+			if force {
+				seq = string(p) + "!" + string(e.key)
+			}
+			a.echo(seq + " " + e.label)
 			return
 		}
 	}
@@ -327,13 +345,20 @@ func (a *app) mainPrimitive() tview.Primitive {
 // checks pendingPrefix before anything else), so the popup never needs focus.
 func (a *app) showWhichKey(p rune) {
 	entries := chords[p]
-	line := "[::b]" + prefixLabel[p] + ":[::-]  "
+	title := prefixLabel[p]
+	if p == 'i' && a.pendingForce {
+		title += " (force)"
+	}
+	line := "[::b]" + title + ":[::-]  "
 	for _, e := range entries {
 		line += "[yellow]" + string(e.key) + "[-] " + e.label + "   "
 	}
-	if p == 'i' {
-		line += "  [gray](Shift = full form · Esc cancels)[-]"
-	} else {
+	switch {
+	case p == 'i' && a.pendingForce:
+		line += "  [gray](force: create on an unknown-type calendar · Esc cancels)[-]"
+	case p == 'i':
+		line += "  [gray](Shift = full form · ! = force unknown-type · Esc cancels)[-]"
+	default:
 		line += "  [gray](Esc cancels)[-]"
 	}
 

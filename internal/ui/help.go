@@ -30,6 +30,7 @@ var helpSections = []struct {
 		{"i e / i E", "add event — quick / full form"},
 		{"i s / i S", "add subtask — quick / full form"},
 		{"i c / i l", "new calendar / task list"},
+		{"i ! e / i ! t", "force-create on an unknown-type [?] calendar"},
 	}},
 	{"Edit & organize", [][2]string{
 		{"e", "edit selected (full form)"},

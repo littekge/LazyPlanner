@@ -96,6 +96,8 @@ type app struct {
 	undo     []undoStep // session undo stack (most recent last)
 
 	pendingPrefix   rune // active chord prefix (e.g. 'i'); 0 when none
+	pendingForce    bool // '!' armed after the create prefix (i!… force)
+	forceCreate     bool // set for the duration of a forced create action
 	pendingCount    int  // accumulated vim count (e.g. 3 in "3j"); 0 when none
 	searchQuery     string
 	searchIdx       int    // which match n/N is currently on

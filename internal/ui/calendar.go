@@ -66,12 +66,16 @@ func (a *app) guardComponent(calID, want string) bool {
 		return false
 	}
 	if len(cal.Components) == 0 {
-		a.flash("\"" + cal.DisplayName + "\": unknown type — sync it first")
+		if a.forceCreate {
+			return true // manual override (i!…) for an unconfirmed-type calendar
+		}
+		a.flash("\"" + cal.DisplayName + "\": unknown type — sync it first (i! to force)")
 		return false
 	}
 	if hasComponent(cal, want) {
 		return true
 	}
+	// A known but wrong type is a genuine mismatch — force does not override it.
 	if want == compEvent {
 		a.flash("\"" + cal.DisplayName + "\" is a task list — can't add events")
 	} else {

@@ -67,6 +67,71 @@ func TestGuardComponentLocksItemTypeToCalendar(t *testing.T) {
 	}
 }
 
+func TestForceOverridesUnknownTypeOnly(t *testing.T) {
+	a := newWritableTestApp(t, time.Date(2026, 7, 5, 12, 0, 0, 0, time.UTC))
+	ctx := context.Background()
+	if err := a.store.CreateCalendarLocal(ctx, "unk", store.CalendarMeta{DisplayName: "U"}, nil); err != nil {
+		t.Fatal(err)
+	}
+	if err := a.store.CreateCalendarLocal(ctx, "td", store.CalendarMeta{DisplayName: "T"}, []string{"VTODO"}); err != nil {
+		t.Fatal(err)
+	}
+
+	// Without force: unknown type blocks.
+	if a.guardComponent("unk", compEvent) {
+		t.Error("unknown type should block without force")
+	}
+	a.forceCreate = true
+	defer func() { a.forceCreate = false }()
+	if !a.guardComponent("unk", compEvent) {
+		t.Error("force should allow creation on an unknown-type calendar")
+	}
+	// Force must NOT override a *known* wrong type.
+	if a.guardComponent("td", compEvent) {
+		t.Error("force must not put an event on a known task-only list")
+	}
+}
+
+func TestForceKeyArmsThenCreatesOnUnknownCalendar(t *testing.T) {
+	a := newRootedTestApp(t, time.Date(2026, 7, 5, 12, 0, 0, 0, time.UTC))
+	a.setMode(modeCalendar)
+	cals := a.store.Calendars()
+	idx := -1
+	for i, c := range cals {
+		if c.ID == "work" { // fixture "work" has no declared component set → [?]
+			idx = i
+		}
+	}
+	if idx < 0 {
+		t.Skip("no unknown-type calendar in fixture")
+	}
+	a.calendars.SetCurrentItem(idx)
+
+	// Plain `ie` on a [?] calendar is refused (no modal).
+	a.startPrefix('i')
+	a.resolvePrefix(runeKey('e'))
+	if a.modalOpen() {
+		t.Fatal("unforced ie on an unknown-type calendar should be blocked")
+	}
+	if !strings.Contains(a.statusLeft.GetText(true), "unknown type") {
+		t.Errorf("expected an unknown-type flash, got %q", a.statusLeft.GetText(true))
+	}
+
+	// `i` `!` arms force (prefix stays pending); `e` then creates.
+	a.startPrefix('i')
+	a.resolvePrefix(runeKey('!'))
+	if !a.pendingForce || a.pendingPrefix != 'i' {
+		t.Fatalf("! should arm force and keep the prefix pending (force=%v prefix=%q)", a.pendingForce, a.pendingPrefix)
+	}
+	a.resolvePrefix(runeKey('e'))
+	if !a.modalOpen() {
+		t.Error("forced i!e should open the event prompt on an unknown-type calendar")
+	}
+	if a.forceCreate {
+		t.Error("forceCreate should reset after the action runs")
+	}
+}
+
 func TestCalTypeMarker(t *testing.T) {
 	cases := []struct {
 		comps []string
