@@ -24,6 +24,7 @@ type sidecar struct {
 	// iCalendar component set (VEVENT/VTODO) to create.
 	PendingCreate bool     `json:"pending_create,omitempty"`
 	PendingDelete bool     `json:"pending_delete,omitempty"`
+	PendingProps  bool     `json:"pending_props,omitempty"`
 	Components    []string `json:"components,omitempty"`
 	// ReadOnly caches the server's read-only status (no write privilege) so the
 	// UI knows not to allow writes even before the first sync of a session.
@@ -87,6 +88,7 @@ func writeSidecar(root string, cs *calState) error {
 		Resources:     make(map[string]resourceMeta, len(cs.resources)),
 		PendingCreate: cs.pendingCreate,
 		PendingDelete: cs.pendingDelete,
+		PendingProps:  cs.pendingProps,
 		Components:    cs.components,
 		ReadOnly:      cs.readOnly,
 	}

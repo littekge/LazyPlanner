@@ -139,6 +139,80 @@ func (s *Store) SetCalendarReadOnly(ctx context.Context, calID string, readOnly 
 	return nil
 }
 
+// UpdateCalendarMeta edits a calendar's display name and/or color locally and
+// marks it for a server PROPPATCH on the next sync (offline-first). An empty
+// argument leaves that property unchanged. A calendar still pending creation just
+// carries the new values into its MKCALENDAR (no separate PROPPATCH needed).
+func (s *Store) UpdateCalendarMeta(ctx context.Context, id, displayName, color string) error {
+	if err := ctx.Err(); err != nil {
+		return err
+	}
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	cs := s.cals[id]
+	if cs == nil {
+		return fmt.Errorf("store: unknown calendar %q", id)
+	}
+	if displayName != "" {
+		cs.displayName = displayName
+	}
+	if color != "" {
+		cs.color = color
+	}
+	// A never-pushed calendar carries its metadata in the pending MKCALENDAR; only
+	// an existing one needs a PROPPATCH.
+	if !cs.pendingCreate {
+		cs.pendingProps = true
+	}
+	if err := writeSidecar(s.root, cs); err != nil {
+		return fmt.Errorf("updating sidecar for %q: %w", id, err)
+	}
+	return nil
+}
+
+// MarkCalendarPropsSynced clears a calendar's pending-props flag after a
+// successful server PROPPATCH.
+func (s *Store) MarkCalendarPropsSynced(ctx context.Context, id string) error {
+	if err := ctx.Err(); err != nil {
+		return err
+	}
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	cs := s.cals[id]
+	if cs == nil {
+		return fmt.Errorf("store: unknown calendar %q", id)
+	}
+	cs.pendingProps = false
+	if err := writeSidecar(s.root, cs); err != nil {
+		return fmt.Errorf("updating sidecar for %q: %w", id, err)
+	}
+	return nil
+}
+
+// CalendarPropUpdate is a calendar whose metadata changed locally and must be
+// pushed to the server with a PROPPATCH.
+type CalendarPropUpdate struct {
+	ID          string
+	Href        string
+	DisplayName string
+	Color       string
+}
+
+// PendingCalendarProps returns calendars whose display name/color changed locally
+// and need a server PROPPATCH (only those already on the server).
+func (s *Store) PendingCalendarProps() []CalendarPropUpdate {
+	s.mu.RLock()
+	defer s.mu.RUnlock()
+	var out []CalendarPropUpdate
+	for _, cs := range s.cals {
+		if cs.pendingProps && cs.href != "" {
+			out = append(out, CalendarPropUpdate{ID: cs.id, Href: cs.href, DisplayName: cs.displayName, Color: cs.color})
+		}
+	}
+	sort.Slice(out, func(i, j int) bool { return out[i].ID < out[j].ID })
+	return out
+}
+
 // CalendarDeletion is a calendar marked for deletion that the sync layer must
 // remove on the server. Href is empty for a calendar that was never pushed.
 type CalendarDeletion struct {

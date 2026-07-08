@@ -56,8 +56,9 @@ var helpSections = []struct {
 	}},
 	{"Sync & commands", [][2]string{
 		{"r", "sync now (= :sync)"},
-		{": ", "cmd — :sync :view :goto :search :config :conflicts :help :q"},
+		{": ", "cmd — :sync :view :goto :search :config :calendar :conflicts :q"},
 		{":config", "edit config in $EDITOR, reload on exit"},
+		{":calendar", "rename / color / hide / show the current calendar"},
 		{":conflicts", "resolve items that changed on both sides"},
 		{"?", "this help"},
 	}},

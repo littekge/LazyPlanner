@@ -65,7 +65,12 @@ type fakeServer struct {
 	homeSet     string
 	created     []caldav.CalendarSpec // MKCALENDAR calls, by path order
 	createdPath []string
-	deletedCals []string // DeleteCalendar paths
+	deletedCals []string      // DeleteCalendar paths
+	propPatched []propPatchOp // PROPPATCH calls
+}
+
+type propPatchOp struct {
+	path, displayName, color string
 }
 
 func newFakeServer() *fakeServer {
@@ -79,6 +84,19 @@ func newFakeServer() *fakeServer {
 }
 
 func (f *fakeServer) CalendarHomeSet(context.Context) (string, error) { return f.homeSet, nil }
+
+func (f *fakeServer) SetCalendarProps(_ context.Context, path, displayName, color string) error {
+	f.propPatched = append(f.propPatched, propPatchOp{path: path, displayName: displayName, color: color})
+	for i, c := range f.cals {
+		if c.Path == path {
+			if displayName != "" {
+				f.cals[i].Name = displayName
+			}
+			break
+		}
+	}
+	return nil
+}
 
 func (f *fakeServer) CreateCalendar(_ context.Context, path string, spec caldav.CalendarSpec) error {
 	f.created = append(f.created, spec)
@@ -642,4 +660,46 @@ func findResByName(t *testing.T, st *store.Store, calID, name string) *store.Res
 		}
 	}
 	return nil
+}
+
+func TestSyncPushesCalendarRename(t *testing.T) {
+	ctx := context.Background()
+	st, err := store.Open(ctx, t.TempDir())
+	if err != nil {
+		t.Fatal(err)
+	}
+	srv := newFakeServer()
+	href := calPath + "e1.ics"
+	srv.data[href] = caldav.Object{Path: href, ETag: "srv-1", Data: mkICal(t, eventICS("e1@test", "Hello"))}
+
+	// First sync imports the server calendar "personal" (with its href).
+	if _, err := sync.Sync(ctx, srv, st); err != nil {
+		t.Fatal(err)
+	}
+	// Rename + recolor it locally, then sync again to push the PROPPATCH.
+	if err := st.UpdateCalendarMeta(ctx, "personal", "Renamed", "#123456"); err != nil {
+		t.Fatal(err)
+	}
+	res, err := sync.Sync(ctx, srv, st)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if res.CalendarsUpdated != 1 {
+		t.Errorf("CalendarsUpdated = %d, want 1", res.CalendarsUpdated)
+	}
+	if len(srv.propPatched) != 1 {
+		t.Fatalf("PROPPATCH calls = %d, want 1", len(srv.propPatched))
+	}
+	got := srv.propPatched[0]
+	if got.path != calPath || got.displayName != "Renamed" || got.color != "#123456" {
+		t.Errorf("PROPPATCH = %+v, want path=%s name=Renamed color=#123456", got, calPath)
+	}
+	// Idempotent: a third sync must not re-push (pending-props was cleared).
+	srv.propPatched = nil
+	if _, err := sync.Sync(ctx, srv, st); err != nil {
+		t.Fatal(err)
+	}
+	if len(srv.propPatched) != 0 {
+		t.Errorf("re-pushed PROPPATCH after it was synced: %d", len(srv.propPatched))
+	}
 }

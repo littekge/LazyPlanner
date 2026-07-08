@@ -262,6 +262,12 @@ func (a *app) toggleCalendarVisibility() {
 	} else {
 		a.hidden[id] = true
 	}
+	a.afterVisibilityChange()
+}
+
+// afterVisibilityChange persists the hidden set and rebuilds every view that
+// filters on it. Shared by the Space toggle and the :calendar hide/show commands.
+func (a *app) afterVisibilityChange() {
 	a.persistState()
 	a.buildCalendars()
 	a.buildAgendaLeft()

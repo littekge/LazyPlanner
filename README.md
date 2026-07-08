@@ -35,6 +35,7 @@ Run `lazyplanner` with no arguments to open the TUI. It reads the local cache (p
 
 - **`:`** opens a command line: `:sync`, `:view month|week|day`, `:goto <date>`, `:search <text>`, `:config`, `:conflicts`, `:help`, `:q`. The status bar's middle section echoes the last action in command form. **`gd`** opens `:goto` prefilled.
 - **`:config`** opens `config.toml` in your `$EDITOR` (the TUI suspends) and reloads it on exit; server/credential edits take effect immediately (changing to a different account needs a restart, since the cache is per-account).
+- **`:calendar rename <name>`** / **`:calendar color <#rrggbb>`** change the highlighted calendar's server-owned display name / color (offline-first: applied locally now, pushed to the server via a CalDAV `PROPPATCH` on the next sync, so it propagates to NextCloud web and other clients). **`:calendar hide`** / **`:calendar show`** are the command form of the `Space` visibility toggle.
 - **`?`** opens the full help cheat sheet.
 - **`:conflicts`** resolves items that changed on both sides (keep local / keep server); the status bar shows the live conflict count.
 - **`+` / `-`** collapse / restore the overview so the calendar or tree fills the width; **`Ctrl-←` / `Ctrl-→`** narrow / widen the overview column (remembered across launches).

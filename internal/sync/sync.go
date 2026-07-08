@@ -30,6 +30,8 @@ type Syncer interface {
 	CreateCalendar(ctx context.Context, path string, spec caldav.CalendarSpec) error
 	// DeleteCalendar removes a calendar collection on the server.
 	DeleteCalendar(ctx context.Context, path string) error
+	// SetCalendarProps pushes a calendar's display name/color (PROPPATCH).
+	SetCalendarProps(ctx context.Context, path, displayName, color string) error
 }
 
 // SyncError records one resource that could not be synced. The rest of the sync
@@ -48,6 +50,7 @@ type SyncResult struct {
 	Calendars        int         // calendars reconciled
 	CalendarsCreated int         // local calendars created on the server (MKCALENDAR)
 	CalendarsDeleted int         // local calendar deletions applied on the server
+	CalendarsUpdated int         // local calendar metadata changes pushed (PROPPATCH)
 	Pushed           int         // local creates/edits sent to the server
 	Pulled           int         // remote creates/edits fetched into the cache
 	PushedDeletes    int         // local deletions applied on the server
@@ -80,6 +83,7 @@ func Sync(ctx context.Context, client Syncer, st *store.Store) (SyncResult, erro
 	// so the new calendar is then reconciled like any other.
 	pendingDeleteHref := pushCalendarDeletes(ctx, client, st, &res)
 	pushCalendarCreates(ctx, client, st, &res)
+	pushCalendarProps(ctx, client, st, &res)
 
 	serverCals, err := client.DiscoverCalendars(ctx)
 	if err != nil {
@@ -147,6 +151,23 @@ func pushCalendarDeletes(ctx context.Context, client Syncer, st *store.Store, re
 		res.CalendarsDeleted++
 	}
 	return pending
+}
+
+// pushCalendarProps pushes locally-edited calendar metadata (display name/color)
+// to the server with a PROPPATCH, before discovery so a routine pull doesn't race
+// the change. A per-calendar failure is recorded and left pending for a retry.
+func pushCalendarProps(ctx context.Context, client Syncer, st *store.Store, res *SyncResult) {
+	for _, u := range st.PendingCalendarProps() {
+		if err := client.SetCalendarProps(ctx, u.Href, u.DisplayName, u.Color); err != nil {
+			recordSkip(res, u.ID, u.Href, err)
+			continue
+		}
+		if err := st.MarkCalendarPropsSynced(ctx, u.ID); err != nil {
+			recordSkip(res, u.ID, "calendar", err)
+			continue
+		}
+		res.CalendarsUpdated++
+	}
 }
 
 // pushCalendarCreates issues MKCALENDAR for every locally-created calendar, then

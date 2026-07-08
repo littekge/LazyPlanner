@@ -73,6 +73,8 @@ func (a *app) runCommand(line string) {
 		a.echo(":search " + args)
 	case "config":
 		a.cmdConfig()
+	case "calendar", "cal":
+		a.cmdCalendar(args)
 	case "conflicts", "conflict":
 		a.showConflicts()
 	case "help", "h":
@@ -152,6 +154,93 @@ func (a *app) cmdGoto(arg string) {
 	}
 	a.updateStatus()
 	a.echo(":goto " + arg)
+}
+
+// cmdCalendar handles ":calendar <sub>" — rename/color push server-owned
+// metadata (offline-first, via PROPPATCH on the next sync); hide/show toggle the
+// local visibility preference. It acts on the highlighted calendar/list.
+func (a *app) cmdCalendar(args string) {
+	sub, rest, _ := strings.Cut(args, " ")
+	rest = strings.TrimSpace(rest)
+	id := a.currentCalendarID()
+	if id == "" {
+		a.flash("select a calendar first")
+		return
+	}
+	switch strings.ToLower(sub) {
+	case "rename":
+		if rest == "" {
+			a.flash("calendar rename <new name>")
+			return
+		}
+		if !a.guardWrite(id) {
+			return
+		}
+		if err := a.store.UpdateCalendarMeta(context.Background(), id, rest, ""); err != nil {
+			a.flash(err.Error())
+			return
+		}
+		a.buildCalendars()
+		a.buildTasklists()
+		a.echo(":calendar rename")
+		a.flash("Renamed (pushes on next sync)")
+	case "color":
+		c, ok := normalizeColor(rest)
+		if !ok {
+			a.flash("calendar color <#rrggbb>")
+			return
+		}
+		if !a.guardWrite(id) {
+			return
+		}
+		if err := a.store.UpdateCalendarMeta(context.Background(), id, "", c); err != nil {
+			a.flash(err.Error())
+			return
+		}
+		a.buildCalendars()
+		a.echo(":calendar color")
+		a.flash("Color set (pushes on next sync)")
+	case "hide":
+		a.hidden[id] = true
+		a.afterVisibilityChange()
+		a.echo(":calendar hide")
+	case "show":
+		delete(a.hidden, id)
+		a.afterVisibilityChange()
+		a.echo(":calendar show")
+	default:
+		a.flash("calendar rename|color|hide|show")
+	}
+}
+
+// currentCalendarID is the calendar the calendar-level commands act on: the
+// selected task list in Tasks mode, otherwise the highlighted calendar.
+func (a *app) currentCalendarID() string {
+	if a.mode == modeTasks {
+		return a.selectedTasklistID()
+	}
+	return a.selectedCalendarID()
+}
+
+// normalizeColor validates a hex color, adding a leading '#'. It accepts #rrggbb
+// or #rrggbbaa (the Apple calendar-color forms).
+func normalizeColor(s string) (string, bool) {
+	s = strings.TrimSpace(s)
+	if s == "" {
+		return "", false
+	}
+	if !strings.HasPrefix(s, "#") {
+		s = "#" + s
+	}
+	if len(s) != 7 && len(s) != 9 {
+		return "", false
+	}
+	for _, r := range s[1:] {
+		if !((r >= '0' && r <= '9') || (r >= 'a' && r <= 'f') || (r >= 'A' && r <= 'F')) {
+			return "", false
+		}
+	}
+	return s, true
 }
 
 // topLineWrap pins a primitive to the top of the screen, full width.
