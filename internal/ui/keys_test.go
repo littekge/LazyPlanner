@@ -1,6 +1,7 @@
 package ui
 
 import (
+	"fmt"
 	"testing"
 	"time"
 
@@ -24,9 +25,9 @@ func newRootedTestApp(t *testing.T, now time.Time) *app {
 func TestPrefixShowsWhichKeyThenCancels(t *testing.T) {
 	a := newRootedTestApp(t, time.Date(2026, 7, 5, 12, 0, 0, 0, time.UTC))
 
-	a.startPrefix('a')
-	if a.pendingPrefix != 'a' {
-		t.Fatalf("pendingPrefix = %q, want 'a'", a.pendingPrefix)
+	a.startPrefix('i')
+	if a.pendingPrefix != 'i' {
+		t.Fatalf("pendingPrefix = %q, want 'i'", a.pendingPrefix)
 	}
 	if !a.root.HasPage(pageWhichKey) {
 		t.Error("which-key popup not shown after prefix")
@@ -50,15 +51,15 @@ func TestChordCreatesTask(t *testing.T) {
 	}
 	before := len(a.store.Todos())
 
-	// `a` then `t` opens the quick-add task prompt.
-	a.startPrefix('a')
+	// `i` then `t` opens the quick-add task prompt.
+	a.startPrefix('i')
 	a.resolvePrefix(runeKey('t'))
 	if a.pendingPrefix != 0 {
 		t.Error("prefix should be cleared after completing the chord")
 	}
 	// The quick-add input modal should now be open.
 	if !a.modalOpen() {
-		t.Fatal("quick-add prompt did not open on `at`")
+		t.Fatal("quick-add prompt did not open on `it`")
 	}
 	// Command view echoes the chord.
 	if got := a.statusMid.GetText(true); got == "" {
@@ -69,8 +70,8 @@ func TestChordCreatesTask(t *testing.T) {
 
 func TestUnknownChordFlashesAndClears(t *testing.T) {
 	a := newRootedTestApp(t, time.Date(2026, 7, 5, 12, 0, 0, 0, time.UTC))
-	a.startPrefix('a')
-	a.resolvePrefix(runeKey('z')) // no `az` action
+	a.startPrefix('i')
+	a.resolvePrefix(runeKey('z')) // no `iz` action
 	if a.pendingPrefix != 0 {
 		t.Error("prefix not cleared after an unknown continuation")
 	}
@@ -79,5 +80,91 @@ func TestUnknownChordFlashesAndClears(t *testing.T) {
 	}
 	if got := a.statusLeft.GetText(true); got == "" {
 		t.Error("expected a flash for the unknown chord")
+	}
+}
+
+// focusableList builds a standalone list with n items, used to exercise the
+// count/gg/G navigation without depending on fixture item counts.
+func focusableList(n int) *tview.List {
+	lst := tview.NewList().ShowSecondaryText(false)
+	for i := 0; i < n; i++ {
+		lst.AddItem(fmt.Sprintf("item %d", i), "", 0, nil)
+	}
+	return lst
+}
+
+func TestCountPrefixRepeatsMotion(t *testing.T) {
+	a := newRootedTestApp(t, time.Date(2026, 7, 5, 12, 0, 0, 0, time.UTC))
+	lst := focusableList(6)
+	a.tv.SetFocus(lst)
+	lst.SetCurrentItem(0)
+
+	// "3" accumulates a count; the next Down arrow moves three rows.
+	a.globalKeys(runeKey('3'))
+	if a.pendingCount != 3 {
+		t.Fatalf("pendingCount = %d, want 3", a.pendingCount)
+	}
+	a.globalKeys(tcell.NewEventKey(tcell.KeyDown, 0, tcell.ModNone))
+	if a.pendingCount != 0 {
+		t.Error("count should reset after the motion")
+	}
+	if got := lst.GetCurrentItem(); got != 3 {
+		t.Errorf("after 3j-style move, current item = %d, want 3", got)
+	}
+}
+
+func TestGotoTopAndBottom(t *testing.T) {
+	a := newRootedTestApp(t, time.Date(2026, 7, 5, 12, 0, 0, 0, time.UTC))
+	lst := focusableList(6)
+	a.tv.SetFocus(lst)
+
+	lst.SetCurrentItem(2)
+	a.gotoBottom(0) // G with no count → last item
+	if got := lst.GetCurrentItem(); got != 5 {
+		t.Errorf("G current item = %d, want 5 (last)", got)
+	}
+	a.gotoTop() // gg → first item
+	if got := lst.GetCurrentItem(); got != 0 {
+		t.Errorf("gg current item = %d, want 0", got)
+	}
+	a.gotoBottom(3) // 3G → third item (index 2)
+	if got := lst.GetCurrentItem(); got != 2 {
+		t.Errorf("3G current item = %d, want 2", got)
+	}
+}
+
+func TestFoldAllAndToggle(t *testing.T) {
+	now := time.Date(2026, 7, 5, 9, 0, 0, 0, time.UTC)
+	a := newWritableTestApp(t, now)
+	a.setMode(modeTasks)
+	calID := a.selectedTasklistID()
+
+	a.createTask(calID, "", "Parent")
+	parent := todoBySummary(a.store, "Parent")
+	a.createTask(calID, parent.UID, "Child")
+	a.buildTree()
+
+	pnode := findTreeNode(a.tree.GetRoot(), parent.UID)
+	if pnode == nil {
+		t.Fatal("parent node not found in tree")
+	}
+	if !pnode.IsExpanded() {
+		t.Fatal("folder should start expanded")
+	}
+
+	a.setFoldAll(false)
+	if pnode.IsExpanded() {
+		t.Error("zM should collapse every folder")
+	}
+	a.setFoldAll(true)
+	if !pnode.IsExpanded() {
+		t.Error("zR should expand every folder")
+	}
+
+	// za toggles just the current node.
+	a.tree.SetCurrentNode(pnode)
+	a.toggleFold()
+	if pnode.IsExpanded() {
+		t.Error("za should collapse the current (expanded) folder")
 	}
 }

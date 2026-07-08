@@ -14,18 +14,18 @@ A terminal-based todo-list and calendar manager with offline-first CalDAV sync �
 
 ## Usage
 
-Run `lazyplanner` with no arguments to open the TUI. It reads the local cache (populate it with `import` first — see below). A left "overview" column holds **Calendars**, **Tasks** (your task lists), and **Agenda**. `1`/`2`/`3` **focus the matching overview panel** (the highlight lives there); the **center** pane shows the corresponding view, and `Enter` dives in / `Esc` backs out:
+Run `lazyplanner` with no arguments to open the TUI. It reads the local cache (populate it with `import` first — see below). A left "overview" column holds **Calendars**, **Tasks** (your task lists), and **Agenda**. `c`/`t`/`a` **focus the matching overview panel** (the highlight lives there); the **center** pane shows the corresponding view, and `Enter` dives in / `Esc` backs out. Movement is vim-style — `hjkl` or arrows, a **count** prefix repeats a motion (`3j`), and `gg`/`G` jump to the top/bottom of a list or tree:
 
-- **`1` Calendars** → focus the calendar list on the left (arrows highlight each calendar). The center shows a month grid (each day cell lists its events/tasks) or a week/day **hourly time-grid**. `Enter` dives into the grid — arrows move days, `Enter` cycles the selected day's events (the Detail pane shows the highlighted one), `Esc` returns to the list. `[`/`]` cycle the highlighted calendar from anywhere; `v` cycles the view; `n`/`p` move by period; `t` jumps to today.
-- **`2` Tasks** → pick a list on the left; its full subtask tree opens in the center (with inline priority/due/status). The Detail pane shows the highlighted task's full description and fields.
-- **`3` Agenda** → focus the agenda list on the left; moving its highlight highlights the matching block in the center (which auto-scrolls). The center shows the day's events and tasks with full descriptions, at full width (the Detail pane hides).
+- **`c` Calendars** → focus the calendar list on the left (arrows highlight each calendar). The center shows a month grid (each day cell lists its events/tasks) or a week/day **hourly time-grid**. `Enter` dives into the grid — arrows move days, `Enter` cycles the selected day's events (the Detail pane shows the highlighted one), `Esc` returns to the list. `[`/`]` cycle the highlighted calendar from anywhere; `v` cycles the view; `f`/`b` move forward/back by period; `gt` jumps to today.
+- **`t` Tasks** → pick a list on the left; its full subtask tree opens in the center (with inline priority/due/status). The Detail pane shows the highlighted task's full description and fields. `z` folds the tree: `zR` expand-all, `zM` collapse-all, `za` toggle.
+- **`a` Agenda** → focus the agenda list on the left; moving its highlight highlights the matching block in the center (which auto-scrolls). The center shows the day's events and tasks with full descriptions, at full width (the Detail pane hides).
 
-**Creating and editing** — create actions are grouped under the **`a` prefix** pressed as a short chord; a **which-key** hint pops up after `a` so you don't have to memorize them. Capitalize the object for the full form.
+**Creating and editing** — create actions are grouped under the **`i` prefix** (as in "insert") pressed as a short chord; a **which-key** hint pops up after `i` so you don't have to memorize them. Capitalize the object for the full form.
 
-- **`a` then `t` / `T`** — add a top-level **task** (quick line / full form) to the selected list.
-- **`a` then `e` / `E`** — add an **event** (quick / full) on the selected/current day.
-- **`a` then `s` / `S`** — add a **subtask** (quick / full) under the highlighted task.
-- **`a` then `c` / `l`** — create a **calendar** / **task list**, offline-first (it appears immediately; the server `MKCALENDAR` happens on the next sync).
+- **`i` then `t` / `T`** — add a top-level **task** (quick line / full form) to the selected list.
+- **`i` then `e` / `E`** — add an **event** (quick / full) on the selected/current day.
+- **`i` then `s` / `S`** — add a **subtask** (quick / full) under the highlighted task.
+- **`i` then `c` / `l`** — create a **calendar** / **task list**, offline-first (it appears immediately; the server `MKCALENDAR` happens on the next sync).
 - Quick-add parses smart tokens and leaves anything ambiguous in the title: dates (`today`, `tomorrow`, `fri`, `jul 20`, `7/20`, `2026-07-20`), times (`3pm`, `3:30pm`, `15:00` — a bare number stays a number), `!1`–`!9` / `!high` / `!med` / `!low` priority, and `#tag`.
 - **`e`** — full edit form for the selected item. **`d`** — delete: the selected item, or the calendar/list when its overview panel is focused (with a confirm; deleting a folder removes its whole subtree).
 - **`Space`** — toggle a task complete/incomplete. A task with unfinished subtasks is a **folder** (`▸`/`▾`) and can't be completed until they are.
@@ -33,7 +33,7 @@ Run `lazyplanner` with no arguments to open the TUI. It reads the local cache (p
 
 **Commands, help & layout:**
 
-- **`:`** opens a command line: `:sync`, `:view month|week|day`, `:goto <date>`, `:conflicts`, `:help`, `:q`. The status bar's middle section echoes the last action in command form. **`g`** opens `:goto` prefilled.
+- **`:`** opens a command line: `:sync`, `:view month|week|day`, `:goto <date>`, `:conflicts`, `:help`, `:q`. The status bar's middle section echoes the last action in command form. **`gd`** opens `:goto` prefilled.
 - **`?`** opens the full help cheat sheet.
 - **`:conflicts`** resolves items that changed on both sides (keep local / keep server); the status bar shows the live conflict count.
 - **`+` / `-`** collapse / restore the overview so the calendar or tree fills the width; **`Ctrl-←` / `Ctrl-→`** narrow / widen the overview column (remembered across launches).
@@ -44,24 +44,27 @@ Full key list:
 
 | Key | Action |
 |---|---|
-| `1` `2` `3` | Focus the Calendars / Tasks / Agenda overview panel |
+| `c` `t` `a` | Focus the Calendars / Tasks / Agenda overview panel |
 | `Tab` / `Shift-Tab` | Cycle those three |
 | `↑` `↓` `←` `→` / `j` `k` `h` `l` | Move the highlight in the focused pane |
+| `<count>` + motion | Repeat a motion — `3j`, `5k` |
+| `gg` / `G` | Go to top / bottom of the list or tree (`<count>G` → nth item) |
 | `Enter` | Dive into the center; cycle a day's events; open a list / expand a task |
 | `Esc` | Back out to the overview · cancel a form/dialog/chord |
-| `a` … | Create prefix — `t`/`T` task, `e`/`E` event, `s`/`S` subtask, `c` calendar, `l` list (Shift = full form) |
+| `i` … | Create prefix — `t`/`T` task, `e`/`E` event, `s`/`S` subtask, `c` calendar, `l` list (Shift = full form) |
 | `e` | Edit selected (full form) |
 | `d` | Delete selected item — or the calendar/list when its panel is focused |
 | `Space` | Toggle task done (folders can't complete until their subtasks do) |
 | `H` / `L` | Outdent / indent task (re-parent) |
+| `z` … | Fold the tree — `zR` expand-all, `zM` collapse-all, `za` toggle |
 | `u` | Undo last local change (this session) |
 | `v` | Cycle calendar view: month → week → day |
 | `[` / `]` | Cycle the highlighted calendar |
-| `n` / `p` · `t` | Next / previous period · jump to today |
+| `f` / `b` · `gt` | Forward / back one period · jump to today |
 | `+` / `-` | Collapse / restore the overview (accordion) |
 | `Ctrl-←` / `Ctrl-→` | Narrow / widen the overview column (remembered) |
 | `r` | Sync now (= `:sync`) |
-| `:` · `g` · `?` | Command line · goto date · help |
+| `:` · `gd` · `?` | Command line · go to date · help |
 | `.` | Show/hide completed tasks |
 | `q` / `Ctrl-C` | Quit / back out |
 

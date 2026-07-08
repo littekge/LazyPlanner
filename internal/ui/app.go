@@ -95,7 +95,8 @@ type app struct {
 	detailOn bool
 	undo     []undoStep // session undo stack (most recent last)
 
-	pendingPrefix   rune // active chord prefix (e.g. 'a'); 0 when none
+	pendingPrefix   rune // active chord prefix (e.g. 'i'); 0 when none
+	pendingCount    int  // accumulated vim count (e.g. 3 in "3j"); 0 when none
 	mode            int
 	viewMode        int
 	anchor          time.Time
@@ -436,9 +437,29 @@ func (a *app) globalKeys(ev *tcell.EventKey) *tcell.EventKey {
 		return nil
 	}
 	// While a modal (input/form/confirm) is open it owns all keys; app shortcuts
-	// must not fire, or typing "a"/"q"/digits would trigger them.
+	// must not fire, or typing letters/digits would trigger them.
 	if a.modalOpen() {
 		return ev
+	}
+	// Vim counts: 1-9 start a count and 0 extends one; the next motion repeats.
+	// (Digits are free for this now that panel focus lives on c/t/a.)
+	if ev.Key() == tcell.KeyRune {
+		if r := ev.Rune(); (r >= '1' && r <= '9') || (r == '0' && a.pendingCount > 0) {
+			a.pendingCount = a.pendingCount*10 + int(r-'0')
+			if a.pendingCount > maxCount {
+				a.pendingCount = maxCount
+			}
+			a.statusLeft.SetText(fmt.Sprintf(" [gray]count[-] %d", a.pendingCount))
+			return nil
+		}
+	}
+	// Any non-digit key ends the count. A motion applies it; otherwise it's dropped.
+	count := a.pendingCount
+	a.pendingCount = 0
+	if count > 1 && isMotion(ev) {
+		a.repeatKey(ev, count)
+		a.updateStatus()
+		return nil
 	}
 	switch ev.Key() {
 	case tcell.KeyTab:
@@ -467,8 +488,30 @@ func (a *app) globalKeys(ev *tcell.EventKey) *tcell.EventKey {
 		case 'q':
 			a.tv.Stop()
 			return nil
+		case 'c':
+			a.setMode(modeCalendar)
+			return nil
+		case 't':
+			a.setMode(modeTasks)
+			return nil
 		case 'a':
-			a.startPrefix('a')
+			a.setMode(modeAgenda)
+			return nil
+		case 'i':
+			a.startPrefix('i')
+			return nil
+		case 'g':
+			a.startPrefix('g')
+			return nil
+		case 'G':
+			a.gotoBottom(count)
+			return nil
+		case 'z':
+			if a.mode == modeTasks {
+				a.startPrefix('z')
+			} else {
+				a.flash("fold: Tasks view only")
+			}
 			return nil
 		case 'e':
 			a.editSelected()
@@ -492,9 +535,6 @@ func (a *app) globalKeys(ev *tcell.EventKey) *tcell.EventKey {
 		case '?':
 			a.showHelp()
 			return nil
-		case 'g':
-			a.openCommandLine("goto ")
-			return nil
 		case '+':
 			a.setAccordion(true)
 			return nil
@@ -511,15 +551,6 @@ func (a *app) globalKeys(ev *tcell.EventKey) *tcell.EventKey {
 				a.reparentSelected(indent)
 				return nil
 			}
-		case '1':
-			a.setMode(modeCalendar)
-			return nil
-		case '2':
-			a.setMode(modeTasks)
-			return nil
-		case '3':
-			a.setMode(modeAgenda)
-			return nil
 		case '.':
 			a.showCompleted = !a.showCompleted
 			a.reloadCurrent()
@@ -532,22 +563,14 @@ func (a *app) globalKeys(ev *tcell.EventKey) *tcell.EventKey {
 				a.updateStatus()
 				return nil
 			}
-		case 'n':
+		case 'f':
 			if a.mode == modeCalendar {
 				a.shiftAnchor(1)
 				return nil
 			}
-		case 'p':
+		case 'b':
 			if a.mode == modeCalendar {
 				a.shiftAnchor(-1)
-				return nil
-			}
-		case 't':
-			if a.mode == modeCalendar {
-				a.anchor = model.DayStart(a.now)
-				a.buildCenterCalendar()
-				a.refocusCalendar()
-				a.updateStatus()
 				return nil
 			}
 		case '[':

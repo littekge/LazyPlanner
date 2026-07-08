@@ -3,14 +3,16 @@ package ui
 import (
 	"github.com/gdamore/tcell/v2"
 	"github.com/rivo/tview"
+
+	"github.com/littekge/LazyPlanner/internal/model"
 )
 
-// The keyboard interface is vim-flavored: navigation, panel focus, and toggles
-// are single keys, while create actions are grouped under the `a` prefix pressed
-// as a short chord (at/aT task, ae/aE event, as/aS subtask, ac calendar, al
-// list). A which-key hint pops up after the prefix; the next key completes the
-// chord and Esc cancels. This is the step-10 replacement for the interim
-// standalone create keys.
+// The keyboard interface is vim-flavored: panel focus (c/t/a) and toggles are
+// single keys, while multi-action groups live under a prefix pressed as a short
+// chord: `i` create (it/iT task, ie/iE event, is/iS subtask, ic calendar, il
+// list — i for "insert"), `g` go (gg top, gt today, gd go-to-date), and `z` fold
+// (zR expand-all, zM collapse-all, za toggle). A which-key hint pops up after the
+// prefix; the next key completes the chord and Esc cancels.
 
 // chordEntry is one continuation under a prefix, used for dispatch and the
 // which-key hint.
@@ -23,7 +25,7 @@ type chordEntry struct {
 // chords maps each prefix to its continuations. Kept as data so the which-key
 // popup and the help screen render from the same source as the dispatcher.
 var chords = map[rune][]chordEntry{
-	'a': {
+	'i': {
 		{'t', "task", (*app).addTaskQuick},
 		{'T', "task (form)", (*app).addTaskFull},
 		{'e', "event", (*app).addEventQuick},
@@ -33,10 +35,20 @@ var chords = map[rune][]chordEntry{
 		{'c', "calendar", func(a *app) { a.createCollection(0) }},
 		{'l', "list", func(a *app) { a.createCollection(1) }},
 	},
+	'g': {
+		{'g', "top", (*app).gotoTop},
+		{'t', "today", (*app).gotoToday},
+		{'d', "go to date", func(a *app) { a.openCommandLine("goto ") }},
+	},
+	'z': {
+		{'R', "expand all", func(a *app) { a.setFoldAll(true) }},
+		{'M', "collapse all", func(a *app) { a.setFoldAll(false) }},
+		{'a', "toggle fold", (*app).toggleFold},
+	},
 }
 
 // prefixLabel names each prefix for the which-key title.
-var prefixLabel = map[rune]string{'a': "add"}
+var prefixLabel = map[rune]string{'i': "new", 'g': "go", 'z': "fold"}
 
 // startPrefix enters a chord prefix and shows its which-key hint.
 func (a *app) startPrefix(p rune) {
@@ -88,6 +100,117 @@ func (a *app) deleteContextual() {
 // echo writes the last executed action, in command form, to the status bar's
 // middle "command view" (lazygit-style).
 func (a *app) echo(cmd string) { a.statusMid.SetText(cmd) }
+
+// maxCount bounds an accumulated vim count so a fat-fingered "999999j" can't spin.
+const maxCount = 999
+
+// isMotion reports whether ev is a cursor-movement key (hjkl or an arrow) that a
+// count prefix should repeat.
+func isMotion(ev *tcell.EventKey) bool {
+	switch ev.Key() {
+	case tcell.KeyUp, tcell.KeyDown, tcell.KeyLeft, tcell.KeyRight:
+		return true
+	case tcell.KeyRune:
+		switch ev.Rune() {
+		case 'h', 'j', 'k', 'l':
+			return true
+		}
+	}
+	return false
+}
+
+// repeatKey feeds ev to the focused primitive n times. Counts and gg/G reuse the
+// widgets' own navigation (tview's List/TreeView already handle arrows/Home/End),
+// so movement stays consistent with a single keypress.
+func (a *app) repeatKey(ev *tcell.EventKey, n int) {
+	p := a.tv.GetFocus()
+	if p == nil {
+		return
+	}
+	handler := p.InputHandler()
+	if handler == nil {
+		return
+	}
+	setFocus := func(x tview.Primitive) { a.setFocus(x) }
+	for i := 0; i < n; i++ {
+		handler(ev, setFocus)
+	}
+}
+
+// gotoTop moves the focused list/tree to its first item (vim gg). Home works for
+// both tview.List and tview.TreeView.
+func (a *app) gotoTop() {
+	a.repeatKey(tcell.NewEventKey(tcell.KeyHome, 0, tcell.ModNone), 1)
+}
+
+// gotoToday re-anchors the calendar on today (gt), switching to Calendar mode
+// first if needed — "go to today" implies the calendar.
+func (a *app) gotoToday() {
+	a.anchor = model.DayStart(a.now)
+	if a.mode != modeCalendar {
+		a.setMode(modeCalendar)
+		return
+	}
+	a.buildCenterCalendar()
+	a.refocusCalendar()
+	a.updateStatus()
+}
+
+// gotoBottom moves to the last item (G), or — with a count — to the count-th item
+// of a list (vim NG).
+func (a *app) gotoBottom(count int) {
+	if count > 0 {
+		if lst, ok := a.tv.GetFocus().(*tview.List); ok {
+			idx := count - 1
+			if last := lst.GetItemCount() - 1; idx > last {
+				idx = last
+			}
+			if idx < 0 {
+				idx = 0
+			}
+			lst.SetCurrentItem(idx)
+			return
+		}
+	}
+	a.repeatKey(tcell.NewEventKey(tcell.KeyEnd, 0, tcell.ModNone), 1)
+}
+
+// setFoldAll expands or collapses every folder in the task tree at once (zR/zM),
+// keeping each folder's ▸/▾ disclosure marker in sync.
+func (a *app) setFoldAll(expanded bool) {
+	root := a.tree.GetRoot()
+	if root == nil {
+		return
+	}
+	for _, child := range root.GetChildren() {
+		a.setFoldRec(child, expanded)
+	}
+}
+
+func (a *app) setFoldRec(node *tview.TreeNode, expanded bool) {
+	if len(node.GetChildren()) > 0 {
+		node.SetExpanded(expanded)
+		if t, ok := node.GetReference().(*model.Todo); ok {
+			node.SetText(a.nodeLabel(t, expanded))
+		}
+	}
+	for _, c := range node.GetChildren() {
+		a.setFoldRec(c, expanded)
+	}
+}
+
+// toggleFold flips the fold state of the current tree node (za).
+func (a *app) toggleFold() {
+	node := a.tree.GetCurrentNode()
+	if node == nil || len(node.GetChildren()) == 0 {
+		return
+	}
+	expanded := !node.IsExpanded()
+	node.SetExpanded(expanded)
+	if t, ok := node.GetReference().(*model.Todo); ok {
+		node.SetText(a.nodeLabel(t, expanded))
+	}
+}
 
 // resizeLeft grows/shrinks the left overview column by delta (clamped) and
 // persists the new width. It is a no-op while the column is collapsed.
@@ -146,7 +269,11 @@ func (a *app) showWhichKey(p rune) {
 	for _, e := range entries {
 		line += "[yellow]" + string(e.key) + "[-] " + e.label + "   "
 	}
-	line += "  [gray](Shift = full form · Esc cancels)[-]"
+	if p == 'i' {
+		line += "  [gray](Shift = full form · Esc cancels)[-]"
+	} else {
+		line += "  [gray](Esc cancels)[-]"
+	}
 
 	tv := tview.NewTextView().SetDynamicColors(true).SetText(" " + line)
 	tv.SetBackgroundColor(tcell.ColorDefault)

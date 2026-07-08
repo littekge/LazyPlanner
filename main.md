@@ -171,45 +171,37 @@ Layout proportions adapt automatically to terminal size (tview reflows the `Flex
 
 Chosen sizes are remembered across launches in the state file under the data dir (never the config file). Mouse drag-to-resize is intentionally out of scope — LazyPlanner is keyboard-first.
 
-### Keybindings (draft — hardcoded v1; config `[keys]` section possible later)
+### Keybindings (vim-flavored; hardcoded for now, config `[keys]` section possible later)
+
+The keyboard interface feels like **vim, not lazygit**: single keys for panel focus and toggles, and short **chords under a prefix** for grouped actions — a which-key popup lists the continuations after a prefix, and `?` shows the full cheat sheet. Panels are on mnemonic letters (`c`/`t`/`a`), which frees the number row for vim **counts**. (History: the interim `a`/`s` create keys and `1`/`2`/`3` panel keys were replaced by this scheme; the `a` create-prefix was later moved to `i` so `a` could focus Agenda and `n`/`N` could keep their search meaning.)
 
 | Key | Action |
 |---|---|
 | `↑↓←→` / `hjkl` | Move within pane / expand-collapse tree nodes |
-| `1` `2` `3` | Focus Calendars / Tasks / Agenda panel |
+| `<count>` + motion | Repeat a motion (`3j`, `5k`) |
+| `gg` / `G` | Go to top / bottom of the list or tree (`<count>G` → nth item) |
+| `c` `t` `a` | Focus Calendars / Tasks / Agenda panel |
 | `Tab` / `Shift-Tab` | Cycle pane focus |
 | `+` / `-` | Expand / restore the Main pane (accordion) |
 | `Ctrl-←` / `Ctrl-→` | Widen / narrow the focused side pane (keyboard resize) |
 | `Enter` | Select / open in Main (drill into a day and cycle its events) |
-| `a` / `A` | Quick-add / full-form create — task at the list's top level (Tasks) or event on the selected day (Calendar/Agenda) |
-| `s` / `S` | Quick-add / full-form create **subtask** under the highlighted task |
+| `i` prefix | Create: `it`/`iT` task, `ie`/`iE` event, `is`/`iS` subtask (Shift = full form), `ic` calendar, `il` list |
 | `e` | Edit selected (full form) |
 | `Space` | Toggle task done (no-op where nothing is toggleable) |
-| `d` | Delete selected (with confirm; recursive confirm for a non-empty folder) |
+| `d` | Delete selected (item, or calendar/list when its panel is focused; recursive confirm for a non-empty folder) |
 | `>` / `<` | Zoom into / out of task subtree |
 | `H` / `L` | Outdent / indent task (re-parent) |
+| `z` prefix | Fold: `zR` expand-all, `zM` collapse-all, `za` toggle current node |
 | `u` | Undo last local change (session stack) |
-| `r` | Sync now (two-way); interim — becomes `:sync` in step 10 |
-| `c` / `D` | Create / delete a calendar or task list (offline-first); interim — folds into `ac`/`al` in step 10 |
+| `r` | Sync now (alias for `:sync`) |
 | `.` | Show/hide completed tasks |
 | `v` | Cycle calendar view: month → week → day |
 | `[` / `]` | Cycle the highlighted calendar (calendar mode; works from the grid too) |
-| `n` / `p` | Next / previous month(/week/day) |
-| `t` | Jump to today |
-| `g` | Go to date (smart-parsed input) |
-| `/` | Filter/search current pane |
+| `f` / `b` | Forward / back one period (month/week/day) |
+| `g` prefix | Go: `gg` top, `gt` today, `gd` go-to-date (smart-parsed) |
+| `/`, `n` / `N` | Search current view; next / previous match |
+| `y` / `p` | Yank / paste a task (move between lists/parents) |
 | `:` | Command mode (`:sync`, etc.) |
-
-> **Note:** the interim create keys above (`a`/`A`/`s`/`S`) are placeholders. Step 10 replaces the whole scheme with a **vim-style chorded keymap** (below); e.g. `a` becomes a prefix (`at`/`as`/`ac`/`al`) rather than a standalone action.
-
-### Future keymap: vim-style chords (step 10)
-
-The keyboard interface is meant to feel like **vim, not lazygit**: related actions are grouped under a common prefix and pressed as short sequences, so once learned the whole app is fast to drive. Nearly every reasonable action gets a binding. Sketch of the intended scheme (to be finalized in step 10):
-
-- **`a` — add/create**: `at` task, `as` subtask, `ac` calendar, `al` list, `ae` event (with a capital or trailing modifier for the full form vs quick-add).
-- **`d` — delete**, **`c`/`e` — change/edit**, **`y`/`p` — yank/paste** (move tasks between lists/parents), **`g` — go/goto**, **`m` — move (re-parent)**.
-- **`z` — fold/zoom** the tree, **counts + motions** where they make sense (`3j`).
-- A discoverable **which-key style** hint popup after a prefix, and `?` for the full cheat sheet.
 | `?` | Help overlay |
 | `q` / `Esc` | Quit / back out (zoom, dialogs) |
 

@@ -16,31 +16,35 @@ var helpSections = []struct {
 	rows  [][2]string
 }{
 	{"Panels & navigation", [][2]string{
-		{"1 2 3", "focus Calendars / Tasks / Agenda"},
+		{"c t a", "focus Calendars / Tasks / Agenda"},
 		{"Tab / Shift-Tab", "cycle panels"},
 		{"h j k l / arrows", "move; expand/collapse tree nodes"},
+		{"3j 5k …", "count prefix — repeat a motion"},
+		{"g g / G", "go to top / bottom"},
 		{"Enter", "dive in / open; cycle a day's events"},
 		{"Esc / q", "back out / quit"},
 	}},
-	{"Create (a prefix)", [][2]string{
-		{"a t / a T", "add task — quick / full form"},
-		{"a e / a E", "add event — quick / full form"},
-		{"a s / a S", "add subtask — quick / full form"},
-		{"a c / a l", "new calendar / task list"},
+	{"Create (i prefix)", [][2]string{
+		{"i t / i T", "add task — quick / full form"},
+		{"i e / i E", "add event — quick / full form"},
+		{"i s / i S", "add subtask — quick / full form"},
+		{"i c / i l", "new calendar / task list"},
 	}},
 	{"Edit & organize", [][2]string{
 		{"e", "edit selected (full form)"},
 		{"d", "delete (item, or calendar/list when its panel is focused)"},
 		{"Space", "toggle task done"},
 		{"H / L", "outdent / indent task (re-parent)"},
+		{"z R / z M / z a", "fold — expand all / collapse all / toggle"},
 		{"u", "undo last local change"},
 		{".", "show/hide completed tasks"},
 	}},
 	{"Calendar", [][2]string{
 		{"v", "cycle month / week / day"},
 		{"[ / ]", "cycle highlighted calendar"},
-		{"n / p", "next / previous period"},
-		{"t", "jump to today"},
+		{"f / b", "forward / back one period"},
+		{"g t", "jump to today"},
+		{"g d", "go to date (smart-parsed)"},
 	}},
 	{"Layout", [][2]string{
 		{"+ / -", "collapse / restore the overview (accordion)"},
