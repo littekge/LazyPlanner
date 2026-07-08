@@ -1,12 +1,14 @@
 package ui
 
 import (
+	"context"
 	"strings"
 
 	"github.com/gdamore/tcell/v2"
 	"github.com/rivo/tview"
 
 	"github.com/littekge/LazyPlanner/internal/model"
+	"github.com/littekge/LazyPlanner/internal/sync"
 )
 
 const pageCommand = "command"
@@ -69,6 +71,8 @@ func (a *app) runCommand(line string) {
 			a.setFocus(a.searchWidget())
 		}
 		a.echo(":search " + args)
+	case "config":
+		a.cmdConfig()
 	case "conflicts", "conflict":
 		a.showConflicts()
 	case "help", "h":
@@ -77,6 +81,35 @@ func (a *app) runCommand(line string) {
 	default:
 		a.flash("unknown command: " + name)
 	}
+}
+
+// cmdConfig opens the config file in $EDITOR (via the callback wired from main),
+// suspending the TUI so the editor owns the terminal, then reloads on exit.
+func (a *app) cmdConfig() {
+	a.echo(":config")
+	if a.editConfig == nil {
+		a.flash(":config unavailable (no config file)")
+		return
+	}
+	// Suspend releases the screen for the editor; applyConfigReload runs inside so
+	// the swap + flash happen before the TUI redraws on resume.
+	a.tv.Suspend(func() {
+		newSync, err := a.editConfig()
+		a.applyConfigReload(newSync, err)
+	})
+}
+
+// applyConfigReload swaps in a reloaded sync closure (if any) or surfaces the
+// reload error. Split out so it is testable without a running application.
+func (a *app) applyConfigReload(newSync func(context.Context) (sync.SyncResult, error), err error) {
+	if err != nil {
+		a.flash("config: " + err.Error())
+		return
+	}
+	if newSync != nil {
+		a.syncFn = newSync
+	}
+	a.flash("config reloaded")
 }
 
 // cmdView switches the calendar view (month|week|day).

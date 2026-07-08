@@ -115,6 +115,7 @@ type app struct {
 
 	// Sync (wired in step 9). syncFn is nil when no server is configured.
 	syncFn      func(context.Context) (sync.SyncResult, error)
+	editConfig  func() (func(context.Context) (sync.SyncResult, error), error)
 	syncing     bool
 	lastSyncAt  time.Time
 	lastSyncErr error
@@ -201,6 +202,11 @@ type Options struct {
 	// SaveState persists remembered UI state (nil = don't persist). Every save
 	// passes the full state, so the caller can rewrite the file wholesale.
 	SaveState func(leftWidth int, hidden []string)
+	// EditConfig opens the config file in $EDITOR and reloads it, returning a
+	// fresh sync closure to swap in (nil = keep the current one) and an error.
+	// The UI calls it inside a tview Suspend so the editor owns the terminal.
+	// nil disables :config. main owns the path, editor launch, and parsing.
+	EditConfig func() (func(context.Context) (sync.SyncResult, error), error)
 }
 
 // Run builds the TUI and blocks until quit.
@@ -208,6 +214,7 @@ func Run(opts Options) error {
 	a := newApp(opts.Store, opts.Title, time.Now())
 	a.syncFn = opts.Sync
 	a.saveState = opts.SaveState
+	a.editConfig = opts.EditConfig
 	for _, id := range opts.Hidden {
 		a.hidden[id] = true
 	}

@@ -22,6 +22,15 @@ func ConfigDir() (string, error) {
 	return filepath.Join(base, appDir), nil
 }
 
+// ConfigPath returns the full path to the config file (ConfigDir/config.toml).
+func ConfigPath() (string, error) {
+	dir, err := ConfigDir()
+	if err != nil {
+		return "", err
+	}
+	return filepath.Join(dir, configName), nil
+}
+
 // DataDir returns the directory holding LazyPlanner's calendar cache:
 // ~/.local/share/lazyplanner on Linux ($XDG_DATA_HOME honored),
 // %LOCALAPPDATA%\lazyplanner on Windows. This is durable data — it can hold

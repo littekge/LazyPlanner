@@ -7,6 +7,7 @@ import (
 	"context"
 	"fmt"
 	"os"
+	"os/exec"
 	"path/filepath"
 
 	// Embed the IANA time-zone database in the binary so time.LoadLocation
@@ -95,6 +96,9 @@ func runTUI() error {
 	statePath := filepath.Join(dataDir, state.FileName)
 	uiState := state.Load(statePath)
 
+	accountID := config.AccountID(cfg.Server.URL, cfg.Server.Username)
+	configPath, pathErr := config.ConfigPath()
+
 	title := fmt.Sprintf("%s %s", appName, appVersion)
 	return ui.Run(ui.Options{
 		Store:     s,
@@ -105,12 +109,42 @@ func runTUI() error {
 		SaveState: func(leftWidth int, hidden []string) {
 			_ = state.Save(statePath, state.State{LeftWidth: leftWidth, HiddenCalendars: hidden})
 		},
+		EditConfig: editConfigFn(configPath, pathErr, accountID, s),
 	})
 }
 
 // buildSyncFn returns a closure the UI calls to sync, or nil when no server is
 // configured (the app then runs fully offline). A failing password_command is a
 // warning, not a fatal error — the app still opens over the cache.
+// editConfigFn builds the :config callback: open the config file in $EDITOR,
+// reload it, and return a fresh sync closure. It refuses a reload that changes
+// the account (the local cache is account-keyed, so switching accounts safely
+// requires a restart). Returns nil to disable :config when the path is unknown.
+func editConfigFn(configPath string, pathErr error, accountID string, s *store.Store) func() (func(context.Context) (sync.SyncResult, error), error) {
+	if pathErr != nil || configPath == "" {
+		return nil
+	}
+	return func() (func(context.Context) (sync.SyncResult, error), error) {
+		editor := os.Getenv("EDITOR")
+		if editor == "" {
+			editor = "vi"
+		}
+		ed := exec.Command(editor, configPath)
+		ed.Stdin, ed.Stdout, ed.Stderr = os.Stdin, os.Stdout, os.Stderr
+		if err := ed.Run(); err != nil {
+			return nil, fmt.Errorf("editor: %w", err)
+		}
+		cfg, _, _, err := config.Load()
+		if err != nil {
+			return nil, err
+		}
+		if config.AccountID(cfg.Server.URL, cfg.Server.Username) != accountID {
+			return nil, fmt.Errorf("server/account changed — restart to switch caches")
+		}
+		return buildSyncFn(cfg.Server, s), nil
+	}
+}
+
 func buildSyncFn(srv config.Server, s *store.Store) func(context.Context) (sync.SyncResult, error) {
 	if !srv.Configured() {
 		return nil
