@@ -277,16 +277,34 @@ func (cv *calendarView) drawCell(screen tcell.Screen, day time.Time, cellX, cell
 	if avail <= 0 || len(items) == 0 {
 		return
 	}
-	shown := len(items)
-	overflow := false
-	if shown > avail {
-		shown = avail - 1
-		if shown < 0 {
-			shown = 0
+	n := len(items)
+	capItems := avail
+	overflow := n > avail
+	if overflow {
+		capItems = avail - 1 // reserve one row for the "+N more" indicator
+		if capItems < 0 {
+			capItems = 0
 		}
-		overflow = true
 	}
-	for i := 0; i < shown; i++ {
+	// When this day is drilled, scroll the visible window so the highlighted item
+	// stays on screen instead of disappearing into the overflow.
+	start := 0
+	if overflow && selected && cv.eventMode && capItems > 0 {
+		if cv.eventIndex >= capItems {
+			start = cv.eventIndex - capItems + 1
+		}
+		if maxStart := n - capItems; start > maxStart {
+			start = maxStart
+		}
+		if start < 0 {
+			start = 0
+		}
+	}
+	end := start + capItems
+	if end > n {
+		end = n
+	}
+	for i := start; i < end; i++ {
 		style := itemStyle(items[i])
 		if cv.itemColor != nil {
 			if cc, ok := cv.itemColor(items[i]); ok {
@@ -296,10 +314,12 @@ func (cv *calendarView) drawCell(screen tcell.Screen, day time.Time, cellX, cell
 		if selected && cv.eventMode && i == cv.eventIndex {
 			style = style.Reverse(true)
 		}
-		printStyled(screen, cx, cy+1+i, cw, itemLabel(items[i], cv.folderItem(items[i])), style)
+		printStyled(screen, cx, cy+1+(i-start), cw, itemLabel(items[i], cv.folderItem(items[i])), style)
 	}
 	if overflow {
-		printStyled(screen, cx, cy+1+shown, cw, fmt.Sprintf("+%d more", len(items)-shown),
+		// hidden counts every item outside the window (above when scrolled, below
+		// otherwise) — the drilled item is always inside it, so never hidden.
+		printStyled(screen, cx, cy+1+capItems, cw, fmt.Sprintf("+%d more", n-(end-start)),
 			tcell.StyleDefault.Foreground(adjacentColor))
 	}
 }

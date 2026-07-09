@@ -1,6 +1,7 @@
 package ui
 
 import (
+	"fmt"
 	"strings"
 	"testing"
 	"time"
@@ -84,5 +85,51 @@ func TestCalendarViewEventModeHomeEnd(t *testing.T) {
 	handle(tcell.NewEventKey(tcell.KeyHome, 0, tcell.ModNone), func(tview.Primitive) {})
 	if got != "A" {
 		t.Errorf("Home selected %q, want first event A", got)
+	}
+}
+
+// TestMonthGridScrollsToDrilledOverflowItem: when a day has more items than fit,
+// drilling to one in the overflow region keeps it visible and highlighted
+// (reverse), rather than leaving it hidden behind "+N more".
+func TestMonthGridScrollsToDrilledOverflowItem(t *testing.T) {
+	cv := newCalendarView()
+	day := time.Date(2026, 7, 15, 0, 0, 0, 0, time.Local)
+	var items []model.AgendaItem
+	for i := 0; i < 8; i++ {
+		s := fmt.Sprintf("Task%d", i)
+		items = append(items, model.AgendaItem{Title: s, Todo: &model.Todo{UID: s, Summary: s}})
+	}
+	cv.setData(model.MonthGrid(day, true), map[string][]model.AgendaItem{dayKey(day): items}, day.Month(), day, day, true)
+	cv.eventMode = true
+	cv.eventIndex = 6 // deep in the overflow region
+
+	cells, cw, ch := drawCells(t, cv, 140, 44)
+
+	// The drilled item's title is on screen...
+	row := -1
+	col := -1
+	for r := 0; r < ch && row < 0; r++ {
+		for c := 0; c+5 <= cw; c++ {
+			run := make([]rune, 0, 5)
+			for k := 0; k < 5; k++ {
+				if rs := cells[r*cw+c+k].Runes; len(rs) > 0 {
+					run = append(run, rs[0])
+				} else {
+					run = append(run, ' ')
+				}
+			}
+			if string(run) == "Task6" {
+				row, col = r, c
+				break
+			}
+		}
+	}
+	if row < 0 {
+		t.Fatal("drilled overflow item Task6 not rendered — it stayed hidden behind +N more")
+	}
+	// ...and drawn highlighted (reverse video).
+	_, _, attr := cells[row*cw+col].Style.Decompose()
+	if attr&tcell.AttrReverse == 0 {
+		t.Error("drilled overflow item is not highlighted (no reverse attribute)")
 	}
 }

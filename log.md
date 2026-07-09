@@ -4,6 +4,12 @@
 
 ---
 
+## 2026-07-09 — Fix: month view lost the highlight when drilling into overflow items
+
+- Owner report: on the month view, a day with more items than fit its cell drew the first few + a `+N more` line from the top; drilling (event-cycling) to an item in the overflow region left it **undrawn**, so the highlight vanished and you couldn't tell where the cursor was.
+- **Fix** (`calendarview.go` `drawCell`): the day cell now **scrolls its visible window to the drilled item**. When the day is selected and in event mode, the window `[start, start+capItems)` is positioned so `eventIndex` is always inside it (`capItems` = rows minus one reserved for the indicator). Non-drilled days still render from the top as before. The `+N more` count now reports every item outside the window (above when scrolled, below otherwise) — and since the cursor is always inside the window, it's never hidden. Week/day was unaffected (blocks/markers draw at their time position, always visible).
+- Tests (`calendarview_test.go`): a day with 8 items drilled to index 6 renders `Task6` on screen with the reverse (highlight) attribute — would fail before the fix (only the first ~3 drew). Full gate + `-race` pass.
+
 ## 2026-07-09 — Folder caret (▸) consistent across all views; folders keep due dates
 
 - Owner design question: should folders render due dates (intuition: no), and doesn't hiding them make a dated task vanish from the calendar the moment it gains a subtask? Resolution (agreed): **folders keep their due dates** — a folder is still a real dated task (a deadline'd project with sub-steps), hiding it would lose user-set data and cause exactly that vanish. The rule stays uniform: a task shows on the calendar iff it has a due date, folder or not. Consistency instead comes from rendering the **folder metaphor** everywhere.
