@@ -317,10 +317,13 @@ func (cv *calendarView) drawCell(screen tcell.Screen, day time.Time, cellX, cell
 		printStyled(screen, cx, cy+1+(i-start), cw, itemLabel(items[i], cv.folderItem(items[i])), style)
 	}
 	if overflow {
-		// hidden counts every item outside the window (above when scrolled, below
-		// otherwise) — the drilled item is always inside it, so never hidden.
-		printStyled(screen, cx, cy+1+capItems, cw, fmt.Sprintf("+%d more", n-(end-start)),
-			tcell.StyleDefault.Foreground(adjacentColor))
+		// The indicator counts only items *below* the window ("more" = further
+		// down), so it shrinks as you drill down and disappears at the bottom.
+		// (Items scrolled off the top are reachable by drilling back up.)
+		if below := n - end; below > 0 {
+			printStyled(screen, cx, cy+1+capItems, cw, fmt.Sprintf("+%d more", below),
+				tcell.StyleDefault.Foreground(adjacentColor))
+		}
 	}
 }
 

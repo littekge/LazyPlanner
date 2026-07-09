@@ -133,3 +133,31 @@ func TestMonthGridScrollsToDrilledOverflowItem(t *testing.T) {
 		t.Error("drilled overflow item is not highlighted (no reverse attribute)")
 	}
 }
+
+// TestMonthGridOverflowIndicatorReflectsBelow: the "+N more" line counts only
+// items below the window, so it shrinks as you drill down and disappears once
+// the bottommost item is selected.
+func TestMonthGridOverflowIndicatorReflectsBelow(t *testing.T) {
+	cv := newCalendarView()
+	day := time.Date(2026, 7, 15, 0, 0, 0, 0, time.Local)
+	var items []model.AgendaItem
+	for i := 0; i < 8; i++ {
+		s := fmt.Sprintf("Task%d", i)
+		items = append(items, model.AgendaItem{Title: s, Todo: &model.Todo{UID: s, Summary: s}})
+	}
+	weeks := model.MonthGrid(day, true)
+	cv.setData(weeks, map[string][]model.AgendaItem{dayKey(day): items}, day.Month(), day, day, true)
+	cv.eventMode = true
+
+	// At the top of the list, there are items below → indicator shows.
+	cv.eventIndex = 0
+	if !strings.Contains(renderPrimitive(t, cv, 140, 44), " more") {
+		t.Error("at the top of an overflowing day, expected a +N more indicator")
+	}
+
+	// Drilled to the last item, nothing is below → indicator gone.
+	cv.eventIndex = len(items) - 1
+	if strings.Contains(renderPrimitive(t, cv, 140, 44), " more") {
+		t.Error("at the bottom item, the +N more indicator should disappear")
+	}
+}

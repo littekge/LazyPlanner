@@ -4,6 +4,12 @@
 
 ---
 
+## 2026-07-09 — Month overflow "+N more" now counts items below the window
+
+- Follow-up to the drill-scroll fix: `+N more` counted every item *outside* the window (including ones scrolled off the top), so it lingered even after drilling to the bottommost item. Owner wanted it to update/disappear as you drill down.
+- **Fix** (`calendarview.go` `drawCell`): the indicator now counts only items **below** the window (`n - end`) and is drawn only when that's > 0. So it shrinks as you drill down and vanishes once the last item is selected; items scrolled off the top are still reachable by drilling back up. (The reserved row is simply left blank at the bottom.)
+- Tests (`calendarview_test.go`): with an overflowing day, `+N more` shows at the top and is gone when the bottom item is drilled. Full gate + `-race` pass.
+
 ## 2026-07-09 — Fix: month view lost the highlight when drilling into overflow items
 
 - Owner report: on the month view, a day with more items than fit its cell drew the first few + a `+N more` line from the top; drilling (event-cycling) to an item in the overflow region left it **undrawn**, so the highlight vanished and you couldn't tell where the cursor was.
