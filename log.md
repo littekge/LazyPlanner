@@ -4,6 +4,13 @@
 
 ---
 
+## 2026-07-09 — Unify the due-task checkbox across calendar views
+
+- Owner report: inconsistent glyphs — the month view showed an uncompleted due task as `[ ]`, but the new week/day time-grid marked it with `◆` (and `◆ [■]` when completed). Task management lives in the Tasks pane, so the calendar views should just render tasks uniformly.
+- **Fix** (`internal/ui/timegridview.go` `taskMarkerLabel`): the time-grid due-task line now uses the same checkbox convention as the month grid and task tree — `[ ]` uncompleted, `[■]` completed — dropping the `◆`. The line is still foreground-only text (not a filled block), which already sets a due task apart from an event.
+- Docs: `README.md`, `main.md`, `CLAUDE.md` updated (checkbox, not `◆`).
+- Tests (`timegridview_test.go`): asserts `[ ] Payrent` / `[ ] Renewpass` render (was `◆`); color assertion unchanged. Full gate + `-race` pass.
+
 ## 2026-07-09 — Show due tasks in the week/day time-grid (colored by list)
 
 - Follow-up to the color work: due tasks were colored where they already showed (month grid, agenda) but the **week/day time-grid rendered events only** (`splitOccs` pulls event occurrences, never todos), so a task's due date was invisible in the hourly view. Owner chose to place a timed due task **at its due time**.

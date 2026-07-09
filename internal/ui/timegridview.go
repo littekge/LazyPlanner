@@ -71,15 +71,16 @@ func (tg *timeGridView) taskFg(t *model.Todo) tcell.Color {
 	return tcell.ColorAqua
 }
 
-// taskMarkerLabel formats a due task's one-line label in the time-grid: a ◆ marks
-// it as a due task (distinct from the filled event blocks), with the filled
-// checkbox for a completed one.
+// taskMarkerLabel formats a due task's one-line label in the time-grid with the
+// same checkbox convention as the month grid and task tree: [ ] uncompleted,
+// [■] completed. The foreground-only text (over the grid, not a filled block)
+// already distinguishes a due task from an event.
 func taskMarkerLabel(t *model.Todo) string {
-	mark := "◆ "
+	box := "[ ] "
 	if t.Completed() {
-		mark = "◆ [■] "
+		box = "[■] "
 	}
-	return mark + nonEmpty(t.Summary, "(untitled)")
+	return box + nonEmpty(t.Summary, "(untitled)")
 }
 
 func newTimeGridView() *timeGridView {

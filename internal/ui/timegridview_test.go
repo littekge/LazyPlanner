@@ -120,8 +120,8 @@ func TestTimeGridDrillsAllDayFirst(t *testing.T) {
 	}
 }
 
-// TestTimeGridDrawsDueTasks: a timed due task draws a ◆ marker at its due time
-// and an all-day-due task sits in the top band, both in the list's color.
+// TestTimeGridDrawsDueTasks: a timed due task draws a [ ]/[■] line at its due
+// time and an all-day-due task sits in the top band, both in the list's color.
 func TestTimeGridDrawsDueTasks(t *testing.T) {
 	tg := newTimeGridView()
 	tg.taskColor = func(*model.Todo) (calColor, bool) { return calColor{fg: tcell.ColorRed, name: "red", dark: true}, true }
@@ -132,7 +132,8 @@ func TestTimeGridDrawsDueTasks(t *testing.T) {
 	tg.dueTasks = map[string][]*model.Todo{dayKey(day): {timedTask, allDayTask}}
 
 	out := renderPrimitive(t, tg, 100, 40)
-	for _, want := range []string{"Payrent", "Renewpass", "◆"} {
+	// Uncompleted due tasks show "[ ]" here, same as the month grid.
+	for _, want := range []string{"[ ] Payrent", "[ ] Renewpass"} {
 		if !strings.Contains(out, want) {
 			t.Errorf("time-grid render missing %q:\n%s", want, out)
 		}
