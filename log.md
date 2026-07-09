@@ -4,6 +4,14 @@
 
 ---
 
+## 2026-07-09 — Show due tasks in the week/day time-grid (colored by list)
+
+- Follow-up to the color work: due tasks were colored where they already showed (month grid, agenda) but the **week/day time-grid rendered events only** (`splitOccs` pulls event occurrences, never todos), so a task's due date was invisible in the hourly view. Owner chose to place a timed due task **at its due time**.
+- **Time-grid** (`internal/ui/timegridview.go`): new `dueTasks map[string][]*model.Todo` + `taskColor` resolver. A **timed** due task draws a one-row `◆`-prefixed marker at its due hour (same hour→row mapping as event blocks), a foreground marker (no fill) so it reads as a due task distinct from the filled event blocks and can sit over an event at that time; an **all-day-due** task sits in the top all-day band alongside all-day events (lead item + `+N`). Both use the list's color (aqua fallback), and a completed one shows `◆ [■]`. `dueParts` splits a day's tasks into all-day vs timed. Markers are display-only — the `Enter` drill cycle still covers events (tasks aren't `Occurrence`s); the day's tasks remain in the Detail pane and month/agenda.
+- **Wiring** (`render.go` `dueTasksByDay`, `app.go`, `color.go`): buckets tasks with a due date onto their due day for the visible range, excluding hidden calendars (via `TodosVisible`) and including completed ones (matching the month grid/agenda). `a.timegrid.taskColor = a.todoColor` (UID → list color).
+- Docs: `README.md` (week/day now shows due tasks), `main.md` (Week/Day view), `CLAUDE.md` UI line.
+- Tests (`timegridview_test.go`): a timed due task renders a `◆` marker at its due time in the list color (red) and an all-day-due task appears in the band. Full gate + `-race` pass. (Also confirmed en route — via a throwaway harness — that the month grid and agenda were already coloring due tasks from the previous change; no change needed there.)
+
 ## 2026-07-09 — Sync calendar colors from the server + render them everywhere
 
 - Owner request: colors were **push-only** (in-app `:calendar color` → PROPPATCH; MKCALENDAR on create), never pulled, and were **never rendered** — events drew a fixed green, tasks aqua, and there was no palette mapping. Closed the gap both ways: pull the server's color, and draw every calendar's items in it. Fulfils the long-standing `main.md` intent ("server calendar colors are mapped to the nearest palette color").

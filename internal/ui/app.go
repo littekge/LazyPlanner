@@ -335,6 +335,7 @@ func (a *app) build() {
 	a.month.itemColor = a.agendaItemColor
 	a.agenda.itemColor = a.agendaItemColor
 	a.timegrid.occColor = a.occurrenceColor
+	a.timegrid.taskColor = a.todoColor
 	a.calendars.SetSelectedFunc(func(int, string, string, rune) { a.setFocus(a.calendarPrimitive()) })
 	a.tasklists.SetChangedFunc(func(index int, _, _ string, _ rune) {
 		// Rebuilding the panel briefly parks the selection at index 0; ignore

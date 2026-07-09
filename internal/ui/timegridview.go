@@ -39,6 +39,47 @@ type timeGridView struct {
 	// occColor resolves an occurrence to its calendar's color; ok is false when
 	// the calendar has none, so the default block/event color is used.
 	occColor func(model.Occurrence) (calColor, bool)
+
+	// dueTasks holds tasks due on each day (keyed like timed/allDay). Timed-due
+	// tasks draw a marker at their due time; all-day-due tasks sit in the top band.
+	dueTasks map[string][]*model.Todo
+	// taskColor resolves a task to its list's color; ok is false when the list has
+	// none, so the default task color (aqua) is used.
+	taskColor func(*model.Todo) (calColor, bool)
+}
+
+// dueParts splits a day's due tasks into all-day (top band) and timed (a marker
+// at the due time in the grid body).
+func (tg *timeGridView) dueParts(day time.Time) (allDay, timed []*model.Todo) {
+	for _, t := range tg.dueTasks[dayKey(day)] {
+		if t.DueAllDay {
+			allDay = append(allDay, t)
+		} else {
+			timed = append(timed, t)
+		}
+	}
+	return allDay, timed
+}
+
+// taskFg is a task's list color, or aqua when its list has none.
+func (tg *timeGridView) taskFg(t *model.Todo) tcell.Color {
+	if tg.taskColor != nil {
+		if cc, ok := tg.taskColor(t); ok {
+			return cc.fg
+		}
+	}
+	return tcell.ColorAqua
+}
+
+// taskMarkerLabel formats a due task's one-line label in the time-grid: a ◆ marks
+// it as a due task (distinct from the filled event blocks), with the filled
+// checkbox for a completed one.
+func taskMarkerLabel(t *model.Todo) string {
+	mark := "◆ "
+	if t.Completed() {
+		mark = "◆ [■] "
+	}
+	return mark + nonEmpty(t.Summary, "(untitled)")
 }
 
 func newTimeGridView() *timeGridView {
@@ -208,18 +249,29 @@ func (tg *timeGridView) Draw(screen tcell.Screen) {
 	printStyled(screen, x, y+1, gutterWidth, "all", tcell.StyleDefault.Foreground(adjacentColor))
 	for di, day := range tg.days {
 		ad := tg.allDay[dayKey(day)]
-		if len(ad) == 0 {
+		adTasks, _ := tg.dueParts(day)
+		total := len(ad) + len(adTasks)
+		if total == 0 {
 			continue
 		}
-		label := nonEmpty(ad[0].Event.Summary, "(untitled)")
-		if len(ad) > 1 {
-			label = fmt.Sprintf("%s +%d", label, len(ad)-1)
-		}
-		style := tcell.StyleDefault.Foreground(eventColor)
-		if tg.occColor != nil {
-			if cc, ok := tg.occColor(ad[0]); ok {
-				style = tcell.StyleDefault.Foreground(cc.fg)
+		// Lead with the first all-day event, else the first all-day-due task; the
+		// rest collapse into a "+N" count.
+		var label string
+		var style tcell.Style
+		if len(ad) > 0 {
+			label = nonEmpty(ad[0].Event.Summary, "(untitled)")
+			style = tcell.StyleDefault.Foreground(eventColor)
+			if tg.occColor != nil {
+				if cc, ok := tg.occColor(ad[0]); ok {
+					style = tcell.StyleDefault.Foreground(cc.fg)
+				}
 			}
+		} else {
+			label = taskMarkerLabel(adTasks[0])
+			style = tcell.StyleDefault.Foreground(tg.taskFg(adTasks[0]))
+		}
+		if total > 1 {
+			label = fmt.Sprintf("%s +%d", label, total-1)
 		}
 		if sel != nil && sel.Event.AllDay && model.SameDay(day, tg.selected) {
 			label = nonEmpty(sel.Event.Summary, "(untitled)")
@@ -268,7 +320,28 @@ func (tg *timeGridView) Draw(screen tcell.Screen) {
 				p.Occ.Event == sel.Event && p.Occ.Start.Equal(sel.Start)
 			tg.drawBlock(screen, p, colStart+di*colW, colW, bodyY, bodyH, selected)
 		}
+		// Timed due-task markers, drawn on top at their due time.
+		_, timedTasks := tg.dueParts(day)
+		for _, t := range timedTasks {
+			tg.drawTaskMarker(screen, t, colStart+di*colW, colW, bodyY, bodyH)
+		}
 	}
+}
+
+// drawTaskMarker draws a one-row colored marker for a timed due task at its due
+// time in the grid body. It's a foreground marker (no fill), distinguishing a due
+// task from the filled event blocks; it may sit over an event block at the same
+// time.
+func (tg *timeGridView) drawTaskMarker(screen tcell.Screen, t *model.Todo, colX, colW, bodyY, bodyH int) {
+	due := t.Due.In(time.Local)
+	row := bodyY + int(hourFloat(due)*float64(bodyH)/hoursPerDay)
+	if row < bodyY {
+		row = bodyY
+	}
+	if row >= bodyY+bodyH {
+		row = bodyY + bodyH - 1
+	}
+	printStyled(screen, colX, row, colW-1, taskMarkerLabel(t), tcell.StyleDefault.Foreground(tg.taskFg(t)))
 }
 
 func (tg *timeGridView) drawBlock(screen tcell.Screen, p model.Placement, colX, colW, bodyY, bodyH int, selected bool) {

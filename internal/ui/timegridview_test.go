@@ -120,6 +120,35 @@ func TestTimeGridDrillsAllDayFirst(t *testing.T) {
 	}
 }
 
+// TestTimeGridDrawsDueTasks: a timed due task draws a ◆ marker at its due time
+// and an all-day-due task sits in the top band, both in the list's color.
+func TestTimeGridDrawsDueTasks(t *testing.T) {
+	tg := newTimeGridView()
+	tg.taskColor = func(*model.Todo) (calColor, bool) { return calColor{fg: tcell.ColorRed, name: "red", dark: true}, true }
+	day := time.Date(2026, 7, 4, 0, 0, 0, 0, time.Local)
+	timedTask := &model.Todo{UID: "t1", Summary: "Payrent", HasDue: true, Due: time.Date(2026, 7, 4, 9, 0, 0, 0, time.Local)}
+	allDayTask := &model.Todo{UID: "t2", Summary: "Renewpass", HasDue: true, DueAllDay: true, Due: day}
+	tg.setData([]time.Time{day}, nil, nil, day, day)
+	tg.dueTasks = map[string][]*model.Todo{dayKey(day): {timedTask, allDayTask}}
+
+	out := renderPrimitive(t, tg, 100, 40)
+	for _, want := range []string{"Payrent", "Renewpass", "◆"} {
+		if !strings.Contains(out, want) {
+			t.Errorf("time-grid render missing %q:\n%s", want, out)
+		}
+	}
+
+	// The timed due task's marker renders in the list color (red).
+	cells, cw, ch := drawCells(t, tg, 100, 40)
+	row := rowFind(cells, cw, ch, "Payrent")
+	if row < 0 {
+		t.Fatal("timed due-task line not found")
+	}
+	if fg, ok := glyphFg(cells, cw, row, 'P'); !ok || fg != tcell.ColorRed {
+		t.Errorf("timed due-task fg=%v (found=%v), want red", fg, ok)
+	}
+}
+
 func TestTimeGridArrowChangesDay(t *testing.T) {
 	tg := newTimeGridView()
 	day := time.Date(2026, 7, 4, 0, 0, 0, 0, time.UTC)

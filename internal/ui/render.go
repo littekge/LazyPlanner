@@ -121,6 +121,7 @@ func (a *app) buildCenterCalendar() {
 	}
 	timed, allday := a.splitOccs(days)
 	a.timegrid.setData(days, timed, allday, a.anchor, a.now)
+	a.timegrid.dueTasks = a.dueTasksByDay(days)
 	a.timegrid.Box.SetTitle(title)
 	a.center.SwitchToPage("time")
 	a.setDayDetail(a.anchor)
@@ -166,6 +167,29 @@ func (a *app) calItems(weeks [][]time.Time) map[string][]model.AgendaItem {
 				m[dayKey(day)] = items
 			}
 		}
+	}
+	return m
+}
+
+// dueTasksByDay buckets tasks with a due date onto the day they're due, for the
+// week/day time-grid, keyed like splitOccs. Hidden calendars are excluded (via
+// TodosVisible); completed tasks are included, matching the month grid and agenda.
+func (a *app) dueTasksByDay(days []time.Time) map[string][]*model.Todo {
+	m := map[string][]*model.Todo{}
+	if len(days) == 0 {
+		return m
+	}
+	start := days[0]
+	end := days[len(days)-1].AddDate(0, 0, 1)
+	for _, t := range a.store.TodosVisible(a.hidden) {
+		if !t.HasDue {
+			continue
+		}
+		day := model.DayStart(t.Due.In(time.Local))
+		if day.Before(start) || !day.Before(end) {
+			continue
+		}
+		m[dayKey(day)] = append(m[dayKey(day)], t)
 	}
 	return m
 }

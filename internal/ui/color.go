@@ -93,3 +93,12 @@ func (a *app) occurrenceColor(o model.Occurrence) (calColor, bool) {
 	cc, ok := a.itemColors[o.Event.UID]
 	return cc, ok
 }
+
+// todoColor resolves a task to its list's color, by UID.
+func (a *app) todoColor(t *model.Todo) (calColor, bool) {
+	if t == nil {
+		return calColor{}, false
+	}
+	cc, ok := a.itemColors[t.UID]
+	return cc, ok
+}
