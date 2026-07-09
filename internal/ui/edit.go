@@ -309,7 +309,33 @@ func (a *app) toggleComplete() {
 		a.stickyDone[t.uid] = true
 	}
 	a.pushUndo("toggle done", t.uid, undoOp{calID: loc.CalID, name: loc.Name, prev: loc.Prev})
-	a.refresh(t.uid)
+	// Completing a drilled task in a calendar view must not undrill the day: the
+	// rebuild resets the grid's event-cycling, so re-enter it on the same day/index.
+	a.refreshKeepingDrill(t.uid)
+}
+
+// refreshKeepingDrill rebuilds the views like refresh, but preserves the calendar
+// grid's drill-in (event-cycling) across the rebuild — so a direct mutation
+// (e.g. Space to complete) doesn't kick the user back out to day navigation. The
+// modal create/edit paths handle this via captureFocus/restoreFocus instead.
+func (a *app) refreshKeepingDrill(selUID string) {
+	if a.mode != modeCalendar {
+		a.refresh(selUID)
+		return
+	}
+	g, ok := a.calendarPrimitive().(calGrid)
+	if !ok {
+		a.refresh(selUID)
+		return
+	}
+	day, drilled, idx := g.drillState()
+	a.refresh(selUID)
+	if drilled {
+		if g2, ok := a.calendarPrimitive().(calGrid); ok {
+			g2.reDrill(day, idx)
+			a.setFocus(a.calendarPrimitive())
+		}
+	}
 }
 
 // hasIncompleteChildren reports whether any todo anywhere is an incomplete child

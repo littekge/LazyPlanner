@@ -4,6 +4,12 @@
 
 ---
 
+## 2026-07-09 — Fix: completing a drilled task no longer undrills the calendar day
+
+- Owner report: in a calendar view, Space-to-complete kicked you back out to day navigation. Cause: `toggleComplete` ends in `refresh`, which rebuilds the grid (`setData` resets `eventMode`/`eventIndex`), dropping the drill. The modal create/edit/delete paths already re-drill via `captureFocus`/`restoreFocus`, but Space mutates directly with no modal.
+- **Fix** (`edit.go`): new `refreshKeepingDrill` captures the grid's `drillState` before the rebuild and `reDrill`s the same day/index after (calendar mode only; a plain `refresh` elsewhere). `toggleComplete` uses it. The completed task stays in the day's items (calendar views don't hide completed), so the same index re-selects it, now shown `[■]`.
+- Tests (`taskcalendar_test.go`): after Space-complete, the month grid stays in `eventMode` with `currentTarget` still the task, and the week grid keeps its task selection. Full gate + `-race` pass.
+
 ## 2026-07-09 — Manage tasks from the calendar views (check off · subtasks anywhere)
 
 - Owner revised the "tasks are managed only from the Tasks pane" decision (it conflicted with the max-power philosophy). Three changes:

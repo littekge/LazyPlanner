@@ -76,6 +76,13 @@ func TestSpaceChecksOffDrilledTaskInMonthGrid(t *testing.T) {
 	if !isCompleted(t, a, uid) {
 		t.Error("Space on a drilled task in the month grid did not check it off")
 	}
+	// Completing must not undrill the day.
+	if !a.month.eventMode {
+		t.Error("completing undrilled the month grid")
+	}
+	if tt, ok := a.currentTarget(); !ok || !tt.isTodo || tt.uid != uid {
+		t.Errorf("after complete, drill target = %+v, want still task %q", tt, uid)
+	}
 }
 
 // TestSpaceChecksOffDrilledTaskInWeekGrid: same, in the week time-grid (tasks are
@@ -105,6 +112,12 @@ func TestSpaceChecksOffDrilledTaskInWeekGrid(t *testing.T) {
 	a.globalKeys(runeKey(' '))
 	if !isCompleted(t, a, uid) {
 		t.Error("Space on a drilled task in the week grid did not check it off")
+	}
+	if !a.timegrid.eventMode {
+		t.Error("completing undrilled the week grid")
+	}
+	if it := a.timegrid.selectedItem(); it == nil || !it.IsTodo() || it.Todo.UID != uid {
+		t.Errorf("after complete, week drill lost the task selection (%v)", it)
 	}
 }
 
