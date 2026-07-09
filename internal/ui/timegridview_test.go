@@ -185,3 +185,36 @@ func TestTimeGridHomeEndSelectsDay(t *testing.T) {
 		t.Errorf("End selected %v, want last day %v", got.Format("2006-01-02"), days[len(days)-1].Format("2006-01-02"))
 	}
 }
+
+// TestTimeGridVerticalMotionCyclesEvents: in the week/day grid, Up/Down (j/k)
+// drill into the selected day's events and cycle them — so counts (2j) work too.
+func TestTimeGridVerticalMotionCyclesEvents(t *testing.T) {
+	tg := newTimeGridView()
+	day := time.Date(2026, 7, 4, 0, 0, 0, 0, time.Local)
+	e1 := &model.Event{Summary: "Nine", Start: time.Date(2026, 7, 4, 9, 0, 0, 0, time.Local)}
+	e2 := &model.Event{Summary: "Eleven", Start: time.Date(2026, 7, 4, 11, 0, 0, 0, time.Local)}
+	timed := map[string][]model.Occurrence{dayKey(day): {
+		{Start: e1.Start, End: e1.Start.Add(time.Hour), Event: e1},
+		{Start: e2.Start, End: e2.Start.Add(time.Hour), Event: e2},
+	}}
+	tg.setData([]time.Time{day}, timed, nil, day, day)
+
+	var got *model.Event
+	tg.onSelectEvent = func(o model.Occurrence) { got = o.Event }
+	handle := tg.InputHandler()
+	down := tcell.NewEventKey(tcell.KeyDown, 0, tcell.ModNone)
+	up := tcell.NewEventKey(tcell.KeyUp, 0, tcell.ModNone)
+
+	handle(down, func(tview.Primitive) {}) // day-mode → enter events, first
+	if !tg.eventMode || got != e1 {
+		t.Fatalf("Down did not drill into events (eventMode=%v got=%v)", tg.eventMode, got)
+	}
+	handle(down, func(tview.Primitive) {}) // → second event
+	if got != e2 {
+		t.Errorf("second Down selected %v, want Eleven", got.Summary)
+	}
+	handle(up, func(tview.Primitive) {}) // → back to first
+	if got != e1 {
+		t.Errorf("Up selected %v, want Nine", got.Summary)
+	}
+}

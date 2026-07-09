@@ -107,6 +107,18 @@ func (tg *timeGridView) dayOccs() []model.Occurrence {
 	return occs
 }
 
+// enterEventMode starts cycling the selected day's events (all-day first, then
+// timed), selecting the first. A no-op when the day has none. Vertical motion in
+// day mode enters here so the day's events navigate like a list; a repeated
+// motion (a count, or held j) then advances via handleEventMode.
+func (tg *timeGridView) enterEventMode() {
+	if !tg.eventMode && len(tg.dayOccs()) > 0 {
+		tg.eventMode = true
+		tg.eventIndex = 0
+		tg.emitEvent()
+	}
+}
+
 func (tg *timeGridView) emitEvent() {
 	occs := tg.dayOccs()
 	if tg.eventIndex >= 0 && tg.eventIndex < len(occs) && tg.onSelectEvent != nil {
@@ -162,6 +174,11 @@ func (tg *timeGridView) handleDayMode(ev *tcell.EventKey) {
 		move(-1)
 	case tcell.KeyRight:
 		move(1)
+	case tcell.KeyUp, tcell.KeyDown:
+		// Vertical motion drills into the selected day's events (all-day then
+		// timed), like the month grid's Enter drill — so j/k (and counts) navigate
+		// events here. Once in event mode, handleEventMode advances the cursor.
+		tg.enterEventMode()
 	case tcell.KeyHome: // gg: first day of the view
 		if tg.onSelectDay != nil && len(tg.days) > 0 {
 			tg.onSelectDay(tg.days[0])

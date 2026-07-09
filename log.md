@@ -4,6 +4,14 @@
 
 ---
 
+## 2026-07-09 — Week/day grid: vertical motion cycles the day's events (counts work)
+
+- Owner review of the count feature: `<count>` repeats motions and `<count>G` jumps to the Nth **list** item, but the week/day time-grid had **no vertical motion** (`j`/`k`/`↑`/`↓` were unbound — only `h`/`l` moved days), so counts were dead there and `j`/`k` felt broken.
+- Decisions: keep `<count>G` = Nth item **lists-only** (tree/grids treat `G` as bottom; docs already say "nth list item"); add vertical motion to the week/day grid that **cycles the selected day's events**.
+- **Fix** (`internal/ui/timegridview.go`): day-mode `↑`/`↓` now call `enterEventMode` — drill into the day's events (all-day first, then timed), selecting the first; once in event mode `handleEventMode` advances the cursor. Since `globalKeys` translates `hjkl`→arrows and `repeatKey` replays the arrow N times, a count like `2j` lands on the 2nd event for free (first press enters at index 0, the second advances). Horizontal `h`/`l` still move between days.
+- Docs: `README.md`, `main.md`, `CLAUDE.md` (week/day vertical keys cycle events; counts work).
+- Tests (`timegridview_test.go`): `↓` drills into events (first), a second `↓` advances, `↑` goes back. Full gate + `-race` pass.
+
 ## 2026-07-09 — Fix: `gg`/`G` in the task tree (+ stale tree on programmatic list select)
 
 - Owner report: still couldn't use `gg`/`G` in the Tasks pane. Two distinct causes found:
