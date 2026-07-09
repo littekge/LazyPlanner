@@ -4,6 +4,14 @@
 
 ---
 
+## 2026-07-09 — Fix: `gg`/`G` in the task tree (+ stale tree on programmatic list select)
+
+- Owner report: still couldn't use `gg`/`G` in the Tasks pane. Two distinct causes found:
+- **Tree `gg`/`G` were scroll-only** (`internal/ui/keys.go`): `gotoTop`/`gotoBottom` feed `Home`/`End`, which tview's `List` honors — but its `TreeView.process()` has no `treeHome`/`treeEnd` case, so `Home`/`End` (and tview's native `g`/`G`) only adjust the scroll offset and never move the selection. So even after diving into the tree (`Enter`), `gg`/`G` did nothing visible. Fix: when the focused widget is the tree, select the first / last visible node directly via `SetCurrentNode` (new `visibleTreeNodes` walks selectable nodes in display order, descending only into expanded folders). Lists and the calendar grids are unchanged.
+- **Stale tree on programmatic list selection** (`app.go` tasklists changed-callback, `render.go`): selecting a task list with `{`/`}` (or any `SetCurrentItem`) rebuilt the *previously* selected list's tree — tview fires `List.changed` **before** updating `GetCurrentItem`, and `buildTree()` read the stale current item. Split out `buildTreeForList(id)` and have the changed-callback build for the callback's `index` argument (always the new selection). This also means `{`/`}` now actually switch the visible tree, not just the highlight.
+- Note (focus model, not a bug): `t` focuses the task-**list** column; `Enter` dives into the **tree**, where `gg`/`G`/`j`/`k` navigate tasks; `Esc` backs out.
+- Tests (`keys_test.go`): `gg`/`G` move the tree cursor to first/last node; cycling to a list with `}` shows *that* list's tree (root name); plus the existing month-grid and bracket/brace tests. Full gate + `-race` pass.
+
 ## 2026-07-09 — Fix: `gg`/`G` were dead in the calendar grid
 
 - Owner report: `gg`/`G` weren't properly implemented. Root cause: `gotoTop`/`gotoBottom` feed `Home`/`End` to the focused primitive, which tview's `List` and `TreeView` handle — so the overview lists and task tree already worked — but the **custom calendar widgets** (`calendarView` month grid, `timeGridView` week/day) had no `Home`/`End` handling, so once you `Enter`-dived into a grid, `gg`/`G` did nothing (confirmed via a headless probe: the month selection didn't move).

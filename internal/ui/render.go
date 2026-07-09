@@ -223,12 +223,18 @@ func (a *app) splitOccs(days []time.Time) (timed, allday map[string][]model.Occu
 
 // --- Tasks center (tree) ---
 
-func (a *app) buildTree() {
+func (a *app) buildTree() { a.buildTreeForList(a.selectedTasklistID()) }
+
+// buildTreeForList rebuilds the task tree for the given list id. Callers that
+// know the target id explicitly (the tasklists changed-callback) must pass it
+// rather than relying on selectedTasklistID: tview fires List.changed BEFORE it
+// updates the current item, so GetCurrentItem is stale inside that callback and
+// would rebuild the previously-selected list's tree.
+func (a *app) buildTreeForList(id string) {
 	// The root node shows the list's own name so the top-level tasks' connector
 	// stems attach to it (like a file tree rooted at the directory name).
 	name := "Tasks"
 	root := tview.NewTreeNode("").SetSelectable(false).SetColor(accentColor)
-	id := a.selectedTasklistID()
 
 	a.treeFolders = map[string]bool{}
 	if id != "" {

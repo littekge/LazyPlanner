@@ -171,10 +171,40 @@ func (a *app) repeatKey(ev *tcell.EventKey, n int) {
 	}
 }
 
-// gotoTop moves the focused list/tree to its first item (vim gg). Home works for
-// both tview.List and tview.TreeView.
+// gotoTop moves the focused list/tree to its first item (vim gg). tview.List
+// honors Home, but its TreeView treats Home/End as scroll-only (it never moves
+// the selection), so the tree is handled explicitly by selecting the first node.
 func (a *app) gotoTop() {
+	if tr, ok := a.tv.GetFocus().(*tview.TreeView); ok {
+		if nodes := visibleTreeNodes(tr.GetRoot()); len(nodes) > 0 {
+			tr.SetCurrentNode(nodes[0])
+		}
+		return
+	}
 	a.repeatKey(tcell.NewEventKey(tcell.KeyHome, 0, tcell.ModNone), 1)
+}
+
+// visibleTreeNodes returns the selectable nodes under root in display order,
+// descending only into expanded nodes — the order gg/G navigate. The root itself
+// (the list-name header) is non-selectable and excluded.
+func visibleTreeNodes(root *tview.TreeNode) []*tview.TreeNode {
+	if root == nil {
+		return nil
+	}
+	var out []*tview.TreeNode
+	var walk func(n *tview.TreeNode)
+	walk = func(n *tview.TreeNode) {
+		out = append(out, n)
+		if n.IsExpanded() {
+			for _, c := range n.GetChildren() {
+				walk(c)
+			}
+		}
+	}
+	for _, c := range root.GetChildren() {
+		walk(c)
+	}
+	return out
 }
 
 // gotoToday re-anchors the calendar on today (gt), switching to Calendar mode
@@ -205,6 +235,13 @@ func (a *app) gotoBottom(count int) {
 			lst.SetCurrentItem(idx)
 			return
 		}
+	}
+	// The tree treats End as scroll-only; select the last visible node instead.
+	if tr, ok := a.tv.GetFocus().(*tview.TreeView); ok {
+		if nodes := visibleTreeNodes(tr.GetRoot()); len(nodes) > 0 {
+			tr.SetCurrentNode(nodes[len(nodes)-1])
+		}
+		return
 	}
 	a.repeatKey(tcell.NewEventKey(tcell.KeyEnd, 0, tcell.ModNone), 1)
 }

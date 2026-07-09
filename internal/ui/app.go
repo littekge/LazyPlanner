@@ -346,13 +346,18 @@ func (a *app) build() {
 		// Use the callback's index argument, not GetCurrentItem: tview fires
 		// changed BEFORE updating the current item, so GetCurrentItem is stale
 		// here. Switching to a different list drops the sticky just-completed pins.
+		// Build for the callback's index (the new selection). GetCurrentItem is
+		// still stale here — tview fires changed before updating it — so buildTree()
+		// (which reads GetCurrentItem) would rebuild the previous list.
+		id := a.treeListID
 		if index >= 0 && index < len(a.tasklistIDs) {
-			if id := a.tasklistIDs[index]; id != a.treeListID {
+			id = a.tasklistIDs[index]
+			if id != a.treeListID {
 				a.stickyDone = map[string]bool{}
 				a.treeListID = id
 			}
 		}
-		a.buildTree()
+		a.buildTreeForList(id)
 	})
 	a.tasklists.SetSelectedFunc(func(int, string, string, rune) { a.setFocus(a.tree) })
 	a.agendaList.SetChangedFunc(func(index int, _, _ string, _ rune) {

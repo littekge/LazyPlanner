@@ -10,6 +10,7 @@ import (
 	"github.com/gdamore/tcell/v2"
 	"github.com/rivo/tview"
 
+	"github.com/littekge/LazyPlanner/internal/model"
 	"github.com/littekge/LazyPlanner/internal/store"
 )
 
@@ -58,6 +59,70 @@ func TestBracketAndBraceCycleGlobally(t *testing.T) {
 	a.globalKeys(runeKey('{'))
 	if a.tasklists.GetCurrentItem() != tlBefore {
 		t.Error("{ did not cycle the task-list highlight back")
+	}
+}
+
+// seedTaskList creates a task list with the given task summaries and returns its id.
+func seedTaskList(t *testing.T, a *app, id string, summaries ...string) {
+	t.Helper()
+	ctx := context.Background()
+	if err := a.store.CreateCalendarLocal(ctx, id, store.CalendarMeta{DisplayName: id}, []string{"VTODO"}); err != nil {
+		t.Fatal(err)
+	}
+	for _, s := range summaries {
+		ics := "BEGIN:VCALENDAR\r\nVERSION:2.0\r\nPRODID:-//t//t//EN\r\nBEGIN:VTODO\r\nUID:" + s + "@t\r\nSUMMARY:" + s + "\r\nDTSTAMP:20260701T000000Z\r\nEND:VTODO\r\nEND:VCALENDAR\r\n"
+		parsed, err := model.Decode([]byte(ics), time.Local)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if _, err := a.store.Put(ctx, id, store.ResourceName(s+"@t"), parsed); err != nil {
+			t.Fatal(err)
+		}
+	}
+	a.reload()
+}
+
+// TestGoTopBottomInTree: gg / G move the tree selection to the first / last node.
+// tview's TreeView treats Home/End as scroll-only, so the app selects the node
+// directly — this guards that gg/G actually move the cursor in the task tree.
+func TestGoTopBottomInTree(t *testing.T) {
+	a := newRootedTestApp(t, time.Date(2026, 7, 5, 12, 0, 0, 0, time.UTC))
+	seedTaskList(t, a, "tl", "Alpha", "Bravo", "Charlie", "Delta")
+	a.setMode(modeTasks)
+	for a.selectedTasklistID() != "tl" {
+		a.globalKeys(runeKey('}'))
+	}
+	a.setFocus(a.tree)
+
+	kids := a.tree.GetRoot().GetChildren()
+	if len(kids) < 4 {
+		t.Fatalf("tree has %d children, want 4 (stale-tree bug?)", len(kids))
+	}
+	a.tree.SetCurrentNode(kids[2])
+
+	a.globalKeys(runeKey('g'))
+	a.globalKeys(runeKey('g'))
+	if got := a.tree.GetCurrentNode(); got != kids[0] {
+		t.Errorf("gg selected %q, want the first node", got.GetText())
+	}
+	a.globalKeys(runeKey('G'))
+	if got := a.tree.GetCurrentNode(); got != kids[len(kids)-1] {
+		t.Errorf("G selected %q, want the last node", got.GetText())
+	}
+}
+
+// TestCycleTasklistShowsSelectedTree guards the stale-tree fix: selecting a task
+// list programmatically (as { / } do) rebuilds the tree for that list, not the
+// previously-selected one (tview fires List.changed before updating the index).
+func TestCycleTasklistShowsSelectedTree(t *testing.T) {
+	a := newRootedTestApp(t, time.Date(2026, 7, 5, 12, 0, 0, 0, time.UTC))
+	seedTaskList(t, a, "zzlist", "Only")
+	a.setMode(modeTasks)
+	for a.selectedTasklistID() != "zzlist" {
+		a.globalKeys(runeKey('}'))
+	}
+	if got := a.tree.GetRoot().GetText(); got != "zzlist" {
+		t.Errorf("tree root = %q after cycling to zzlist, want its tree (stale)", got)
 	}
 }
 
