@@ -14,18 +14,26 @@ import (
 // --- Left overview column ---
 
 func (a *app) buildCalendars() {
+	a.rebuildColorIndex()
 	a.calendars.Clear()
 	for _, cal := range a.store.Calendars() {
 		events, todos := calCounts(cal)
-		label := fmt.Sprintf("%s  (%de %dt)", cal.DisplayName, events, todos)
+		desc := fmt.Sprintf("%s  (%de %dt)", cal.DisplayName, events, todos)
 		if m := calTypeMarker(cal); m != "" {
-			label += " " + m
+			desc += " " + m
 		}
 		if cal.ReadOnly {
-			label += " [ro]"
+			desc += " [ro]"
 		}
 		if a.hidden[cal.ID] {
-			label += " (hidden)"
+			desc += " (hidden)"
+		}
+		// Escape so the bracketed markers ([both]/[ro]/…) render literally rather
+		// than being swallowed as tview style tags; prepend a bullet in the
+		// calendar's synced color when it has one.
+		label := tview.Escape(desc)
+		if cc, ok := a.calColors[cal.ID]; ok {
+			label = "[" + cc.name + "]●[-] " + label
 		}
 		a.calendars.AddItem(label, "", 0, nil)
 	}

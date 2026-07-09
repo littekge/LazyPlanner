@@ -170,6 +170,35 @@ func (s *Store) UpdateCalendarMeta(ctx context.Context, id, displayName, color s
 	return nil
 }
 
+// SyncCalendarColor adopts the server's calendar color for a calendar, so the
+// in-app display stays consistent with NextCloud web and other clients. The
+// server is authoritative — except when a local color edit is still pending a
+// PROPPATCH (that edit wins until it is pushed, so a routine pull doesn't clobber
+// it). An empty server color or an unchanged value is a no-op, so a routine sync
+// doesn't rewrite the sidecar needlessly.
+func (s *Store) SyncCalendarColor(ctx context.Context, calID, serverColor string) error {
+	if err := ctx.Err(); err != nil {
+		return err
+	}
+	if serverColor == "" {
+		return nil
+	}
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	cs := s.cals[calID]
+	if cs == nil {
+		return fmt.Errorf("store: unknown calendar %q", calID)
+	}
+	if cs.pendingProps || cs.color == serverColor {
+		return nil
+	}
+	cs.color = serverColor
+	if err := writeSidecar(s.root, cs); err != nil {
+		return fmt.Errorf("updating sidecar for %q: %w", calID, err)
+	}
+	return nil
+}
+
 // MarkCalendarPropsSynced clears a calendar's pending-props flag after a
 // successful server PROPPATCH.
 func (s *Store) MarkCalendarPropsSynced(ctx context.Context, id string) error {

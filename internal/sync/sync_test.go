@@ -92,6 +92,9 @@ func (f *fakeServer) SetCalendarProps(_ context.Context, path, displayName, colo
 			if displayName != "" {
 				f.cals[i].Name = displayName
 			}
+			if color != "" {
+				f.cals[i].Color = color
+			}
 			break
 		}
 	}
@@ -445,6 +448,56 @@ func TestSyncTombstoneVsServerEditIsConflict(t *testing.T) {
 	// ...and the tombstone is cleared (the delete lost the race).
 	if ts := st.Tombstones(); len(ts) != 0 {
 		t.Errorf("tombstone not cleared after conflict: %+v", ts)
+	}
+}
+
+func TestSyncPullsCalendarColor(t *testing.T) {
+	ctx := context.Background()
+	st := newStore(t) // personal calendar, no local color
+	srv := newFakeServer()
+	srv.cals[0].Color = "#112233FF" // server sets a color
+
+	if _, err := sync.Sync(ctx, srv, st); err != nil {
+		t.Fatal(err)
+	}
+	cal, _ := st.Calendar("personal")
+	if cal.Color != "#112233FF" {
+		t.Errorf("color after sync = %q, want the server's %q", cal.Color, "#112233FF")
+	}
+}
+
+func TestSyncDoesNotClobberPendingLocalColor(t *testing.T) {
+	ctx := context.Background()
+	st := newStore(t)
+	srv := newFakeServer()
+	srv.cals[0].Color = "#112233FF" // server's current color
+
+	// A local recolor made offline, awaiting a PROPPATCH.
+	if err := st.UpdateCalendarMeta(ctx, "personal", "", "#AABBCCFF"); err != nil {
+		t.Fatal(err)
+	}
+
+	res, err := sync.Sync(ctx, srv, st)
+	if err != nil {
+		t.Fatal(err)
+	}
+	// The pending edit is pushed (PROPPATCH), not overwritten by the server's older
+	// color: push runs before discovery, and the pull skips a still-pending color.
+	if res.CalendarsUpdated != 1 {
+		t.Errorf("CalendarsUpdated = %d, want 1 (the local recolor pushed)", res.CalendarsUpdated)
+	}
+	var pushedColor string
+	for _, op := range srv.propPatched {
+		if op.color != "" {
+			pushedColor = op.color
+		}
+	}
+	if pushedColor != "#AABBCCFF" {
+		t.Errorf("pushed color = %q, want the local %q", pushedColor, "#AABBCCFF")
+	}
+	cal, _ := st.Calendar("personal")
+	if cal.Color != "#AABBCCFF" {
+		t.Errorf("local color after sync = %q, want the local edit %q preserved", cal.Color, "#AABBCCFF")
 	}
 }
 

@@ -32,6 +32,10 @@ type calendarView struct {
 	onSelectDay   func(day time.Time)
 	onSelectEvent func(item model.AgendaItem)
 	onExit        func() // Esc in day mode: hand focus back to the overview
+
+	// itemColor resolves an item to its calendar's color; ok is false when the
+	// calendar has none, so the default event/task color is used.
+	itemColor func(model.AgendaItem) (calColor, bool)
 }
 
 func newCalendarView() *calendarView {
@@ -263,6 +267,11 @@ func (cv *calendarView) drawCell(screen tcell.Screen, day time.Time, cellX, cell
 	}
 	for i := 0; i < shown; i++ {
 		style := itemStyle(items[i])
+		if cv.itemColor != nil {
+			if cc, ok := cv.itemColor(items[i]); ok {
+				style = style.Foreground(cc.fg)
+			}
+		}
 		if selected && cv.eventMode && i == cv.eventIndex {
 			style = style.Reverse(true)
 		}

@@ -108,12 +108,14 @@ type app struct {
 	anchor          time.Time
 	weekStartMonday bool
 	showCompleted   bool
-	tasklistIDs     []string        // calendar ids parallel to the tasklists panel
-	treeFolders     map[string]bool // task UIDs that are folders (≥1 incomplete child)
-	treeListID      string          // calendar id the tree currently shows (to detect list changes)
-	suspendTree     bool            // ignore tasklist change events while the panel is rebuilt
-	stickyDone      map[string]bool // tasks completed while hidden, kept visible until the list is left
-	savedFocus      focusState      // where focus was before a modal opened, to restore on close
+	tasklistIDs     []string            // calendar ids parallel to the tasklists panel
+	calColors       map[string]calColor // calendar id → server color (nearest palette); mappable only
+	itemColors      map[string]calColor // event/todo UID → its calendar's color
+	treeFolders     map[string]bool     // task UIDs that are folders (≥1 incomplete child)
+	treeListID      string              // calendar id the tree currently shows (to detect list changes)
+	suspendTree     bool                // ignore tasklist change events while the panel is rebuilt
+	stickyDone      map[string]bool     // tasks completed while hidden, kept visible until the list is left
+	savedFocus      focusState          // where focus was before a modal opened, to restore on close
 
 	// Sync (wired in step 9). syncFn is nil when no server is configured.
 	syncFn      func(context.Context) (sync.SyncResult, error)
@@ -272,6 +274,8 @@ func newApp(s *store.Store, title string, now time.Time) *app {
 		viewMode:        viewMonth,
 		anchor:          model.DayStart(now),
 		weekStartMonday: true,
+		calColors:       map[string]calColor{},
+		itemColors:      map[string]calColor{},
 		treeFolders:     map[string]bool{},
 		stickyDone:      map[string]bool{},
 		hidden:          map[string]bool{},
@@ -325,6 +329,12 @@ func (a *app) build() {
 	a.timegrid.onSelectDay = a.onCalDay
 	a.timegrid.onSelectEvent = func(o model.Occurrence) { a.setEventDetail(o.Event) }
 	a.timegrid.onExit = func() { a.setFocus(a.calendars) }
+
+	// Color items by their calendar's (synced) color, falling back to the default
+	// event/task colors when a calendar has none.
+	a.month.itemColor = a.agendaItemColor
+	a.agenda.itemColor = a.agendaItemColor
+	a.timegrid.occColor = a.occurrenceColor
 	a.calendars.SetSelectedFunc(func(int, string, string, rune) { a.setFocus(a.calendarPrimitive()) })
 	a.tasklists.SetChangedFunc(func(index int, _, _ string, _ rune) {
 		// Rebuilding the panel briefly parks the selection at index 0; ignore

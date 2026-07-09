@@ -50,6 +50,10 @@ type Calendar struct {
 	Name                  string
 	Description           string
 	SupportedComponentSet []string
+	// Color is the server's calendar-color (Apple ical property), e.g.
+	// "#FF2968FF", or "" when the server sets none. LazyPlanner maps it to the
+	// nearest terminal palette color for display.
+	Color string
 	// ReadOnly is true when the current user lacks write privileges on the
 	// collection (e.g. NextCloud's generated "Contact Birthdays" calendar, or a
 	// share mounted read-only). LazyPlanner never writes to such calendars.
@@ -122,12 +126,16 @@ func (c *Client) DiscoverCalendars(ctx context.Context) ([]Calendar, error) {
 	// Best-effort read-only detection: a failed or unsupported privilege query
 	// must not break discovery — enforcement also has a reactive 403 safety net.
 	writable, _ := c.discoverWritable(ctx, homeSet)
+	// Best-effort color discovery: go-webdav doesn't surface calendar-color, and a
+	// failed query must not break discovery — color is cosmetic.
+	colors, _ := c.discoverColors(ctx, homeSet)
 
 	cals := make([]Calendar, 0, len(davCals))
 	for _, dc := range davCals {
+		key := strings.TrimRight(dc.Path, "/")
 		readOnly := false
 		if writable != nil {
-			if w, ok := writable[strings.TrimRight(dc.Path, "/")]; ok && !w {
+			if w, ok := writable[key]; ok && !w {
 				readOnly = true
 			}
 		}
@@ -137,6 +145,7 @@ func (c *Client) DiscoverCalendars(ctx context.Context) ([]Calendar, error) {
 			Description:           dc.Description,
 			SupportedComponentSet: dc.SupportedComponentSet,
 			ReadOnly:              readOnly,
+			Color:                 colors[key],
 		})
 	}
 	return cals, nil

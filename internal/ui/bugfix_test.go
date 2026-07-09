@@ -6,6 +6,8 @@ import (
 	"testing"
 	"time"
 
+	"github.com/rivo/tview"
+
 	"github.com/littekge/LazyPlanner/internal/store"
 )
 
@@ -88,7 +90,9 @@ func TestCalendarsPanelShowsTypeMarkers(t *testing.T) {
 	}
 	// Fixture: "personal" holds an event + a todo and its sidecar declares both;
 	// "work" has no declared component set (unknown).
-	if got := byID["personal"]; !strings.Contains(got, "[both]") {
+	// The marker is escaped in the label so it renders literally (not swallowed as
+	// a tview style tag); tview.Escape("[both]") is what actually renders as "[both]".
+	if got := byID["personal"]; !strings.Contains(got, tview.Escape("[both]")) {
 		t.Errorf("personal row = %q, want a [both] marker", got)
 	}
 	if got := byID["work"]; !strings.Contains(got, "[?]") {

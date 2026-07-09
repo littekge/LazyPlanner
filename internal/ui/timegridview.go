@@ -35,6 +35,10 @@ type timeGridView struct {
 	onSelectDay   func(day time.Time)
 	onSelectEvent func(occ model.Occurrence)
 	onExit        func() // Esc in day mode: hand focus back to the overview
+
+	// occColor resolves an occurrence to its calendar's color; ok is false when
+	// the calendar has none, so the default block/event color is used.
+	occColor func(model.Occurrence) (calColor, bool)
 }
 
 func newTimeGridView() *timeGridView {
@@ -212,6 +216,11 @@ func (tg *timeGridView) Draw(screen tcell.Screen) {
 			label = fmt.Sprintf("%s +%d", label, len(ad)-1)
 		}
 		style := tcell.StyleDefault.Foreground(eventColor)
+		if tg.occColor != nil {
+			if cc, ok := tg.occColor(ad[0]); ok {
+				style = tcell.StyleDefault.Foreground(cc.fg)
+			}
+		}
 		if sel != nil && sel.Event.AllDay && model.SameDay(day, tg.selected) {
 			label = nonEmpty(sel.Event.Summary, "(untitled)")
 			style = selectionStyle
@@ -299,8 +308,22 @@ func (tg *timeGridView) drawBlock(screen tcell.Screen, p model.Placement, colX, 
 	bw := laneW
 
 	style := tcell.StyleDefault.Background(blockColor).Foreground(tcell.ColorWhite)
+	spanStyle := style.Foreground(tcell.ColorSilver) // dimmed time line on the default block
+	if tg.occColor != nil {
+		if cc, ok := tg.occColor(p.Occ); ok {
+			// The calendar color fills the block; pick a contrasting text color and
+			// keep the time line the same (silver is unreadable on light fills).
+			text := tcell.ColorBlack
+			if cc.dark {
+				text = tcell.ColorWhite
+			}
+			style = tcell.StyleDefault.Background(cc.fg).Foreground(text)
+			spanStyle = style
+		}
+	}
 	if selected {
 		style = tcell.StyleDefault.Background(accentColor).Foreground(tcell.ColorBlack).Bold(true)
+		spanStyle = style
 	}
 	for yy := top; yy < top+height; yy++ {
 		for xx := bx; xx < bx+bw; xx++ {
@@ -310,7 +333,7 @@ func (tg *timeGridView) drawBlock(screen tcell.Screen, p model.Placement, colX, 
 	printStyled(screen, bx, top, bw, nonEmpty(p.Occ.Event.Summary, "(untitled)"), style)
 	if height >= 2 {
 		span := startT.Format("3:04") + "-" + endT.Format("3:04pm")
-		printStyled(screen, bx, top+1, bw, span, style.Foreground(tcell.ColorSilver))
+		printStyled(screen, bx, top+1, bw, span, spanStyle)
 	}
 }
 

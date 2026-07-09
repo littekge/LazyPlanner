@@ -21,6 +21,10 @@ type agendaBoard struct {
 	items    []model.AgendaItem
 	selected int
 	scroll   int
+
+	// itemColor resolves an item to its calendar's color for the title line; ok is
+	// false when the calendar has none, so the default event/task color is used.
+	itemColor func(model.AgendaItem) (calColor, bool)
 }
 
 func newAgendaBoard() *agendaBoard {
@@ -53,14 +57,15 @@ type styledLine struct {
 }
 
 // agendaItemLines renders one item as its stacked detail lines (title, meta, and
-// an optional description), matching the colors used elsewhere.
-func agendaItemLines(it model.AgendaItem) []styledLine {
+// an optional description). titleColor tints the title line (the item's calendar
+// color, or the default event/task color).
+func agendaItemLines(it model.AgendaItem, titleColor tcell.Color) []styledLine {
 	gray := tcell.StyleDefault.Foreground(adjacentColor)
 	plain := tcell.StyleDefault
 	if it.Todo != nil {
 		t := it.Todo
 		lines := []styledLine{
-			{whenLabel(it) + "  " + nonEmpty(t.Summary, "(untitled)"), tcell.StyleDefault.Foreground(tcell.ColorAqua)},
+			{whenLabel(it) + "  " + nonEmpty(t.Summary, "(untitled)"), tcell.StyleDefault.Foreground(titleColor)},
 			{"task · " + statusText(t.Status) + " · priority " + priorityText(t.Priority), gray},
 		}
 		if t.Description != "" {
@@ -70,7 +75,7 @@ func agendaItemLines(it model.AgendaItem) []styledLine {
 	}
 	e := it.Event
 	lines := []styledLine{
-		{whenLabel(it) + "  " + nonEmpty(e.Summary, "(untitled)"), tcell.StyleDefault.Foreground(eventColor)},
+		{whenLabel(it) + "  " + nonEmpty(e.Summary, "(untitled)"), tcell.StyleDefault.Foreground(titleColor)},
 	}
 	if e.Location != "" {
 		lines = append(lines, styledLine{"at " + e.Location, gray})
@@ -79,6 +84,15 @@ func agendaItemLines(it model.AgendaItem) []styledLine {
 		lines = append(lines, styledLine{oneLine(e.Description), plain})
 	}
 	return lines
+}
+
+// defaultTitleColor is the fallback title color when an item's calendar has no
+// (mappable) color: aqua for tasks, green for events — matching the rest of the UI.
+func defaultTitleColor(it model.AgendaItem) tcell.Color {
+	if it.IsTodo() {
+		return tcell.ColorAqua
+	}
+	return eventColor
 }
 
 func (b *agendaBoard) Draw(screen tcell.Screen) {
@@ -108,7 +122,13 @@ func (b *agendaBoard) Draw(screen tcell.Screen) {
 	starts := make([]int, len(b.items))
 	line := 1
 	for i, it := range b.items {
-		blocks[i] = agendaItemLines(it)
+		tc := defaultTitleColor(it)
+		if b.itemColor != nil {
+			if cc, ok := b.itemColor(it); ok {
+				tc = cc.fg
+			}
+		}
+		blocks[i] = agendaItemLines(it, tc)
 		starts[i] = line
 		line += len(blocks[i]) + 1 // block plus a one-row gap
 	}

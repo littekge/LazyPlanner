@@ -62,6 +62,7 @@ func Import(ctx context.Context, src Source, dst *store.Store) (ImportResult, er
 		id := collectionID(cal.Path)
 		if err := dst.SetCalendarMeta(ctx, id, store.CalendarMeta{
 			DisplayName: cal.Name,
+			Color:       cal.Color,
 			Href:        cal.Path,
 		}); err != nil {
 			return res, fmt.Errorf("import: recording calendar %q: %w", id, err)

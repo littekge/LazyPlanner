@@ -125,6 +125,11 @@ func Sync(ctx context.Context, client Syncer, st *store.Store) (SyncResult, erro
 		if err := st.SetCalendarComponents(ctx, localID, sc.SupportedComponentSet); err != nil {
 			return res, fmt.Errorf("sync: recording components for %q: %w", localID, err)
 		}
+		// Adopt the server's calendar color (unless a local color edit is pending),
+		// so the in-app palette stays consistent with NextCloud web.
+		if err := st.SyncCalendarColor(ctx, localID, sc.Color); err != nil {
+			return res, fmt.Errorf("sync: recording color for %q: %w", localID, err)
+		}
 
 		if err := reconcileCalendar(ctx, client, st, localID, sc, &res); err != nil {
 			return res, err

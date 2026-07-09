@@ -6,6 +6,8 @@ import (
 	"testing"
 	"time"
 
+	"github.com/rivo/tview"
+
 	"github.com/littekge/LazyPlanner/internal/store"
 )
 
@@ -183,7 +185,7 @@ func TestReadOnlyCalendarShowsMarker(t *testing.T) {
 	found := false
 	for i := 0; i < a.calendars.GetItemCount(); i++ {
 		main, _ := a.calendars.GetItemText(i)
-		if strings.Contains(main, "[ro]") {
+		if strings.Contains(main, tview.Escape("[ro]")) {
 			found = true
 		}
 	}
