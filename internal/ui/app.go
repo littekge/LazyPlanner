@@ -343,12 +343,10 @@ func (a *app) build() {
 		if a.suspendTree {
 			return
 		}
-		// Use the callback's index argument, not GetCurrentItem: tview fires
-		// changed BEFORE updating the current item, so GetCurrentItem is stale
-		// here. Switching to a different list drops the sticky just-completed pins.
-		// Build for the callback's index (the new selection). GetCurrentItem is
-		// still stale here — tview fires changed before updating it — so buildTree()
-		// (which reads GetCurrentItem) would rebuild the previous list.
+		// Build for the callback's index argument, not GetCurrentItem: tview fires
+		// changed BEFORE updating the current item, so GetCurrentItem is stale here
+		// and buildTree() would rebuild the previously-selected list. Switching
+		// lists also drops the sticky just-completed pins.
 		id := a.treeListID
 		if index >= 0 && index < len(a.tasklistIDs) {
 			id = a.tasklistIDs[index]
