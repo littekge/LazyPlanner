@@ -82,6 +82,15 @@ func (cv *calendarView) handleDayMode(ev *tcell.EventKey) {
 		move(-7)
 	case tcell.KeyDown:
 		move(7)
+	case tcell.KeyHome: // gg: jump to the first day cell
+		if cv.onSelectDay != nil && len(cv.weeks) > 0 {
+			cv.onSelectDay(cv.weeks[0][0])
+		}
+	case tcell.KeyEnd: // G: jump to the last day cell
+		if cv.onSelectDay != nil && len(cv.weeks) > 0 {
+			last := cv.weeks[len(cv.weeks)-1]
+			cv.onSelectDay(last[len(last)-1])
+		}
 	case tcell.KeyEnter:
 		if len(cv.selectedItems()) > 0 {
 			cv.eventMode = true
@@ -122,6 +131,16 @@ func (cv *calendarView) handleEventMode(ev *tcell.EventKey) {
 	case tcell.KeyDown:
 		if cv.eventIndex < len(items)-1 {
 			cv.eventIndex++
+			cv.emitEvent()
+		}
+	case tcell.KeyHome: // gg: first event of the day
+		if len(items) > 0 {
+			cv.eventIndex = 0
+			cv.emitEvent()
+		}
+	case tcell.KeyEnd: // G: last event of the day
+		if len(items) > 0 {
+			cv.eventIndex = len(items) - 1
 			cv.emitEvent()
 		}
 	case tcell.KeyLeft, tcell.KeyRight:

@@ -162,6 +162,14 @@ func (tg *timeGridView) handleDayMode(ev *tcell.EventKey) {
 		move(-1)
 	case tcell.KeyRight:
 		move(1)
+	case tcell.KeyHome: // gg: first day of the view
+		if tg.onSelectDay != nil && len(tg.days) > 0 {
+			tg.onSelectDay(tg.days[0])
+		}
+	case tcell.KeyEnd: // G: last day of the view
+		if tg.onSelectDay != nil && len(tg.days) > 0 {
+			tg.onSelectDay(tg.days[len(tg.days)-1])
+		}
 	case tcell.KeyEnter:
 		if len(tg.dayOccs()) > 0 {
 			tg.eventMode = true
@@ -209,6 +217,16 @@ func (tg *timeGridView) handleEventMode(ev *tcell.EventKey) {
 		prev()
 	case tcell.KeyDown:
 		next()
+	case tcell.KeyHome: // gg: first event of the day
+		if len(occs) > 0 {
+			tg.eventIndex = 0
+			tg.emitEvent()
+		}
+	case tcell.KeyEnd: // G: last event of the day
+		if len(occs) > 0 {
+			tg.eventIndex = len(occs) - 1
+			tg.emitEvent()
+		}
 	case tcell.KeyLeft:
 		move(-1)
 	case tcell.KeyRight:

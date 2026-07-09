@@ -51,7 +51,7 @@ Full key list:
 | `Tab` / `Shift-Tab` | Cycle those three |
 | `↑` `↓` `←` `→` / `j` `k` `h` `l` | Move the highlight in the focused pane |
 | `<count>` + motion | Repeat a motion — `3j`, `5k` |
-| `gg` / `G` | Go to top / bottom of the list or tree (`<count>G` → nth item) |
+| `gg` / `G` | Go to top / bottom of the list, tree, or calendar grid (`<count>G` → nth list item) |
 | `Enter` | Dive into the center; cycle a day's events; open a list / expand a task |
 | `Esc` | Back out to the overview · cancel a form/dialog/chord |
 | `i` … | Create prefix — `t`/`T` task, `e`/`E` event, `s`/`S` subtask, `c` calendar, `l` list (Shift = full form) |

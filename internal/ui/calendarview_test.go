@@ -59,3 +59,30 @@ func TestCalendarViewArrowMovesSelection(t *testing.T) {
 		t.Errorf("Down selected %s, want %s", got.Format("2006-01-02"), want.Format("2006-01-02"))
 	}
 }
+
+// TestCalendarViewEventModeHomeEnd: in event mode, Home/End (gg/G) jump to the
+// first / last event of the selected day.
+func TestCalendarViewEventModeHomeEnd(t *testing.T) {
+	cv := newCalendarView()
+	day := time.Date(2026, 7, 4, 0, 0, 0, 0, time.Local)
+	mk := func(title string, h int) model.AgendaItem {
+		e := &model.Event{Summary: title, Start: time.Date(2026, 7, 4, h, 0, 0, 0, time.Local)}
+		return model.AgendaItem{Start: e.Start, Title: title, Event: e}
+	}
+	items := map[string][]model.AgendaItem{dayKey(day): {mk("A", 8), mk("B", 10), mk("C", 12)}}
+	cv.setData(model.MonthGrid(day, true), items, day.Month(), day, day, true)
+
+	var got string
+	cv.onSelectEvent = func(it model.AgendaItem) { got = it.Title }
+	handle := cv.InputHandler()
+	handle(tcell.NewEventKey(tcell.KeyEnter, 0, tcell.ModNone), func(tview.Primitive) {}) // enter event mode (index 0 = A)
+
+	handle(tcell.NewEventKey(tcell.KeyEnd, 0, tcell.ModNone), func(tview.Primitive) {})
+	if got != "C" {
+		t.Errorf("End selected %q, want last event C", got)
+	}
+	handle(tcell.NewEventKey(tcell.KeyHome, 0, tcell.ModNone), func(tview.Primitive) {})
+	if got != "A" {
+		t.Errorf("Home selected %q, want first event A", got)
+	}
+}

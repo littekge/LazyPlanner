@@ -179,7 +179,7 @@ The keyboard interface feels like **vim, not lazygit**: single keys for panel fo
 |---|---|
 | `↑↓←→` / `hjkl` | Move within pane / expand-collapse tree nodes |
 | `<count>` + motion | Repeat a motion (`3j`, `5k`) |
-| `gg` / `G` | Go to top / bottom of the list or tree (`<count>G` → nth item) |
+| `gg` / `G` | Go to top / bottom of the list, tree, or calendar grid (`<count>G` → nth list item) |
 | `c` `t` `a` | Focus Calendars / Tasks / Agenda panel |
 | `Tab` / `Shift-Tab` | Cycle pane focus |
 | `+` / `-` | Expand / restore the Main pane (accordion) |

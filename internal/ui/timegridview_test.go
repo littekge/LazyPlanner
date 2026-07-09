@@ -163,3 +163,25 @@ func TestTimeGridArrowChangesDay(t *testing.T) {
 		t.Errorf("Right selected %s, want %s", got.Format("2006-01-02"), want.Format("2006-01-02"))
 	}
 }
+
+// TestTimeGridHomeEndSelectsDay: in the week view, Home/End (gg/G) jump to the
+// first / last day column.
+func TestTimeGridHomeEndSelectsDay(t *testing.T) {
+	tg := newTimeGridView()
+	anchor := time.Date(2026, 7, 8, 0, 0, 0, 0, time.UTC) // mid-week
+	days := model.Week(anchor, true)
+	tg.setData(days, nil, nil, anchor, anchor)
+
+	var got time.Time
+	tg.onSelectDay = func(d time.Time) { got = d }
+	handle := tg.InputHandler()
+
+	handle(tcell.NewEventKey(tcell.KeyHome, 0, tcell.ModNone), func(tview.Primitive) {})
+	if !got.Equal(days[0]) {
+		t.Errorf("Home selected %v, want first day %v", got.Format("2006-01-02"), days[0].Format("2006-01-02"))
+	}
+	handle(tcell.NewEventKey(tcell.KeyEnd, 0, tcell.ModNone), func(tview.Primitive) {})
+	if !got.Equal(days[len(days)-1]) {
+		t.Errorf("End selected %v, want last day %v", got.Format("2006-01-02"), days[len(days)-1].Format("2006-01-02"))
+	}
+}

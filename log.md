@@ -4,6 +4,13 @@
 
 ---
 
+## 2026-07-09 — Fix: `gg`/`G` were dead in the calendar grid
+
+- Owner report: `gg`/`G` weren't properly implemented. Root cause: `gotoTop`/`gotoBottom` feed `Home`/`End` to the focused primitive, which tview's `List` and `TreeView` handle — so the overview lists and task tree already worked — but the **custom calendar widgets** (`calendarView` month grid, `timeGridView` week/day) had no `Home`/`End` handling, so once you `Enter`-dived into a grid, `gg`/`G` did nothing (confirmed via a headless probe: the month selection didn't move).
+- **Fix**: `calendarView` and `timeGridView` now handle `Home`/`End` in both day-mode and event-mode. Day-mode: `gg` selects the first grid cell / first day-column, `G` the last (reusing the existing `onSelectDay`). Event-mode (drilled into a day): `gg`/`G` jump to the first / last event of that day. No change to `keys.go` — the app's `gotoTop`/`gotoBottom` already feed `Home`/`End`, so making the widgets honor them is all it took (consistent with the "reuse the widget's own navigation" design).
+- Docs: `README.md` / `main.md` `gg`/`G` rows note they cover the calendar grid too.
+- Tests: `keys_test.go` drives `gg`/`G` through `globalKeys` with the month grid focused (lands on first/last grid day); `calendarview_test.go` event-mode `Home`/`End` → first/last event; `timegridview_test.go` week `Home`/`End` → first/last day. Full gate + `-race` pass.
+
 ## 2026-07-09 — Global overview selectors: `[`/`]` calendar, `{`/`}` task list
 
 - Owner request: make the bracket keys global calendar selectors and add curly braces as global task-list selectors, so either overview's highlight can be nudged from any pane (matching the existing independent-overview-targeting design, cf. create-event/create-task).

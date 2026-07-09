@@ -61,6 +61,32 @@ func TestBracketAndBraceCycleGlobally(t *testing.T) {
 	}
 }
 
+// TestGoTopBottomInMonthGrid: gg / G work when focus is in the month grid (not
+// just the overview lists) — the custom grid handles Home/End. gg lands on the
+// first grid cell, G on the last.
+func TestGoTopBottomInMonthGrid(t *testing.T) {
+	a := newRootedTestApp(t, time.Date(2026, 7, 15, 12, 0, 0, 0, time.UTC))
+	a.setMode(modeCalendar)
+	a.viewMode = viewMonth
+	a.buildCenterCalendar()
+	a.setFocus(a.month) // dive into the grid
+
+	weeks := a.month.weeks
+	first := weeks[0][0]
+	last := weeks[len(weeks)-1][6]
+
+	a.globalKeys(runeKey('g'))
+	a.globalKeys(runeKey('g'))
+	if !a.month.selected.Equal(first) {
+		t.Errorf("gg selected %v, want first grid day %v", a.month.selected.Format("2006-01-02"), first.Format("2006-01-02"))
+	}
+
+	a.globalKeys(runeKey('G'))
+	if !a.month.selected.Equal(last) {
+		t.Errorf("G selected %v, want last grid day %v", a.month.selected.Format("2006-01-02"), last.Format("2006-01-02"))
+	}
+}
+
 func TestPrefixShowsWhichKeyThenCancels(t *testing.T) {
 	a := newRootedTestApp(t, time.Date(2026, 7, 5, 12, 0, 0, 0, time.UTC))
 
