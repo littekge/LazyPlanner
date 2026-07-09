@@ -168,6 +168,214 @@ func (tg *timeGridView) InputHandler() func(*tcell.EventKey, func(tview.Primitiv
 	})
 }
 
+// --- spatial navigation within a drilled day (week/day view) ---
+//
+// The drill navigates the day's on-screen layout: j/k move vertically by time,
+// h/l move between concurrent events (the overlap lanes model.LayoutDay already
+// computes). The all-day band is the top row (h/l between its items; j enters the
+// timed grid, k from the top timed row returns to it); timed due-task markers are
+// single-lane rows in the vertical flow. Movement stops at the day's edges — f/b
+// changes the period, Esc returns to day navigation.
+const (
+	navUp = iota
+	navDown
+	navLeft
+	navRight
+)
+
+const (
+	cellBand  = iota // all-day band (top row)
+	cellEvent        // timed event (positioned by an overlap lane)
+	cellTask         // timed due-task marker (single lane, full width)
+)
+
+// navCell is a drilled item's position for spatial navigation.
+type navCell struct {
+	kind  int
+	start time.Time
+	end   time.Time
+	lane  int
+}
+
+func (c navCell) timed() bool { return c.kind != cellBand }
+func (c navCell) rank() int {
+	if c.kind == cellTask {
+		return 1
+	}
+	return 0
+} // task sorts below an event at the same time
+func (a navCell) overlaps(b navCell) bool {
+	return a.start.Before(b.end) && b.start.Before(a.end)
+}
+
+// sameLevel: two timed cells at the same vertical position (a horizontal row).
+func sameLevel(a, b navCell) bool {
+	return a.start.Equal(b.start) && a.rank() == b.rank()
+}
+
+// levelLess: a is vertically above b (earlier time, or same time with an event
+// above a task).
+func levelLess(a, b navCell) bool {
+	if !a.start.Equal(b.start) {
+		return a.start.Before(b.start)
+	}
+	return a.rank() < b.rank()
+}
+
+// navCells maps each item of the drilled day (daySelectables order) to its
+// on-screen position.
+func (tg *timeGridView) navCells() []navCell {
+	items := tg.daySelectables()
+	cells := make([]navCell, len(items))
+	placements := model.LayoutDay(tg.timed[dayKey(tg.selected)])
+	band := 0
+	for i, it := range items {
+		switch {
+		case isAllDayItem(it):
+			cells[i] = navCell{kind: cellBand, lane: band}
+			band++
+		case it.Todo != nil: // timed due task
+			cells[i] = navCell{kind: cellTask, start: it.Start, end: it.Start, lane: 0}
+		default: // timed event — lane + end from the overlap layout
+			lane, end := 0, it.Start
+			for _, p := range placements {
+				if p.Occ.Event == it.Event && p.Occ.Start.Equal(it.Start) {
+					lane, end = p.Lane, p.Occ.End
+					break
+				}
+			}
+			cells[i] = navCell{kind: cellEvent, start: it.Start, end: end, lane: lane}
+		}
+	}
+	return cells
+}
+
+func (tg *timeGridView) spatialMove(dir int) {
+	if t := tg.spatialTarget(dir); t >= 0 {
+		tg.eventIndex = t
+		tg.emitEvent()
+	}
+}
+
+// spatialTarget returns the index (in daySelectables) to move to for dir, or -1
+// at an edge.
+func (tg *timeGridView) spatialTarget(dir int) int {
+	cells := tg.navCells()
+	if tg.eventIndex < 0 || tg.eventIndex >= len(cells) {
+		return -1
+	}
+	cur := cells[tg.eventIndex]
+	switch dir {
+	case navLeft, navRight:
+		step := 1
+		if dir == navLeft {
+			step = -1
+		}
+		for i, c := range cells {
+			switch cur.kind {
+			case cellBand:
+				if c.kind == cellBand && c.lane == cur.lane+step {
+					return i
+				}
+			case cellEvent:
+				if c.kind == cellEvent && c.lane == cur.lane+step && cur.overlaps(c) {
+					return i
+				}
+			}
+		}
+		return -1 // tasks are single-lane; band/event lane edges stop
+	case navDown:
+		if cur.kind == cellBand {
+			return tg.edgeTimed(cells, cur.lane, true)
+		}
+		return tg.nearestLevel(cells, cur, true)
+	case navUp:
+		if cur.kind == cellBand {
+			return -1
+		}
+		if t := tg.nearestLevel(cells, cur, false); t >= 0 {
+			return t
+		}
+		return tg.bandNearest(cells, cur.lane) // top timed row → all-day band
+	}
+	return -1
+}
+
+// nearestLevel finds the timed cell one vertical level below (down) or above cur,
+// landing on the lane nearest cur's.
+func (tg *timeGridView) nearestLevel(cells []navCell, cur navCell, down bool) int {
+	var target navCell
+	found := false
+	for _, c := range cells {
+		if !c.timed() || sameLevel(c, cur) {
+			continue
+		}
+		inDir := levelLess(cur, c)
+		if !down {
+			inDir = levelLess(c, cur)
+		}
+		if !inDir {
+			continue
+		}
+		if !found || (down && levelLess(c, target)) || (!down && levelLess(target, c)) {
+			target, found = c, true
+		}
+	}
+	if !found {
+		return -1
+	}
+	return laneNearest(cells, func(c navCell) bool { return c.timed() && sameLevel(c, target) }, cur.lane)
+}
+
+// edgeTimed returns the earliest timed cell (from the band going down), nearest lane.
+func (tg *timeGridView) edgeTimed(cells []navCell, prefer int, _ bool) int {
+	var top navCell
+	found := false
+	for _, c := range cells {
+		if c.timed() && (!found || levelLess(c, top)) {
+			top, found = c, true
+		}
+	}
+	if !found {
+		return -1
+	}
+	return laneNearest(cells, func(c navCell) bool { return c.timed() && sameLevel(c, top) }, prefer)
+}
+
+func (tg *timeGridView) bandNearest(cells []navCell, prefer int) int {
+	return laneNearest(cells, func(c navCell) bool { return c.kind == cellBand }, prefer)
+}
+
+// laneNearest returns the index of the matching cell whose lane is closest to
+// prefer (ties break to the smaller lane).
+func laneNearest(cells []navCell, match func(navCell) bool, prefer int) int {
+	best := -1
+	for i, c := range cells {
+		if !match(c) {
+			continue
+		}
+		if best < 0 || laneCloser(c.lane, cells[best].lane, prefer) {
+			best = i
+		}
+	}
+	return best
+}
+
+func laneCloser(a, b, target int) bool {
+	da, db := absInt(a-target), absInt(b-target)
+	if da != db {
+		return da < db
+	}
+	return a < b
+}
+
+func absInt(x int) int {
+	if x < 0 {
+		return -x
+	}
+	return x
+}
+
 func (tg *timeGridView) handleDayMode(ev *tcell.EventKey) {
 	move := func(days int) {
 		if tg.onSelectDay != nil {
@@ -179,11 +387,8 @@ func (tg *timeGridView) handleDayMode(ev *tcell.EventKey) {
 		move(-1)
 	case tcell.KeyRight:
 		move(1)
-	case tcell.KeyUp, tcell.KeyDown:
-		// Vertical motion drills into the selected day's events (all-day then
-		// timed), like the month grid's Enter drill — so j/k (and counts) navigate
-		// events here. Once in event mode, handleEventMode advances the cursor.
-		tg.enterEventMode()
+	// Up/Down do nothing un-drilled: days are navigated horizontally (h/l), and
+	// you drill in with Enter.
 	case tcell.KeyHome: // gg: first day of the view
 		if tg.onSelectDay != nil && len(tg.days) > 0 {
 			tg.onSelectDay(tg.days[0])
@@ -209,52 +414,27 @@ func (tg *timeGridView) handleDayMode(ev *tcell.EventKey) {
 }
 
 func (tg *timeGridView) handleEventMode(ev *tcell.EventKey) {
-	occs := tg.daySelectables()
-	move := func(days int) {
-		tg.eventMode = false
-		if tg.onSelectDay != nil {
-			tg.onSelectDay(tg.selected.AddDate(0, 0, days))
-		}
-	}
-	prev := func() {
-		if tg.eventIndex > 0 {
-			tg.eventIndex--
-			tg.emitEvent()
-		}
-	}
-	next := func() {
-		if tg.eventIndex < len(occs)-1 {
-			tg.eventIndex++
-			tg.emitEvent()
-		}
-	}
+	items := tg.daySelectables()
 	switch ev.Key() {
 	case tcell.KeyEscape:
 		tg.eventMode = false
 	case tcell.KeyUp:
-		prev()
+		tg.spatialMove(navUp)
 	case tcell.KeyDown:
-		next()
-	case tcell.KeyHome: // gg: first event of the day
-		if len(occs) > 0 {
+		tg.spatialMove(navDown)
+	case tcell.KeyLeft:
+		tg.spatialMove(navLeft)
+	case tcell.KeyRight:
+		tg.spatialMove(navRight)
+	case tcell.KeyHome: // gg: first item of the day
+		if len(items) > 0 {
 			tg.eventIndex = 0
 			tg.emitEvent()
 		}
-	case tcell.KeyEnd: // G: last event of the day
-		if len(occs) > 0 {
-			tg.eventIndex = len(occs) - 1
+	case tcell.KeyEnd: // G: last item of the day
+		if len(items) > 0 {
+			tg.eventIndex = len(items) - 1
 			tg.emitEvent()
-		}
-	case tcell.KeyLeft:
-		move(-1)
-	case tcell.KeyRight:
-		move(1)
-	case tcell.KeyRune:
-		switch ev.Rune() {
-		case 'k':
-			prev()
-		case 'j':
-			next()
 		}
 	}
 }

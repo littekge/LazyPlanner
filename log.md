@@ -4,6 +4,17 @@
 
 ---
 
+## 2026-07-09 — Calendar navigation overhaul: spatial 2D drill + f/b stays drilled
+
+- Owner revised calendar-pane navigation. Rules now:
+  - **Un-drilled week/day**: `h`/`l`/`←`/`→` move between days; `j`/`k`/`↑`/`↓` do **nothing** (days are horizontal). `Enter` drills in. Month un-drilled unchanged (2D day cursor, `↑`/`↓` = ±week).
+  - **Drilled week/day**: fully **2D spatial** navigation of the day's on-screen layout — `j`/`k` move by time; `h`/`l` move between **concurrent** events (the side-by-side overlap lanes). Example: A (11–12, full width) above B/C (12–1, concurrent) → `↓` from A lands on B, `→`/`←` toggles B/C, `↑` returns to A. Deterministic (was a flat time-ordered list, so concurrent order was a non-deterministic title tiebreak). The all-day band is the top row (`h`/`l` between its items; `↓` enters the timed grid, `↑` from the top timed row returns to it); timed due-task markers are single-lane rows in the vertical flow. Movement stops at the day's edges.
+  - **Drilled month**: 1D (the day's item list) — `j`/`k` cycle, `h`/`l` do nothing.
+  - **`f`/`b`**: the way to change day/week/month; now **stays drilled**, re-entering on the new period's day (first item), or dropping to day nav if it has none.
+- **Impl** (`timegridview.go`): new `navCell`/`navCells` spatial model built from `model.LayoutDay` lanes + start times; `spatialTarget`/`spatialMove` for up/down (by time level, nearest lane) and left/right (adjacent lane among overlapping events, or between band items). `handleEventMode` now calls these; `handleDayMode` no longer drills on `↑`/`↓`. `calendarview.go`: month drill drops `←`/`→` (stays 1D). `app.go` `shiftAnchor`: capture drill state, re-drill after the period change.
+- Tests (`timegridview_test.go`, `taskcalendar_test.go`): the A/B/C spatial example (`↓`/`↑`/`←`/`→` + edge stop), un-drilled `↓` does nothing / `Enter` drills, all-day-band→timed drill order, and `f` stays drilled onto the next day's task. Full gate + `-race` pass.
+- Memory: recorded the spatial-drill design + rules ([[calendar-drill-navigation]]).
+
 ## 2026-07-09 — Month overflow "+N more" now counts items below the window
 
 - Follow-up to the drill-scroll fix: `+N more` counted every item *outside* the window (including ones scrolled off the top), so it lingered even after drilling to the bottommost item. Owner wanted it to update/disappear as you drill down.

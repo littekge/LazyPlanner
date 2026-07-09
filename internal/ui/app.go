@@ -675,6 +675,12 @@ func (a *app) globalKeys(ev *tcell.EventKey) *tcell.EventKey {
 
 // shiftAnchor moves the calendar by one view-period and re-renders.
 func (a *app) shiftAnchor(delta int) {
+	// If drilled in, stay drilled across the period change (re-enter on the new
+	// period's day). f/b is the intended way to move days/weeks/months while drilled.
+	wasDrilled := false
+	if g, ok := a.calendarPrimitive().(calGrid); ok {
+		_, wasDrilled, _ = g.drillState()
+	}
 	switch a.viewMode {
 	case viewMonth:
 		a.anchor = a.anchor.AddDate(0, delta, 0)
@@ -684,7 +690,14 @@ func (a *app) shiftAnchor(delta int) {
 		a.anchor = a.anchor.AddDate(0, 0, delta)
 	}
 	a.buildCenterCalendar()
-	a.refocusCalendar()
+	if wasDrilled {
+		if g, ok := a.calendarPrimitive().(calGrid); ok {
+			g.reDrill(a.anchor, 0)
+		}
+		a.setFocus(a.calendarPrimitive())
+	} else {
+		a.refocusCalendar()
+	}
 	a.updateStatus()
 }
 

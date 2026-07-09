@@ -207,3 +207,30 @@ func TestFolderCaretInCalendarViews(t *testing.T) {
 		t.Errorf("week/day marker = %q, want a ▸ folder caret", got)
 	}
 }
+
+// TestFBStaysDrilled: pressing f/b while drilled changes the period and re-enters
+// the drill on the new day (per the "stay drilled" decision).
+func TestFBStaysDrilled(t *testing.T) {
+	day1 := time.Date(2026, 7, 20, 12, 0, 0, 0, time.UTC)
+	a := newRootedTestApp(t, day1)
+	if err := a.store.CreateCalendarLocal(context.Background(), "tl", store.CalendarMeta{DisplayName: "TL"}, []string{"VTODO"}); err != nil {
+		t.Fatal(err)
+	}
+	putDueTask(t, a, "tl", "D1", time.Date(2026, 7, 20, 9, 0, 0, 0, time.Local))
+	next := putDueTask(t, a, "tl", "D2", time.Date(2026, 7, 21, 9, 0, 0, 0, time.Local))
+	a.reload()
+
+	a.setMode(modeCalendar)
+	a.viewMode = viewDay
+	a.anchor = model.DayStart(day1)
+	a.buildCenterCalendar()
+	a.timegrid.eventMode = true // drilled on day1's task
+
+	a.globalKeys(runeKey('f')) // → next day, should stay drilled
+	if !a.timegrid.eventMode {
+		t.Fatal("f un-drilled the view; expected to stay drilled")
+	}
+	if it := a.timegrid.selectedItem(); it == nil || it.Todo == nil || it.Todo.UID != next {
+		t.Errorf("after f, drill = %v, want day 2's task %q", it, next)
+	}
+}

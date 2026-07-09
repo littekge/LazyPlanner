@@ -145,15 +145,8 @@ func (cv *calendarView) handleEventMode(ev *tcell.EventKey) {
 			cv.eventIndex = len(items) - 1
 			cv.emitEvent()
 		}
-	case tcell.KeyLeft, tcell.KeyRight:
-		cv.eventMode = false
-		days := 1
-		if ev.Key() == tcell.KeyLeft {
-			days = -1
-		}
-		if cv.onSelectDay != nil {
-			cv.onSelectDay(cv.selected.AddDate(0, 0, days))
-		}
+	// Left/Right do nothing while drilled: the drilled context is the day's 1D
+	// item list. Esc exits; f/b changes the month.
 	case tcell.KeyRune:
 		switch ev.Rune() {
 		case 'k':

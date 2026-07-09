@@ -192,39 +192,74 @@ func TestTimeGridHomeEndSelectsDay(t *testing.T) {
 	}
 }
 
-// TestTimeGridVerticalMotionCyclesEvents: in the week/day grid, Up/Down (j/k)
-// drill into the selected day's events and cycle them — so counts (2j) work too.
-func TestTimeGridVerticalMotionCyclesEvents(t *testing.T) {
+// TestTimeGridUndrilledVerticalDoesNothing: un-drilled, Up/Down do nothing
+// (days are horizontal); Enter drills in.
+func TestTimeGridUndrilledVerticalDoesNothing(t *testing.T) {
 	tg := newTimeGridView()
 	day := time.Date(2026, 7, 4, 0, 0, 0, 0, time.Local)
-	e1 := &model.Event{Summary: "Nine", Start: time.Date(2026, 7, 4, 9, 0, 0, 0, time.Local)}
-	e2 := &model.Event{Summary: "Eleven", Start: time.Date(2026, 7, 4, 11, 0, 0, 0, time.Local)}
-	timed := map[string][]model.Occurrence{dayKey(day): {
-		{Start: e1.Start, End: e1.Start.Add(time.Hour), Event: e1},
-		{Start: e2.Start, End: e2.Start.Add(time.Hour), Event: e2},
-	}}
+	e := &model.Event{Summary: "E", Start: time.Date(2026, 7, 4, 9, 0, 0, 0, time.Local)}
+	tg.setData([]time.Time{day}, map[string][]model.Occurrence{dayKey(day): {{Start: e.Start, End: e.Start.Add(time.Hour), Event: e}}}, nil, day, day)
+	tg.items = map[string][]model.AgendaItem{dayKey(day): {{Start: e.Start, Title: e.Summary, Event: e}}}
+	handle := tg.InputHandler()
+
+	handle(tcell.NewEventKey(tcell.KeyDown, 0, tcell.ModNone), func(tview.Primitive) {})
+	if tg.eventMode {
+		t.Error("Down should not drill in un-drilled week/day view")
+	}
+	handle(tcell.NewEventKey(tcell.KeyEnter, 0, tcell.ModNone), func(tview.Primitive) {})
+	if !tg.eventMode {
+		t.Error("Enter should drill in")
+	}
+}
+
+// TestTimeGridSpatialDrillNav exercises the 2D drill from the spec example:
+// A (11–12, full width) above B and C (both 12–1, concurrent → side by side).
+// j/k move by time, h/l move between the concurrent pair.
+func TestTimeGridSpatialDrillNav(t *testing.T) {
+	tg := newTimeGridView()
+	day := time.Date(2026, 7, 4, 0, 0, 0, 0, time.Local)
+	at := func(h, m int) time.Time { return time.Date(2026, 7, 4, h, m, 0, 0, time.Local) }
+	a := &model.Event{Summary: "A", Start: at(11, 0)}
+	b := &model.Event{Summary: "B", Start: at(12, 0)}
+	c := &model.Event{Summary: "C", Start: at(12, 0)}
+	occ := func(e *model.Event, endH int) model.Occurrence {
+		return model.Occurrence{Start: e.Start, End: at(endH, 0), Event: e}
+	}
+	timed := map[string][]model.Occurrence{dayKey(day): {occ(a, 12), occ(b, 13), occ(c, 13)}}
 	tg.setData([]time.Time{day}, timed, nil, day, day)
 	tg.items = map[string][]model.AgendaItem{dayKey(day): {
-		{Start: e1.Start, Title: e1.Summary, Event: e1},
-		{Start: e2.Start, Title: e2.Summary, Event: e2},
+		{Start: a.Start, Title: "A", Event: a},
+		{Start: b.Start, Title: "B", Event: b},
+		{Start: c.Start, Title: "C", Event: c},
 	}}
 
-	var got *model.Event
-	tg.onSelectEvent = func(it model.AgendaItem) { got = it.Event }
+	var got string
+	tg.onSelectEvent = func(it model.AgendaItem) { got = it.Title }
 	handle := tg.InputHandler()
-	down := tcell.NewEventKey(tcell.KeyDown, 0, tcell.ModNone)
-	up := tcell.NewEventKey(tcell.KeyUp, 0, tcell.ModNone)
+	key := func(k tcell.Key) { handle(tcell.NewEventKey(k, 0, tcell.ModNone), func(tview.Primitive) {}) }
 
-	handle(down, func(tview.Primitive) {}) // day-mode → enter events, first
-	if !tg.eventMode || got != e1 {
-		t.Fatalf("Down did not drill into events (eventMode=%v got=%v)", tg.eventMode, got)
+	key(tcell.KeyEnter) // drill → A (first item)
+	if got != "A" {
+		t.Fatalf("drill landed on %q, want A", got)
 	}
-	handle(down, func(tview.Primitive) {}) // → second event
-	if got != e2 {
-		t.Errorf("second Down selected %v, want Eleven", got.Summary)
+	key(tcell.KeyDown) // A ↓ → B (leftmost of the concurrent pair)
+	if got != "B" {
+		t.Errorf("Down from A = %q, want B (leftmost concurrent)", got)
 	}
-	handle(up, func(tview.Primitive) {}) // → back to first
-	if got != e1 {
-		t.Errorf("Up selected %v, want Nine", got.Summary)
+	key(tcell.KeyRight) // B → C (the other concurrent lane)
+	if got != "C" {
+		t.Errorf("Right from B = %q, want C", got)
+	}
+	key(tcell.KeyLeft) // C → B
+	if got != "B" {
+		t.Errorf("Left from C = %q, want B", got)
+	}
+	key(tcell.KeyUp) // B ↑ → A
+	if got != "A" {
+		t.Errorf("Up from B = %q, want A", got)
+	}
+	key(tcell.KeyLeft) // A has no left lane → no move
+	if got != "A" {
+		t.Errorf("Left from A = %q, want A (no move at edge)", got)
 	}
 }
