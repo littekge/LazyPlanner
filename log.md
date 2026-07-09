@@ -4,6 +4,15 @@
 
 ---
 
+## 2026-07-09 — Folder caret (▸) consistent across all views; folders keep due dates
+
+- Owner design question: should folders render due dates (intuition: no), and doesn't hiding them make a dated task vanish from the calendar the moment it gains a subtask? Resolution (agreed): **folders keep their due dates** — a folder is still a real dated task (a deadline'd project with sub-steps), hiding it would lose user-set data and cause exactly that vanish. The rule stays uniform: a task shows on the calendar iff it has a due date, folder or not. Consistency instead comes from rendering the **folder metaphor** everywhere.
+- **Global folder set** (`render.go`): replaced the per-list `treeFolders` with one global `a.folders` (`rebuildFolders` = `folderSet(store.Todos())`, run in `buildCalendars` and `buildTreeForList`), plus `isFolder(uid)`. Folder-ness of a task is the same in every view now (children share the parent's collection, so global == per-list for any UID).
+- **Folder caret in calendar + agenda** (owner asked for the same caret as the Tasks pane): new shared `todoMark(t, folder)` → `▸` folder / `[■]` done / `[ ]` incomplete. Wired into the month-grid cells (`itemLabel`), week/day markers + all-day band (`taskMarkerLabel`), and the agenda list (`agendaLeftLabel`, now a method); the month/time-grid get an `isFolder` closure. The tree keeps its expand-aware `▸`/`▾`. So a dated task that gains a child now shows `▸ Proj` on the calendar (stays put, doesn't vanish) instead of `[ ]`.
+- The completion gate was already view-independent (`toggleComplete` → `hasIncompleteChildren`), so Space on a folder in any view still refuses until its children are done.
+- Docs: `README.md`, `main.md`, `CLAUDE.md` (folders keep due dates; ▸ caret across views).
+- Tests (`taskcalendar_test.go`): a dated task with an incomplete child is a folder, still appears in the day's items, and renders `▸` in the month cell, agenda label, and week/day marker. Migrated `app_test.go` off `treeFolders`. Full gate + `-race` pass.
+
 ## 2026-07-09 — Fix: completing a drilled task no longer undrills the calendar day
 
 - Owner report: in a calendar view, Space-to-complete kicked you back out to day navigation. Cause: `toggleComplete` ends in `refresh`, which rebuilds the grid (`setData` resets `eventMode`/`eventIndex`), dropping the drill. The modal create/edit/delete paths already re-drill via `captureFocus`/`restoreFocus`, but Space mutates directly with no modal.

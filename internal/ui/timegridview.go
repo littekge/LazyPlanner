@@ -52,6 +52,13 @@ type timeGridView struct {
 	// taskColor resolves a task to its list's color; ok is false when the list has
 	// none, so the default task color (aqua) is used.
 	taskColor func(*model.Todo) (calColor, bool)
+	// isFolder reports whether a task UID is a folder (▸ marker instead of a box).
+	isFolder func(uid string) bool
+}
+
+// folderTask reports whether a task is a folder (has incomplete children).
+func (tg *timeGridView) folderTask(t *model.Todo) bool {
+	return tg.isFolder != nil && tg.isFolder(t.UID)
 }
 
 // dueParts splits a day's due tasks into all-day (top band) and timed (a marker
@@ -78,15 +85,11 @@ func (tg *timeGridView) taskFg(t *model.Todo) tcell.Color {
 }
 
 // taskMarkerLabel formats a due task's one-line label in the time-grid with the
-// same checkbox convention as the month grid and task tree: [ ] uncompleted,
-// [■] completed. The foreground-only text (over the grid, not a filled block)
-// already distinguishes a due task from an event.
-func taskMarkerLabel(t *model.Todo) string {
-	box := "[ ] "
-	if t.Completed() {
-		box = "[■] "
-	}
-	return box + nonEmpty(t.Summary, "(untitled)")
+// same marker convention as the month grid and task tree: ▸ folder, [ ]
+// uncompleted, [■] completed. The foreground-only text (over the grid, not a
+// filled block) already distinguishes a due task from an event.
+func taskMarkerLabel(t *model.Todo, folder bool) string {
+	return todoMark(t, folder) + nonEmpty(t.Summary, "(untitled)")
 }
 
 func newTimeGridView() *timeGridView {
@@ -301,7 +304,7 @@ func (tg *timeGridView) Draw(screen tcell.Screen) {
 				}
 			}
 		} else {
-			label = taskMarkerLabel(adTasks[0])
+			label = taskMarkerLabel(adTasks[0], tg.folderTask(adTasks[0]))
 			style = tcell.StyleDefault.Foreground(tg.taskFg(adTasks[0]))
 		}
 		if total > 1 {
@@ -389,7 +392,7 @@ func (tg *timeGridView) drawTaskMarker(screen tcell.Screen, t *model.Todo, colX,
 	if selected {
 		style = selectionStyle
 	}
-	printStyled(screen, colX, row, colW-1, taskMarkerLabel(t), style)
+	printStyled(screen, colX, row, colW-1, taskMarkerLabel(t, tg.folderTask(t)), style)
 }
 
 func (tg *timeGridView) drawBlock(screen tcell.Screen, p model.Placement, colX, colW, bodyY, bodyH int, selected bool) {

@@ -15,6 +15,7 @@ import (
 
 func (a *app) buildCalendars() {
 	a.rebuildColorIndex()
+	a.rebuildFolders()
 	a.calendars.Clear()
 	for _, cal := range a.store.Calendars() {
 		events, todos := calCounts(cal)
@@ -74,7 +75,7 @@ func (a *app) buildAgendaLeft() {
 		return
 	}
 	for _, it := range items {
-		a.agendaList.AddItem(agendaLeftLabel(it), "", 0, nil)
+		a.agendaList.AddItem(a.agendaLeftLabel(it), "", 0, nil)
 	}
 }
 
@@ -250,7 +251,7 @@ func (a *app) buildTreeForList(id string) {
 	name := "Tasks"
 	root := tview.NewTreeNode("").SetSelectable(false).SetColor(accentColor)
 
-	a.treeFolders = map[string]bool{}
+	a.rebuildFolders()
 	if id != "" {
 		if cal, ok := a.store.Calendar(id); ok {
 			name = cal.DisplayName
@@ -258,7 +259,6 @@ func (a *app) buildTreeForList(id string) {
 			for _, r := range cal.Resources {
 				all = append(all, r.Object.Todos...)
 			}
-			a.treeFolders = folderSet(all)
 
 			// Show incomplete tasks, plus completed ones when toggled on or pinned.
 			var visible []*model.Todo
@@ -278,6 +278,28 @@ func (a *app) buildTreeForList(id string) {
 		a.tree.SetCurrentNode(kids[0])
 	} else {
 		a.setDetail("[gray]No tasks in this list.[-]")
+	}
+}
+
+// rebuildFolders recomputes the global folder set (task UIDs with ≥1 incomplete
+// child) across all lists, so the tree, calendar, and agenda all mark folders
+// identically. Runs whenever the tree or calendars are rebuilt.
+func (a *app) rebuildFolders() { a.folders = folderSet(a.store.Todos()) }
+
+// isFolder reports whether the task with this UID is a folder (has incomplete
+// children). Used by the calendar/agenda renderers via a closure.
+func (a *app) isFolder(uid string) bool { return a.folders[uid] }
+
+// todoMark is the leading marker for a task line: a ▸ folder caret (task with
+// incomplete children, matching the tree), else the [ ]/[■] checkbox.
+func todoMark(t *model.Todo, folder bool) string {
+	switch {
+	case folder:
+		return "▸ "
+	case t.Completed():
+		return "[■] "
+	default:
+		return "[ ] "
 	}
 }
 
@@ -310,7 +332,8 @@ func (a *app) treeNode(n *model.TodoNode) *tview.TreeNode {
 func (a *app) nodeLabel(t *model.Todo, expanded bool) string {
 	var mark string
 	switch {
-	case a.treeFolders[t.UID]:
+	case a.folders[t.UID]:
+		// Tree adds the expand direction to the folder caret; ▸ collapsed, ▾ open.
 		if expanded {
 			mark = "▾ "
 		} else {
@@ -512,13 +535,10 @@ func calCounts(cal store.Calendar) (events, todos int) {
 	return events, todos
 }
 
-func agendaLeftLabel(it model.AgendaItem) string {
+func (a *app) agendaLeftLabel(it model.AgendaItem) string {
 	mark := ""
 	if it.IsTodo() {
-		mark = "[ ] "
-		if it.Todo.Completed() {
-			mark = "[■] "
-		}
+		mark = todoMark(it.Todo, a.isFolder(it.Todo.UID))
 	}
 	return fmt.Sprintf("%-8s %s%s", whenLabel(it), mark, nonEmpty(it.Title, "(untitled)"))
 }

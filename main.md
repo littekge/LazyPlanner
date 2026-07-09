@@ -143,8 +143,9 @@ The left **Tasks** panel lists the task lists (calendars whose supported compone
 
 **Folders**: a task with at least one *incomplete* child is a "folder" and behaves like one:
 
-- Rendered with a `▸`/`▾` disclosure marker in place of the `[ ]`/`[x]` checkbox (it doubles as the expand/collapse indicator).
-- **Cannot be completed** while it still has incomplete children — finish or remove them first.
+- Rendered with a `▸`/`▾` disclosure marker in place of the `[ ]`/`[x]` checkbox (in the tree it doubles as the expand/collapse indicator). The **same `▸` caret is used in the calendar and agenda views** so a folder reads as a folder everywhere (a global folder set drives all three views).
+- **Keeps its own due date.** Folder-ness is orthogonal to the due date: a folder with a due date still renders that date and still appears on the calendar on its due day (a task shows on the calendar iff it has a due date — folder or not). Adding a subtask to a dated task therefore never makes it vanish from the calendar; it just gains the `▸` caret. (Hiding folder due dates was considered and rejected: it discards user-set data and causes that disappearance.)
+- **Cannot be completed** while it still has incomplete children — finish or remove them first (enforced in every view, including Space on a folder in the calendar).
 - **Reverts to an ordinary task** (checkbox, completable) once it has no children or all its children are complete.
 - **Deleting a folder** with incomplete children requires an extra recursive confirmation and removes the whole subtree (the folder and all descendants). Deleting an ordinary task never cascades.
 

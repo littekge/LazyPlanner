@@ -111,7 +111,7 @@ type app struct {
 	tasklistIDs     []string            // calendar ids parallel to the tasklists panel
 	calColors       map[string]calColor // calendar id → server color (nearest palette); mappable only
 	itemColors      map[string]calColor // event/todo UID → its calendar's color
-	treeFolders     map[string]bool     // task UIDs that are folders (≥1 incomplete child)
+	folders         map[string]bool     // task UIDs that are folders (≥1 incomplete child); global, for tree + calendar + agenda markers
 	treeListID      string              // calendar id the tree currently shows (to detect list changes)
 	suspendTree     bool                // ignore tasklist change events while the panel is rebuilt
 	stickyDone      map[string]bool     // tasks completed while hidden, kept visible until the list is left
@@ -276,7 +276,7 @@ func newApp(s *store.Store, title string, now time.Time) *app {
 		weekStartMonday: true,
 		calColors:       map[string]calColor{},
 		itemColors:      map[string]calColor{},
-		treeFolders:     map[string]bool{},
+		folders:         map[string]bool{},
 		stickyDone:      map[string]bool{},
 		hidden:          map[string]bool{},
 	}
@@ -336,6 +336,9 @@ func (a *app) build() {
 	a.agenda.itemColor = a.agendaItemColor
 	a.timegrid.occColor = a.occurrenceColor
 	a.timegrid.taskColor = a.todoColor
+	// Folder markers (▸) for tasks with incomplete children, consistent with the tree.
+	a.month.isFolder = a.isFolder
+	a.timegrid.isFolder = a.isFolder
 	a.calendars.SetSelectedFunc(func(int, string, string, rune) { a.setFocus(a.calendarPrimitive()) })
 	a.tasklists.SetChangedFunc(func(index int, _, _ string, _ rune) {
 		// Rebuilding the panel briefly parks the selection at index 0; ignore

@@ -93,7 +93,7 @@ func TestAgendaSelectedBlockOutlined(t *testing.T) {
 // TestNodeLabelCompletedGlyph locks the completed-task indicator to a filled box.
 func TestNodeLabelCompletedGlyph(t *testing.T) {
 	a := newTestApp(t, time.Date(2026, 7, 5, 12, 0, 0, 0, time.UTC))
-	a.treeFolders = map[string]bool{}
+	a.folders = map[string]bool{}
 	done := &model.Todo{Summary: "Done", Status: model.StatusCompleted}
 	todo := &model.Todo{Summary: "Todo"}
 	if got := a.nodeLabel(done, false); !strings.HasPrefix(got, "[■] ") {

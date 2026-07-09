@@ -36,6 +36,8 @@ type calendarView struct {
 	// itemColor resolves an item to its calendar's color; ok is false when the
 	// calendar has none, so the default event/task color is used.
 	itemColor func(model.AgendaItem) (calColor, bool)
+	// isFolder reports whether a task UID is a folder (▸ marker instead of a box).
+	isFolder func(uid string) bool
 }
 
 func newCalendarView() *calendarView {
@@ -294,7 +296,7 @@ func (cv *calendarView) drawCell(screen tcell.Screen, day time.Time, cellX, cell
 		if selected && cv.eventMode && i == cv.eventIndex {
 			style = style.Reverse(true)
 		}
-		printStyled(screen, cx, cy+1+i, cw, itemLabel(items[i]), style)
+		printStyled(screen, cx, cy+1+i, cw, itemLabel(items[i], cv.folderItem(items[i])), style)
 	}
 	if overflow {
 		printStyled(screen, cx, cy+1+shown, cw, fmt.Sprintf("+%d more", len(items)-shown),
@@ -302,15 +304,17 @@ func (cv *calendarView) drawCell(screen tcell.Screen, day time.Time, cellX, cell
 	}
 }
 
-// itemLabel and itemStyle format a day-cell agenda line.
-func itemLabel(it model.AgendaItem) string {
+// folderItem reports whether an agenda item is a task that's a folder.
+func (cv *calendarView) folderItem(it model.AgendaItem) bool {
+	return it.IsTodo() && cv.isFolder != nil && cv.isFolder(it.Todo.UID)
+}
+
+// itemLabel and itemStyle format a day-cell agenda line. folder marks a task with
+// incomplete children (▸, matching the tree) instead of a checkbox.
+func itemLabel(it model.AgendaItem, folder bool) string {
 	switch {
 	case it.IsTodo():
-		box := "[ ] "
-		if it.Todo.Completed() {
-			box = "[■] "
-		}
-		return box + nonEmpty(it.Title, "(untitled)")
+		return todoMark(it.Todo, folder) + nonEmpty(it.Title, "(untitled)")
 	case it.AllDay:
 		return nonEmpty(it.Title, "(untitled)")
 	default:

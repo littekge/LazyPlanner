@@ -2,6 +2,7 @@ package ui
 
 import (
 	"context"
+	"strings"
 	"testing"
 	"time"
 
@@ -150,5 +151,59 @@ func TestSubtaskUnderSelectedTaskInCalendar(t *testing.T) {
 	}
 	if gotParent != parentUID {
 		t.Errorf("subtask parent = %q, want the selected task %q", gotParent, parentUID)
+	}
+}
+
+// putChildTask writes an incomplete VTODO whose RELATED-TO parent is parentUID.
+func putChildTask(t *testing.T, a *app, calID, summary, parentUID string) {
+	t.Helper()
+	uid := summary + "@child"
+	ics := "BEGIN:VCALENDAR\r\nVERSION:2.0\r\nPRODID:-//t//t//EN\r\nBEGIN:VTODO\r\nUID:" + uid +
+		"\r\nSUMMARY:" + summary + "\r\nDTSTAMP:20260701T000000Z\r\nRELATED-TO:" + parentUID +
+		"\r\nEND:VTODO\r\nEND:VCALENDAR\r\n"
+	parsed, err := model.Decode([]byte(ics), time.Local)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := a.store.Put(context.Background(), calID, store.ResourceName(uid), parsed); err != nil {
+		t.Fatal(err)
+	}
+}
+
+// TestFolderCaretInCalendarViews: a dated task that gains an incomplete child
+// becomes a folder and renders with a ▸ caret (not [ ]) in the month grid and
+// agenda, matching the tree — and still appears on the calendar (keeps its due).
+func TestFolderCaretInCalendarViews(t *testing.T) {
+	when := time.Date(2026, 7, 20, 12, 0, 0, 0, time.UTC)
+	a := newRootedTestApp(t, when)
+	if err := a.store.CreateCalendarLocal(context.Background(), "tl", store.CalendarMeta{DisplayName: "TL"}, []string{"VTODO"}); err != nil {
+		t.Fatal(err)
+	}
+	parent := putDueTask(t, a, "tl", "Proj", time.Date(2026, 7, 20, 9, 0, 0, 0, time.Local))
+	putChildTask(t, a, "tl", "Step", parent)
+	a.reload()
+
+	if !a.isFolder(parent) {
+		t.Fatal("a dated task with an incomplete child should be a folder")
+	}
+
+	// Find the parent's agenda item for the day.
+	var it model.AgendaItem
+	for _, x := range a.dayItems(model.DayStart(when)) {
+		if x.IsTodo() && x.Todo.UID == parent {
+			it = x
+		}
+	}
+	if it.Todo == nil {
+		t.Fatal("dated folder missing from the day's items — it should still appear on the calendar")
+	}
+	if got := itemLabel(it, a.isFolder(parent)); !strings.HasPrefix(got, "▸ ") {
+		t.Errorf("month-cell label = %q, want a ▸ folder caret", got)
+	}
+	if got := a.agendaLeftLabel(it); !strings.Contains(got, "▸ ") {
+		t.Errorf("agenda label = %q, want a ▸ folder caret", got)
+	}
+	if got := taskMarkerLabel(it.Todo, a.isFolder(parent)); !strings.HasPrefix(got, "▸ ") {
+		t.Errorf("week/day marker = %q, want a ▸ folder caret", got)
 	}
 }
