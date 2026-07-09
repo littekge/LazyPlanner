@@ -646,15 +646,17 @@ func (a *app) globalKeys(ev *tcell.EventKey) *tcell.EventKey {
 				return nil
 			}
 		case '[':
-			if a.mode == modeCalendar {
-				a.cycleCalendar(-1)
-				return nil
-			}
+			a.cycleCalendar(-1)
+			return nil
 		case ']':
-			if a.mode == modeCalendar {
-				a.cycleCalendar(1)
-				return nil
-			}
+			a.cycleCalendar(1)
+			return nil
+		case '{':
+			a.cycleTasklist(-1)
+			return nil
+		case '}':
+			a.cycleTasklist(1)
+			return nil
 		}
 	}
 	return ev
@@ -691,6 +693,9 @@ func (a *app) gridFocused() bool {
 
 // cycleCalendar moves the highlight in the Calendars overview (wrapping), usable
 // from the grid too. Space toggles the highlighted calendar's visibility.
+// cycleCalendar moves the Calendars-overview highlight by delta (wrapping). It's
+// global (any mode): the left column always shows the Calendars list, and the
+// highlight is the target for hide/show, :calendar, and event creation.
 func (a *app) cycleCalendar(delta int) {
 	n := a.calendars.GetItemCount()
 	if n == 0 {
@@ -698,6 +703,19 @@ func (a *app) cycleCalendar(delta int) {
 	}
 	i := (a.calendars.GetCurrentItem() + delta + n) % n
 	a.calendars.SetCurrentItem(i)
+}
+
+// cycleTasklist moves the Tasks-overview highlight by delta (wrapping), the
+// task-list counterpart to cycleCalendar. It cycles within the real list ids so
+// the "(no task lists)" placeholder isn't selectable; the list's changed-callback
+// rebuilds the tree when Tasks mode is showing.
+func (a *app) cycleTasklist(delta int) {
+	n := len(a.tasklistIDs)
+	if n == 0 {
+		return
+	}
+	i := (a.tasklists.GetCurrentItem() + delta + n) % n
+	a.tasklists.SetCurrentItem(i)
 }
 
 // reloadCurrent rebuilds whatever the current mode shows (after a data toggle).

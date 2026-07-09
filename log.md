@@ -4,6 +4,14 @@
 
 ---
 
+## 2026-07-09 — Global overview selectors: `[`/`]` calendar, `{`/`}` task list
+
+- Owner request: make the bracket keys global calendar selectors and add curly braces as global task-list selectors, so either overview's highlight can be nudged from any pane (matching the existing independent-overview-targeting design, cf. create-event/create-task).
+- **Keys** (`internal/ui/app.go` `globalKeys`): dropped the `a.mode == modeCalendar` guard on `[`/`]` so they cycle the Calendars highlight in every mode; added `{`/`}` → new `cycleTasklist`, the task-list counterpart to `cycleCalendar`. Both intercept at the app level (before the focused widget), so they work whether focus sits in an overview list or a dived-in grid; neither the tree nor the lists bind these keys, so nothing regresses.
+- **`cycleTasklist`** cycles within `len(a.tasklistIDs)` (skipping the "(no task lists)" placeholder) and `SetCurrentItem`, which fires the tasklists changed-callback — so when Tasks mode is showing, the tree rebuilds for the newly-highlighted list; in other modes it just moves the (always-visible) left-column highlight, which is the target for the next action.
+- Docs: help overlay (moved `[`/`]` into Panels & navigation and added `{`/`}`), controls line, `README.md`, `main.md`, `CLAUDE.md`.
+- Tests (`keys_test.go` `TestBracketAndBraceCycleGlobally`): from Agenda mode (neither Calendar nor Tasks), `]`/`[` cycle the calendar highlight and `}`/`{` cycle the task-list highlight, wrapping back; creates a second VTODO list so the cycle has somewhere to go. Full gate + `-race` pass.
+
 ## 2026-07-09 — Unify the due-task checkbox across calendar views
 
 - Owner report: inconsistent glyphs — the month view showed an uncompleted due task as `[ ]`, but the new week/day time-grid marked it with `◆` (and `◆ [■]` when completed). Task management lives in the Tasks pane, so the calendar views should just render tasks uniformly.

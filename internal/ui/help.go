@@ -18,6 +18,8 @@ var helpSections = []struct {
 	{"Panels & navigation", [][2]string{
 		{"c t a", "focus Calendars / Tasks / Agenda"},
 		{"Tab / Shift-Tab", "cycle panels"},
+		{"[ / ]", "cycle highlighted calendar (any mode)"},
+		{"{ / }", "cycle highlighted task list (any mode)"},
 		{"h j k l / arrows", "move the highlight (Enter expands/collapses a tree node)"},
 		{"3j 5k …", "count prefix — repeat a motion"},
 		{"g g / G", "go to top / bottom"},
@@ -45,7 +47,6 @@ var helpSections = []struct {
 	}},
 	{"Calendar", [][2]string{
 		{"v", "cycle month / week / day"},
-		{"[ / ]", "cycle highlighted calendar"},
 		{"Space", "hide / show the highlighted calendar"},
 		{"f / b", "forward / back one period"},
 		{"g t", "jump to today"},

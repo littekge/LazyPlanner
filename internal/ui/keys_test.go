@@ -1,6 +1,7 @@
 package ui
 
 import (
+	"context"
 	"fmt"
 	"strings"
 	"testing"
@@ -8,6 +9,8 @@ import (
 
 	"github.com/gdamore/tcell/v2"
 	"github.com/rivo/tview"
+
+	"github.com/littekge/LazyPlanner/internal/store"
 )
 
 func runeKey(r rune) *tcell.EventKey { return tcell.NewEventKey(tcell.KeyRune, r, tcell.ModNone) }
@@ -21,6 +24,41 @@ func newRootedTestApp(t *testing.T, now time.Time) *app {
 	a.root.AddPage(pageMain, a.layout(), true, true)
 	a.setMode(modeTasks)
 	return a
+}
+
+// TestBracketAndBraceCycleGlobally: [ / ] cycle the calendar highlight and
+// { / } cycle the task-list highlight, from any mode (here Agenda), wrapping.
+func TestBracketAndBraceCycleGlobally(t *testing.T) {
+	a := newRootedTestApp(t, time.Date(2026, 7, 5, 12, 0, 0, 0, time.UTC))
+	// Ensure a second task list exists so cycling has somewhere to go.
+	if err := a.store.CreateCalendarLocal(context.Background(), "errands", store.CalendarMeta{DisplayName: "Errands"}, []string{"VTODO"}); err != nil {
+		t.Fatal(err)
+	}
+	a.reload()
+	if a.calendars.GetItemCount() < 2 || len(a.tasklistIDs) < 2 {
+		t.Skipf("need 2 calendars and 2 task lists (have %d cals, %d lists)", a.calendars.GetItemCount(), len(a.tasklistIDs))
+	}
+	a.setMode(modeAgenda) // neither Calendar nor Tasks, to prove the keys are global
+
+	calBefore := a.calendars.GetCurrentItem()
+	a.globalKeys(runeKey(']'))
+	if a.calendars.GetCurrentItem() == calBefore {
+		t.Error("] did not cycle the calendar highlight from Agenda mode")
+	}
+	a.globalKeys(runeKey('['))
+	if a.calendars.GetCurrentItem() != calBefore {
+		t.Error("[ did not cycle the calendar highlight back")
+	}
+
+	tlBefore := a.tasklists.GetCurrentItem()
+	a.globalKeys(runeKey('}'))
+	if a.tasklists.GetCurrentItem() == tlBefore {
+		t.Error("} did not cycle the task-list highlight from Agenda mode")
+	}
+	a.globalKeys(runeKey('{'))
+	if a.tasklists.GetCurrentItem() != tlBefore {
+		t.Error("{ did not cycle the task-list highlight back")
+	}
 }
 
 func TestPrefixShowsWhichKeyThenCancels(t *testing.T) {

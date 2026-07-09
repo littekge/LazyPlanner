@@ -436,7 +436,7 @@ func (a *app) updateStatus() {
 	}
 	// Plain text (no color tags) so the [ and ] calendar keys read literally.
 	// Kept short so it fits without truncation; the full keymap lives in ? help.
-	a.hints.SetText(fmt.Sprintf("c/t/a panes · i… new · e edit · d del · Space done/hide · / find · u undo · r sync · v view · [ ]/f/b/gt cal · . comp:%s · : cmd · ? help · q quit", completed))
+	a.hints.SetText(fmt.Sprintf("c/t/a panes · [ ] cal · { } list · i… new · e edit · d del · Space done/hide · / find · u undo · r sync · v/f/b/gt cal · . comp:%s · : cmd · ? help · q quit", completed))
 }
 
 // --- shared helpers ---
