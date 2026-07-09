@@ -29,11 +29,17 @@ type timeGridView struct {
 	now      time.Time
 	selected time.Time
 
-	eventMode  bool // cycling the selected day's events (all-day, then timed)
+	eventMode  bool // cycling the selected day's items (all-day, then timed events + tasks)
 	eventIndex int
 
+	// items is the per-day drill list — all-day items, then timed events and due
+	// tasks by time (model.DayAgenda order). The drill cycles these so a task is
+	// selectable (and thus completable/editable) like an event; it's separate from
+	// the timed/allDay/dueTasks draw data. Set by the app alongside setData.
+	items map[string][]model.AgendaItem
+
 	onSelectDay   func(day time.Time)
-	onSelectEvent func(occ model.Occurrence)
+	onSelectEvent func(model.AgendaItem)
 	onExit        func() // Esc in day mode: hand focus back to the overview
 
 	// occColor resolves an occurrence to its calendar's color; ok is false when
@@ -97,22 +103,18 @@ func (tg *timeGridView) setData(days []time.Time, timed, allDay map[string][]mod
 	tg.eventIndex = 0
 }
 
-// dayOccs is the selected day's events cycled in event mode: all-day items first
-// (they sit in the top band), then timed events.
-func (tg *timeGridView) dayOccs() []model.Occurrence {
-	key := dayKey(tg.selected)
-	occs := make([]model.Occurrence, 0, len(tg.allDay[key])+len(tg.timed[key]))
-	occs = append(occs, tg.allDay[key]...)
-	occs = append(occs, tg.timed[key]...)
-	return occs
+// daySelectables is the selected day's drill list: all-day items first, then
+// timed events and due tasks by time (model.DayAgenda order).
+func (tg *timeGridView) daySelectables() []model.AgendaItem {
+	return tg.items[dayKey(tg.selected)]
 }
 
-// enterEventMode starts cycling the selected day's events (all-day first, then
-// timed), selecting the first. A no-op when the day has none. Vertical motion in
-// day mode enters here so the day's events navigate like a list; a repeated
-// motion (a count, or held j) then advances via handleEventMode.
+// enterEventMode starts cycling the selected day's items (events and due tasks),
+// selecting the first. A no-op when the day has none. Vertical motion in day mode
+// enters here so the day navigates like a list; a repeated motion (a count, or
+// held j) then advances via handleEventMode.
 func (tg *timeGridView) enterEventMode() {
-	if !tg.eventMode && len(tg.dayOccs()) > 0 {
+	if !tg.eventMode && len(tg.daySelectables()) > 0 {
 		tg.eventMode = true
 		tg.eventIndex = 0
 		tg.emitEvent()
@@ -120,20 +122,20 @@ func (tg *timeGridView) enterEventMode() {
 }
 
 func (tg *timeGridView) emitEvent() {
-	occs := tg.dayOccs()
-	if tg.eventIndex >= 0 && tg.eventIndex < len(occs) && tg.onSelectEvent != nil {
-		tg.onSelectEvent(occs[tg.eventIndex])
+	items := tg.daySelectables()
+	if tg.eventIndex >= 0 && tg.eventIndex < len(items) && tg.onSelectEvent != nil {
+		tg.onSelectEvent(items[tg.eventIndex])
 	}
 }
 
-// selectedOcc is the occurrence currently highlighted in event mode, or nil.
-func (tg *timeGridView) selectedOcc() *model.Occurrence {
+// selectedItem is the item currently highlighted in event mode, or nil.
+func (tg *timeGridView) selectedItem() *model.AgendaItem {
 	if !tg.eventMode {
 		return nil
 	}
-	occs := tg.dayOccs()
-	if tg.eventIndex >= 0 && tg.eventIndex < len(occs) {
-		return &occs[tg.eventIndex]
+	items := tg.daySelectables()
+	if tg.eventIndex >= 0 && tg.eventIndex < len(items) {
+		return &items[tg.eventIndex]
 	}
 	return nil
 }
@@ -146,9 +148,9 @@ func (tg *timeGridView) drillState() (time.Time, bool, int) {
 
 func (tg *timeGridView) reDrill(day time.Time, index int) {
 	tg.selected = day
-	if occs := tg.dayOccs(); len(occs) > 0 {
+	if items := tg.daySelectables(); len(items) > 0 {
 		tg.eventMode = true
-		tg.eventIndex = clampIndex(index, len(occs))
+		tg.eventIndex = clampIndex(index, len(items))
 		tg.emitEvent()
 	}
 }
@@ -188,11 +190,7 @@ func (tg *timeGridView) handleDayMode(ev *tcell.EventKey) {
 			tg.onSelectDay(tg.days[len(tg.days)-1])
 		}
 	case tcell.KeyEnter:
-		if len(tg.dayOccs()) > 0 {
-			tg.eventMode = true
-			tg.eventIndex = 0
-			tg.emitEvent()
-		}
+		tg.enterEventMode()
 	case tcell.KeyEscape:
 		if tg.onExit != nil {
 			tg.onExit()
@@ -208,7 +206,7 @@ func (tg *timeGridView) handleDayMode(ev *tcell.EventKey) {
 }
 
 func (tg *timeGridView) handleEventMode(ev *tcell.EventKey) {
-	occs := tg.dayOccs()
+	occs := tg.daySelectables()
 	move := func(days int) {
 		tg.eventMode = false
 		if tg.onSelectDay != nil {
@@ -269,7 +267,7 @@ func (tg *timeGridView) Draw(screen tcell.Screen) {
 	colW := (w - gutterWidth) / n
 	colStart := x + gutterWidth
 	sepStyle := tcell.StyleDefault.Foreground(borderIdle)
-	sel := tg.selectedOcc()
+	sel := tg.selectedItem()
 
 	// Header: one date per column (selected day reversed).
 	for di, day := range tg.days {
@@ -309,8 +307,10 @@ func (tg *timeGridView) Draw(screen tcell.Screen) {
 		if total > 1 {
 			label = fmt.Sprintf("%s +%d", label, total-1)
 		}
-		if sel != nil && sel.Event.AllDay && model.SameDay(day, tg.selected) {
-			label = nonEmpty(sel.Event.Summary, "(untitled)")
+		// While cycling, if the selected item is an all-day item on this day, show
+		// it highlighted so it can be picked like a timed one.
+		if sel != nil && model.SameDay(day, tg.selected) && isAllDayItem(*sel) {
+			label = nonEmpty(sel.Title, "(untitled)")
 			style = selectionStyle
 		}
 		printStyled(screen, colStart+di*colW+1, y+1, colW-1, label, style)
@@ -352,23 +352,31 @@ func (tg *timeGridView) Draw(screen tcell.Screen) {
 	for di, day := range tg.days {
 		places := model.LayoutDay(tg.timed[dayKey(day)])
 		for _, p := range places {
-			selected := sel != nil && !sel.Event.AllDay && model.SameDay(day, tg.selected) &&
+			selected := sel != nil && sel.Event != nil && !sel.Event.AllDay && model.SameDay(day, tg.selected) &&
 				p.Occ.Event == sel.Event && p.Occ.Start.Equal(sel.Start)
 			tg.drawBlock(screen, p, colStart+di*colW, colW, bodyY, bodyH, selected)
 		}
-		// Timed due-task markers, drawn on top at their due time.
+		// Timed due-task markers, drawn on top at their due time; the cycled task on
+		// the selected day is highlighted.
 		_, timedTasks := tg.dueParts(day)
 		for _, t := range timedTasks {
-			tg.drawTaskMarker(screen, t, colStart+di*colW, colW, bodyY, bodyH)
+			selected := sel != nil && sel.Todo != nil && sel.Todo.UID == t.UID && model.SameDay(day, tg.selected)
+			tg.drawTaskMarker(screen, t, colStart+di*colW, colW, bodyY, bodyH, selected)
 		}
 	}
+}
+
+// isAllDayItem reports whether it sits in the top all-day band (an all-day event
+// or an all-day-due task) rather than at a time in the grid body.
+func isAllDayItem(it model.AgendaItem) bool {
+	return (it.Event != nil && it.Event.AllDay) || (it.Todo != nil && it.Todo.DueAllDay)
 }
 
 // drawTaskMarker draws a one-row colored marker for a timed due task at its due
 // time in the grid body. It's a foreground marker (no fill), distinguishing a due
 // task from the filled event blocks; it may sit over an event block at the same
 // time.
-func (tg *timeGridView) drawTaskMarker(screen tcell.Screen, t *model.Todo, colX, colW, bodyY, bodyH int) {
+func (tg *timeGridView) drawTaskMarker(screen tcell.Screen, t *model.Todo, colX, colW, bodyY, bodyH int, selected bool) {
 	due := t.Due.In(time.Local)
 	row := bodyY + int(hourFloat(due)*float64(bodyH)/hoursPerDay)
 	if row < bodyY {
@@ -377,7 +385,11 @@ func (tg *timeGridView) drawTaskMarker(screen tcell.Screen, t *model.Todo, colX,
 	if row >= bodyY+bodyH {
 		row = bodyY + bodyH - 1
 	}
-	printStyled(screen, colX, row, colW-1, taskMarkerLabel(t), tcell.StyleDefault.Foreground(tg.taskFg(t)))
+	style := tcell.StyleDefault.Foreground(tg.taskFg(t))
+	if selected {
+		style = selectionStyle
+	}
+	printStyled(screen, colX, row, colW-1, taskMarkerLabel(t), style)
 }
 
 func (tg *timeGridView) drawBlock(screen tcell.Screen, p model.Placement, colX, colW, bodyY, bodyH int, selected bool) {

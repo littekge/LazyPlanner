@@ -4,6 +4,16 @@
 
 ---
 
+## 2026-07-09 — Manage tasks from the calendar views (check off · subtasks anywhere)
+
+- Owner revised the "tasks are managed only from the Tasks pane" decision (it conflicted with the max-power philosophy). Three changes:
+- **Check off a drilled task with Space in any calendar view** (`app.go`): in Calendar mode Space is now contextual — if a task is drilled/selected it toggles done, otherwise it toggles the highlighted calendar's visibility (unchanged when no task is selected or on an event). Agenda already checked off the selected task; the month grid already exposed the drilled item via `currentTarget`, so it just needed the Space routing.
+- **Week/day tasks are now selectable** (`timegridview.go`): the time-grid drill was `Occurrence`-based (events only), so tasks weren't reachable there. Reworked it onto `model.AgendaItem` — the drill now cycles the day's events **and** due tasks (agenda order), matching the month grid. Added a per-day `items` drill list (`dayItemsForDays`, from `dayItems`), `selectedItem()` (replacing `selectedOcc`), task-marker highlight when selected, and all-day-band highlight for a selected all-day item (event or task). `currentTarget` now resolves the time-grid's drilled item too, so **edit/delete/complete all work on tasks in week/day** as well. This also makes the two grids structurally alike (helps the selection/focus glue noted earlier).
+- **Subtasks created under the selected task in any context** (`edit.go`): dropped the Tasks-mode gate; `subtaskContext` now takes the parent from `currentTarget` (tree, calendar drill, or agenda) and creates the subtask in the **parent's own calendar** (via `store.Locate`) — never the Tasks-overview highlight — since RELATED-TO parent/child must share a collection.
+- Not changed (already correct): top-level task creation targets the selected task list and event creation the selected calendar, from any pane (independent overview selectors); a "both" calendar already appears in both overview panes.
+- Docs: `README.md`, `main.md`, `CLAUDE.md` (Space contextual, week/day task drill, subtask-anywhere). Memory: updated [[create-targets-independent-overviews]] and [[creation-gated-by-component-set]].
+- Tests: `timegridview_test.go` migrated to the AgendaItem drill; `taskcalendar_test.go` — Space checks off a drilled task in the month grid and the week grid, and `subtaskContext` under a calendar-drilled task targets the parent's list. Full gate + `-race` pass.
+
 ## 2026-07-09 — Week/day grid: vertical motion cycles the day's events (counts work)
 
 - Owner review of the count feature: `<count>` repeats motions and `<count>G` jumps to the Nth **list** item, but the week/day time-grid had **no vertical motion** (`j`/`k`/`↑`/`↓` were unbound — only `h`/`l` moved days), so counts were dead there and `j`/`k` felt broken.

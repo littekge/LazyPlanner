@@ -24,12 +24,12 @@ Run `lazyplanner` with no arguments to open the TUI. It reads the local cache (p
 
 - **`i` then `t` / `T`** — add a top-level **task** (quick line / full form) to the selected list.
 - **`i` then `e` / `E`** — add an **event** (quick / full) on the selected/current day.
-- **`i` then `s` / `S`** — add a **subtask** (quick / full) under the highlighted task.
+- **`i` then `s` / `S`** — add a **subtask** (quick / full) under the **selected task** — the tree node in Tasks, or a task you've drilled into in a calendar/agenda view. The subtask is created in the parent task's own list, whatever pane you're in.
 - **`i` then `c` / `l`** — create a **calendar** / **task list**, offline-first (it appears immediately; the server `MKCALENDAR` happens on the next sync).
 - Creation is **locked to the calendar's type**: events can only be added to `[events]` or `[both]` calendars, and tasks/subtasks only to `[tasks]` or `[both]` lists — a wrong-type attempt is refused with a message. A calendar whose type isn't yet confirmed (`[?]`, e.g. imported by another tool and not yet synced) blocks creation until a sync settles it — unless you **force** it with `i!` (e.g. **`i!e`** to add an event, **`i!t`** a task) when you know the calendar is fine. The force only covers the unknown-type case: read-only calendars and a *known* wrong type are never forced.
 - Quick-add parses smart tokens and leaves anything ambiguous in the title: dates (`today`, `tomorrow`, `fri`, `jul 20`, `7/20`, `2026-07-20`), times (`3pm`, `3:30pm`, `15:00` — a bare number stays a number), `!1`–`!9` / `!high` / `!med` / `!low` priority, and `#tag`.
 - **`e`** — full edit form for the selected item. **`s`** quick-sets one task field without the full form: **`sp`** priority (`1`–`9` / `high`/`med`/`low`), **`sd`** due date (smart-parsed; blank clears). **`d`** — delete: the selected item, or the calendar/list when its overview panel is focused (with a confirm; deleting a folder removes its whole subtree).
-- **`Space`** — toggle a task complete/incomplete. A task with unfinished subtasks is a **folder** (`▸`/`▾`) and can't be completed until they are.
+- **`Space`** — toggle a task complete/incomplete. This works on the selected task in **any** view: the tree, the agenda, or a task you've drilled into in the month/week/day calendar (drill with `Enter` or `↑`/`↓`, then `Space`). A task with unfinished subtasks is a **folder** (`▸`/`▾`) and can't be completed until they are. (In a calendar view with no task drilled, `Space` instead hides/shows the highlighted calendar.)
 - **`H` / `L`** — outdent / indent the selected task (re-parent). **`y` / `p`** — yank a task then paste it under another task or list (moves the whole subtree; a cross-list paste moves it to that calendar). **`u`** — undo the last change this session (multi-level).
 
 **Commands, help & layout:**
@@ -58,7 +58,7 @@ Full key list:
 | `e` | Edit selected (full form) |
 | `s` … | Quick-set a task field — `p` priority, `d` due date (blank clears) |
 | `d` | Delete selected item — or the calendar/list when its panel is focused |
-| `Space` | Toggle task done — or hide/show the highlighted calendar (Calendar view) |
+| `Space` | Toggle the selected/drilled task done — or hide/show the highlighted calendar (Calendar view, no task drilled) |
 | `/` · `n` / `N` | Search the current view · next / prev match |
 | `H` / `L` | Outdent / indent task (re-parent) |
 | `y` / `p` | Yank / paste a task — move it (and its subtree) to another parent or list |

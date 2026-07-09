@@ -74,9 +74,10 @@ func TestTimeGridDrillIn(t *testing.T) {
 		dayKey(day): {{Start: ev.Start, End: ev.Start.Add(time.Hour), Event: ev}},
 	}
 	tg.setData([]time.Time{day}, timed, nil, day, day)
+	tg.items = map[string][]model.AgendaItem{dayKey(day): {{Start: ev.Start, Title: ev.Summary, Event: ev}}}
 
 	var got *model.Event
-	tg.onSelectEvent = func(o model.Occurrence) { got = o.Event }
+	tg.onSelectEvent = func(it model.AgendaItem) { got = it.Event }
 	handle := tg.InputHandler()
 
 	handle(tcell.NewEventKey(tcell.KeyEnter, 0, tcell.ModNone), func(tview.Primitive) {})
@@ -107,9 +108,14 @@ func TestTimeGridDrillsAllDayFirst(t *testing.T) {
 		dayKey(day): {{Start: timedEv.Start, End: timedEv.Start.Add(time.Hour), Event: timedEv}},
 	}
 	tg.setData([]time.Time{day}, timed, allday, day, day)
+	// Drill order (DayAgenda): all-day first, then timed.
+	tg.items = map[string][]model.AgendaItem{dayKey(day): {
+		{Start: day, AllDay: true, Title: allEv.Summary, Event: allEv},
+		{Start: timedEv.Start, Title: timedEv.Summary, Event: timedEv},
+	}}
 
 	var got []*model.Event
-	tg.onSelectEvent = func(o model.Occurrence) { got = append(got, o.Event) }
+	tg.onSelectEvent = func(it model.AgendaItem) { got = append(got, it.Event) }
 	handle := tg.InputHandler()
 
 	handle(tcell.NewEventKey(tcell.KeyEnter, 0, tcell.ModNone), func(tview.Primitive) {})
@@ -198,9 +204,13 @@ func TestTimeGridVerticalMotionCyclesEvents(t *testing.T) {
 		{Start: e2.Start, End: e2.Start.Add(time.Hour), Event: e2},
 	}}
 	tg.setData([]time.Time{day}, timed, nil, day, day)
+	tg.items = map[string][]model.AgendaItem{dayKey(day): {
+		{Start: e1.Start, Title: e1.Summary, Event: e1},
+		{Start: e2.Start, Title: e2.Summary, Event: e2},
+	}}
 
 	var got *model.Event
-	tg.onSelectEvent = func(o model.Occurrence) { got = o.Event }
+	tg.onSelectEvent = func(it model.AgendaItem) { got = it.Event }
 	handle := tg.InputHandler()
 	down := tcell.NewEventKey(tcell.KeyDown, 0, tcell.ModNone)
 	up := tcell.NewEventKey(tcell.KeyUp, 0, tcell.ModNone)

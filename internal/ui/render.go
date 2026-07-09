@@ -122,6 +122,7 @@ func (a *app) buildCenterCalendar() {
 	timed, allday := a.splitOccs(days)
 	a.timegrid.setData(days, timed, allday, a.anchor, a.now)
 	a.timegrid.dueTasks = a.dueTasksByDay(days)
+	a.timegrid.items = a.dayItemsForDays(days)
 	a.timegrid.Box.SetTitle(title)
 	a.center.SwitchToPage("time")
 	a.setDayDetail(a.anchor)
@@ -166,6 +167,19 @@ func (a *app) calItems(weeks [][]time.Time) map[string][]model.AgendaItem {
 			if items := model.DayAgenda(model.OccurrencesOn(occs, day), todos, ds, ds.AddDate(0, 0, 1)); len(items) > 0 {
 				m[dayKey(day)] = items
 			}
+		}
+	}
+	return m
+}
+
+// dayItemsForDays builds the per-day drill list for the week/day time-grid: each
+// day's events and due tasks in agenda order (all-day first, then by time), so
+// the grid's drill can select tasks as well as events.
+func (a *app) dayItemsForDays(days []time.Time) map[string][]model.AgendaItem {
+	m := map[string][]model.AgendaItem{}
+	for _, day := range days {
+		if items := a.dayItems(day); len(items) > 0 {
+			m[dayKey(day)] = items
 		}
 	}
 	return m

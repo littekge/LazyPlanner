@@ -78,6 +78,11 @@ func (a *app) currentTarget() (editTarget, bool) {
 				return targetFromItem(items[i]), true
 			}
 		}
+		if a.viewMode != viewMonth {
+			if it := a.timegrid.selectedItem(); it != nil {
+				return targetFromItem(*it), true
+			}
+		}
 	case modeAgenda:
 		items := a.dayItems(model.DayStart(a.now))
 		if i := a.agendaList.GetCurrentItem(); i >= 0 && i < len(items) {
@@ -145,11 +150,8 @@ func (a *app) taskCreateContext() (string, bool) {
 	return calID, true
 }
 
-// addSubtaskQuick (as): quick-add a subtask under the highlighted task.
+// addSubtaskQuick (is): quick-add a subtask under the selected task (in any pane).
 func (a *app) addSubtaskQuick() {
-	if a.mode != modeTasks {
-		return
-	}
 	calID, parentUID, ok := a.subtaskContext()
 	if !ok {
 		return
@@ -157,11 +159,8 @@ func (a *app) addSubtaskQuick() {
 	a.promptInput("New subtask", "Subtask: ", func(text string) { a.createTask(calID, parentUID, text) })
 }
 
-// addSubtaskFull (aS): full create form for a subtask under the highlighted task.
+// addSubtaskFull (iS): full create form for a subtask under the selected task.
 func (a *app) addSubtaskFull() {
-	if a.mode != modeTasks {
-		return
-	}
 	calID, parentUID, ok := a.subtaskContext()
 	if !ok {
 		return
@@ -186,27 +185,25 @@ func (a *app) eventCreateContext() (calID string, base time.Time, ok bool) {
 	return calID, base, true
 }
 
-// subtaskContext resolves the target list and the highlighted task as parent.
+// subtaskContext resolves the parent for a new subtask: the selected task in any
+// pane (tree, calendar drill, or agenda). The subtask is created in the parent's
+// own calendar — never the Tasks-overview highlight — since RELATED-TO parent and
+// child must live in the same collection.
 func (a *app) subtaskContext() (calID, parentUID string, ok bool) {
-	calID = a.selectedTasklistID()
-	if calID == "" {
-		a.flash("No task list selected")
-		return "", "", false
-	}
-	if !a.guardWrite(calID) || !a.guardComponent(calID, compTodo) {
-		return "", "", false
-	}
-	node := a.tree.GetCurrentNode()
-	if node == nil {
+	t, targeted := a.currentTarget()
+	if !targeted || !t.isTodo {
 		a.flash("Select a task to add a subtask under")
 		return "", "", false
 	}
-	t, isTodo := node.GetReference().(*model.Todo)
-	if !isTodo {
-		a.flash("Select a task to add a subtask under")
+	loc, found := a.store.Locate(t.uid)
+	if !found {
+		a.flash("Task not found")
 		return "", "", false
 	}
-	return calID, t.UID, true
+	if !a.guardWrite(loc.CalID) {
+		return "", "", false
+	}
+	return loc.CalID, t.uid, true
 }
 
 // createTask parses a quick-add line and writes a new task under parentUID.

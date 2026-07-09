@@ -327,7 +327,7 @@ func (a *app) build() {
 	a.month.onSelectEvent = func(it model.AgendaItem) { a.setAgendaItemDetail(it) }
 	a.month.onExit = func() { a.setFocus(a.calendars) }
 	a.timegrid.onSelectDay = a.onCalDay
-	a.timegrid.onSelectEvent = func(o model.Occurrence) { a.setEventDetail(o.Event) }
+	a.timegrid.onSelectEvent = func(it model.AgendaItem) { a.setAgendaItemDetail(it) }
 	a.timegrid.onExit = func() { a.setFocus(a.calendars) }
 
 	// Color items by their calendar's (synced) color, falling back to the default
@@ -589,10 +589,15 @@ func (a *app) globalKeys(ev *tcell.EventKey) *tcell.EventKey {
 			a.deleteContextual()
 			return nil
 		case ' ':
-			// In Calendar mode Space toggles the highlighted calendar's visibility;
-			// elsewhere it toggles a task's done state.
+			// In Calendar mode Space checks off the drilled task if one is selected;
+			// otherwise (navigating days, or on an event) it toggles the highlighted
+			// calendar's visibility. Elsewhere it toggles the selected task.
 			if a.mode == modeCalendar {
-				a.toggleCalendarVisibility()
+				if t, ok := a.currentTarget(); ok && t.isTodo {
+					a.toggleComplete()
+				} else {
+					a.toggleCalendarVisibility()
+				}
 			} else {
 				a.toggleComplete()
 			}
