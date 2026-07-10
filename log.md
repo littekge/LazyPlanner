@@ -4,6 +4,12 @@
 
 ---
 
+## 2026-07-10 — Audit item 8: cancellable sync context (clean shutdown)
+
+- Owner decision: honor the "all network I/O is cancellable" architecture rule at the one spot that didn't — the sync caller. (Data was already safe either way via atomic writes + ETag reconciliation; this is about a clean unwind vs a detach/hard-kill on quit.)
+- **Fix** (`internal/ui/app.go`, `sync.go`): the app now holds `ctx`/`cancel` (`context.WithCancel`, created in `newApp`); `Run` defers `a.cancel()` so quitting cancels it. `triggerSync` passes `a.ctx` instead of `context.Background()`, so an in-flight background sync unwinds at its next `ctx.Err()` checkpoint (the sync/caldav stack already threads ctx everywhere).
+- Tests (`sync_test.go`): `TestSyncUsesCancellableContext` — the sync receives a live context and `a.cancel()` cancels it. Full gate + `-race` pass.
+
 ## 2026-07-10 — Audit item 7: surface :config reload errors + validate appearance enums
 
 - **7a — reload connection errors reach the UI** (`cmd/lazyplanner/main.go`, `ui.ConfigReload`, `command.go`): `buildSyncFn` now returns `(closure, warning)` instead of printing to stderr; on a `:config` reload the warning (e.g. "password_command failed (offline)") is carried in `ConfigReload.Warning` and flashed in the status bar, so a reload that dropped to offline isn't lost behind the suspended TUI. Startup still prints the warning to stderr.

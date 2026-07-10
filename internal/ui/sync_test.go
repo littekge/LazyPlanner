@@ -86,3 +86,25 @@ func TestTriggerSyncNotConfigured(t *testing.T) {
 		t.Error("syncing flag set despite no sync function")
 	}
 }
+
+// TestSyncUsesCancellableContext: triggerSync passes the app's cancellable
+// context, and cancelling the app cancels the in-flight sync's context.
+func TestSyncUsesCancellableContext(t *testing.T) {
+	a := newTestApp(t, time.Date(2026, 7, 5, 12, 0, 0, 0, time.UTC))
+	got := make(chan context.Context, 1)
+	a.syncFn = func(ctx context.Context) (sync.SyncResult, error) {
+		got <- ctx
+		return sync.SyncResult{}, nil
+	}
+	a.triggerSync()
+	ctx := <-got
+	if ctx.Err() != nil {
+		t.Fatal("sync context already cancelled before quit")
+	}
+	a.cancel() // simulate quit
+	select {
+	case <-ctx.Done():
+	case <-time.After(time.Second):
+		t.Error("app cancel() did not cancel the sync's context")
+	}
+}

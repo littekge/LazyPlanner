@@ -122,6 +122,12 @@ type app struct {
 	stickyDone      map[string]bool     // tasks completed while hidden, kept visible until the list is left
 	focusStack      []focusState        // pre-modal focus states, one per open modal (supports nesting, e.g. a color picker over the calendar form)
 
+	// ctx is cancelled on shutdown so an in-flight background sync unwinds cleanly
+	// at its next ctx checkpoint (the sync/caldav stack honors it) rather than
+	// being detached or hard-killed on quit.
+	ctx    context.Context
+	cancel context.CancelFunc
+
 	// Sync (wired in step 9). syncFn is nil when no server is configured.
 	syncFn      func(context.Context) (sync.SyncResult, error)
 	editConfig  func() (ConfigReload, error)
@@ -245,6 +251,7 @@ type ConfigReload struct {
 // Run builds the TUI and blocks until quit.
 func Run(opts Options) error {
 	a := newApp(opts.Store, opts.Title, time.Now())
+	defer a.cancel() // on quit, unwind any in-flight background sync cleanly
 	a.syncFn = opts.Sync
 	a.saveState = opts.SaveState
 	a.editConfig = opts.EditConfig
@@ -291,7 +298,7 @@ func Run(opts Options) error {
 // fixed clock.
 func newApp(s *store.Store, title string, now time.Time) *app {
 	useTerminalTheme() // configure tview globals before any widget is created
-	return &app{
+	a := &app{
 		tv:              tview.NewApplication(),
 		store:           s,
 		title:           title,
@@ -321,6 +328,8 @@ func newApp(s *store.Store, title string, now time.Time) *app {
 		stickyDone:      map[string]bool{},
 		hidden:          map[string]bool{},
 	}
+	a.ctx, a.cancel = context.WithCancel(context.Background())
+	return a
 }
 
 func (a *app) build() {

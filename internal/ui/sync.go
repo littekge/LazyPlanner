@@ -1,7 +1,6 @@
 package ui
 
 import (
-	"context"
 	"fmt"
 	"time"
 
@@ -24,7 +23,7 @@ func (a *app) triggerSync() {
 	a.renderSyncStatus()
 
 	go func() {
-		res, err := a.syncFn(context.Background())
+		res, err := a.syncFn(a.ctx)
 		a.tv.QueueUpdateDraw(func() {
 			a.syncing = false
 			a.lastSyncErr = err
