@@ -4,6 +4,12 @@
 
 ---
 
+## 2026-07-10 — Audit item 3: one calendar's failure no longer aborts the whole sync
+
+- Owner decision: a per-calendar download/REPORT failure should be recorded and skipped, not abort the entire sync — so a flaky calendar can't block healthy ones (with pending edits) from syncing.
+- **Fix** (`internal/sync/sync.go`): the discovery loop now `recordSkip`s a failed `reconcileCalendar` and continues to the next calendar, instead of returning the error. A cancelled context still aborts the whole run (checked before skipping). `res.Calendars` counts only successfully-reconciled calendars.
+- Tests (`sync_test.go`): fake gained a `failDownload` hook; `TestSyncSkipsFailedCalendarContinuesRest` puts the failing calendar first and asserts the healthy one still pushes its edit and the failure lands in `res.Skipped`. Full gate + `-race` pass.
+
 ## 2026-07-10 — Audit item 2: cross-list task move rolls back on partial failure
 
 - Owner decision: make the cross-list yank/paste move **all-or-nothing**. Previously `moveSubtree` did Put(target)+Delete(source) per node and only recorded undo after the whole loop, so a mid-loop failure could leave nodes moved with no undo (or a node duplicated in both lists).

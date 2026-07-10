@@ -3,6 +3,7 @@ package sync_test
 import (
 	"bytes"
 	"context"
+	"errors"
 	"fmt"
 	"strings"
 	"testing"
@@ -55,20 +56,21 @@ func mkICal(t *testing.T, ics string) *ical.Calendar {
 // and DeleteObject mutate its state (so idempotency and round-trips can be
 // checked), and failPut/failDel inject conditional-write failures.
 type fakeServer struct {
-	cals        []caldav.Calendar
-	data        map[string]caldav.Object // href -> object
-	puts        int
-	deletes     int
-	failPut     map[string]error
-	failDel     map[string]error
-	writable    map[string]bool  // path -> writable (missing = writable); the 403 re-check
-	writableErr map[string]error // path -> error from the writability re-check
-	seq         int
-	homeSet     string
-	created     []caldav.CalendarSpec // MKCALENDAR calls, by path order
-	createdPath []string
-	deletedCals []string      // DeleteCalendar paths
-	propPatched []propPatchOp // PROPPATCH calls
+	cals         []caldav.Calendar
+	data         map[string]caldav.Object // href -> object
+	puts         int
+	deletes      int
+	failPut      map[string]error
+	failDel      map[string]error
+	failDownload map[string]error // calendar path -> DownloadAll error
+	writable     map[string]bool  // path -> writable (missing = writable); the 403 re-check
+	writableErr  map[string]error // path -> error from the writability re-check
+	seq          int
+	homeSet      string
+	created      []caldav.CalendarSpec // MKCALENDAR calls, by path order
+	createdPath  []string
+	deletedCals  []string      // DeleteCalendar paths
+	propPatched  []propPatchOp // PROPPATCH calls
 }
 
 type propPatchOp struct {
@@ -77,13 +79,14 @@ type propPatchOp struct {
 
 func newFakeServer() *fakeServer {
 	return &fakeServer{
-		cals:    []caldav.Calendar{{Path: calPath, Name: "Personal"}},
-		data:        map[string]caldav.Object{},
-		failPut:     map[string]error{},
-		failDel:     map[string]error{},
-		writable:    map[string]bool{},
-		writableErr: map[string]error{},
-		homeSet:     "/dav/cal/",
+		cals:         []caldav.Calendar{{Path: calPath, Name: "Personal"}},
+		data:         map[string]caldav.Object{},
+		failPut:      map[string]error{},
+		failDel:      map[string]error{},
+		failDownload: map[string]error{},
+		writable:     map[string]bool{},
+		writableErr:  map[string]error{},
+		homeSet:      "/dav/cal/",
 	}
 }
 
@@ -141,6 +144,9 @@ func (f *fakeServer) DiscoverCalendars(context.Context) ([]caldav.Calendar, erro
 }
 
 func (f *fakeServer) DownloadAll(_ context.Context, p string) ([]caldav.Object, error) {
+	if err := f.failDownload[p]; err != nil {
+		return nil, err
+	}
 	var out []caldav.Object
 	for href, o := range f.data {
 		if strings.HasPrefix(href, p) {
@@ -824,5 +830,39 @@ func TestSyncRecordsComponentSet(t *testing.T) {
 	}
 	if len(cal.Components) != 1 || cal.Components[0] != "VTODO" {
 		t.Errorf("Components = %v, want [VTODO] (so an empty task list is recognizable)", cal.Components)
+	}
+}
+
+// TestSyncSkipsFailedCalendarContinuesRest: a calendar whose download fails is
+// recorded as a skip and doesn't block the others — a healthy calendar listed
+// after it still syncs (its pending local edit is pushed).
+func TestSyncSkipsFailedCalendarContinuesRest(t *testing.T) {
+	ctx := context.Background()
+	st := newStore(t)
+	srv := newFakeServer()
+
+	// Two calendars, the failing one FIRST so we prove it doesn't block Personal.
+	const badPath = "/dav/cal/work/"
+	srv.cals = []caldav.Calendar{
+		{Path: badPath, Name: "Work"},
+		{Path: calPath, Name: "Personal"},
+	}
+	srv.failDownload[badPath] = errors.New("REPORT 500")
+
+	// A pending local edit in the healthy Personal calendar.
+	name := store.ResourceName("e1@test")
+	if _, err := st.Put(ctx, "personal", name, mkParsed(t, eventICS("e1@test", "Local"))); err != nil {
+		t.Fatal(err)
+	}
+
+	res, err := sync.Sync(ctx, srv, st)
+	if err != nil {
+		t.Fatalf("Sync should not abort on one calendar's failure: %v", err)
+	}
+	if res.Pushed != 1 {
+		t.Errorf("Pushed = %d, want 1 (Personal synced despite Work failing first)", res.Pushed)
+	}
+	if len(res.Skipped) == 0 {
+		t.Error("the failed calendar should be recorded in Skipped")
 	}
 }

@@ -135,7 +135,14 @@ func Sync(ctx context.Context, client Syncer, st *store.Store) (SyncResult, erro
 		}
 
 		if err := reconcileCalendar(ctx, client, st, localID, sc, &res); err != nil {
-			return res, err
+			// One calendar's failure (e.g. its download/REPORT) shouldn't block the
+			// rest — record it and move on, so healthy calendars still sync. A
+			// cancelled context aborts the whole run, though.
+			if ctx.Err() != nil {
+				return res, err
+			}
+			recordSkip(&res, localID, "(calendar)", err)
+			continue
 		}
 		res.Calendars++
 	}
