@@ -508,6 +508,14 @@ func treeNodeContext(root, target *tview.TreeNode) (parent *tview.TreeNode, idx 
 func (a *app) editSelected() {
 	t, ok := a.currentTarget()
 	if !ok {
+		// In Calendar mode with no item drilled, `e` edits the highlighted
+		// calendar (its name + color) in the calendar form.
+		if a.mode == modeCalendar {
+			if id := a.currentCalendarID(); id != "" {
+				a.showCalendarForm(id, 0)
+				return
+			}
+		}
 		a.flash("Nothing selected to edit")
 		return
 	}
@@ -932,18 +940,26 @@ func (a *app) closeModal(name string) {
 // captureFocus records the focused primitive (and any calendar drill-in state)
 // before a modal opens.
 func (a *app) captureFocus() {
-	a.savedFocus = focusState{prim: a.tv.GetFocus()}
+	fs := focusState{prim: a.tv.GetFocus()}
 	if a.mode == modeCalendar {
 		if g, ok := a.calendarPrimitive().(calGrid); ok {
-			a.savedFocus.calDay, a.savedFocus.calEvent, a.savedFocus.calIndex = g.drillState()
+			fs.calDay, fs.calEvent, fs.calIndex = g.drillState()
 		}
 	}
+	a.focusStack = append(a.focusStack, fs)
 }
 
-// restoreFocus returns focus to where it was before the modal, re-entering the
-// calendar's event-cycling on the same day when that's where the user was.
+// restoreFocus returns focus to where it was before the most recent modal
+// opened (popping the focus stack so nested modals unwind correctly),
+// re-entering the calendar's event-cycling on the same day when that's where the
+// user was.
 func (a *app) restoreFocus() {
-	fs := a.savedFocus
+	if len(a.focusStack) == 0 {
+		a.setFocus(a.focusForMode())
+		return
+	}
+	fs := a.focusStack[len(a.focusStack)-1]
+	a.focusStack = a.focusStack[:len(a.focusStack)-1]
 	if fs.prim == nil {
 		a.setFocus(a.focusForMode())
 		return

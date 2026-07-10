@@ -5,6 +5,8 @@ import (
 	"fmt"
 	"strings"
 
+	"github.com/rivo/tview"
+
 	"github.com/littekge/LazyPlanner/internal/store"
 )
 
@@ -84,26 +86,85 @@ func (a *app) guardComponent(calID, want string) bool {
 	return false
 }
 
-// createCollection (ac/al) opens a form to create a calendar or task list
-// locally, offline-first: the collection appears immediately and the server
-// MKCALENDAR happens on the next sync. defaultType preselects the Type dropdown
-// (index into collectionTypes: 0 event calendar, 1 task list).
-func (a *app) createCollection(defaultType int) {
+// showCalendarForm opens the create/edit form for a calendar or task list,
+// offline-first (the collection appears immediately; the server MKCALENDAR /
+// PROPPATCH happens on the next sync). editID is "" to create — the Type dropdown
+// shows and defaultType preselects it (0 event calendar, 1 task list) — or names
+// an existing calendar to edit, where the type is fixed and only Name and Color
+// change. Color is a hex field with a "Pick color…" button that opens the swatch
+// grid; the chosen color is set at creation (so a new calendar is colored from
+// the start, carried in its MKCALENDAR — not left default).
+func (a *app) showCalendarForm(editID string, defaultType int) {
+	editing := editID != ""
+	var cur store.Calendar
+	if editing {
+		c, ok := a.store.Calendar(editID)
+		if !ok {
+			a.flash("Calendar not found")
+			return
+		}
+		if !a.guardWrite(editID) {
+			return
+		}
+		cur = c
+	}
+
 	f := newCaretForm()
-	nameField := f.addInput("Name", "", 0)
-	typeField := f.addDropDown("Type", collectionTypes, defaultType)
+	nameField := f.addInput("Name", cur.DisplayName, 0)
+	var typeField *tview.DropDown
+	if !editing {
+		typeField = f.addDropDown("Type", collectionTypes, defaultType)
+	}
+	// A new calendar is pre-seeded with the default color (so it always has one);
+	// editing shows the existing color.
+	initialColor := cur.Color
+	if !editing {
+		initialColor = defaultCalendarColor
+	}
+	colorField := f.addInput("Color", initialColor, 0) // #rrggbb; blank on create = default, on edit = unchanged
 	f.stylePopup()
 
-	f.AddButton("Create", func() {
+	// Pick color… opens the swatch grid over the form (nested modal); the pick is
+	// written back into the Color field, so the form owns the value on submit.
+	f.AddButton("Pick color…", func() {
+		a.openColorPickerCallback(strings.TrimSpace(colorField.GetText()), " Pick a color ", func(hex string) {
+			colorField.SetText(hex)
+		})
+	})
+
+	submit := "Create"
+	if editing {
+		submit = "Save"
+	}
+	f.AddButton(submit, func() {
 		name := strings.TrimSpace(nameField.GetText())
 		if name == "" {
 			a.flash("A name is required")
 			return
 		}
-		_, typeLabel := typeField.GetCurrentOption()
-		id := store.SafeName(name)
-		err := a.store.CreateCalendarLocal(context.Background(), id, store.CalendarMeta{DisplayName: name}, componentsForType(typeLabel))
-		if err != nil {
+		color := strings.TrimSpace(colorField.GetText())
+		if color != "" {
+			c, ok := normalizeColor(color)
+			if !ok {
+				a.flash("Invalid color — use #rrggbb (or leave blank)")
+				return
+			}
+			color = c
+		}
+		if editing {
+			if err := a.store.UpdateCalendarMeta(context.Background(), editID, name, color); err != nil {
+				a.flash(err.Error())
+				return
+			}
+			a.buildCalendars()
+			a.buildTasklists()
+			a.reloadCurrent()
+			a.closeModal(pageForm)
+			a.flash("Saved — pushes on next sync")
+			return
+		}
+		typeIdx, _ := typeField.GetCurrentOption()
+		if err := a.createCalendarWithColor(name, typeIdx, color); err != nil {
 			a.flash("Create failed: " + err.Error())
 			return
 		}
@@ -113,8 +174,89 @@ func (a *app) createCollection(defaultType int) {
 	})
 	f.AddButton("Cancel", func() { a.closeModal(pageForm) })
 	f.SetCancelFunc(func() { a.closeModal(pageForm) })
-	f.SetBorder(true).SetTitle(" New calendar / list ")
-	a.openModal(pageForm, f, 62, 11)
+
+	title, height := " New calendar / list ", 13
+	if editing {
+		title, height = " Edit "+cur.DisplayName+" ", 11
+	}
+	f.SetBorder(true).SetTitle(title)
+	a.openModal(pageForm, f, 62, height)
+}
+
+// createCalendarWithColor creates a calendar/list locally with the chosen color
+// (offline-first; the server MKCALENDAR carries the color on the next sync).
+// typeIdx indexes collectionTypes. Extracted from the form's Create action so
+// the create-with-color path is unit-testable without driving the tview form.
+func (a *app) createCalendarWithColor(name string, typeIdx int, color string) error {
+	if typeIdx < 0 || typeIdx >= len(collectionTypes) {
+		typeIdx = 0
+	}
+	if color == "" {
+		color = defaultCalendarColor // every created collection always has a color
+	}
+	id := store.SafeName(name)
+	return a.store.CreateCalendarLocal(context.Background(), id,
+		store.CalendarMeta{DisplayName: name, Color: color}, componentsForType(collectionTypes[typeIdx]))
+}
+
+// openColorPickerCallback shows the swatch grid seeded with current (a hex, or ""
+// for none) and calls onPick with the chosen preset or a custom hex. Cancelling
+// leaves the caller's value untouched. Reused by the calendar form and the
+// direct `:calendar color` recolor.
+func (a *app) openColorPickerCallback(current, title string, onPick func(hex string)) {
+	p := newColorPicker()
+	p.preselect(current)
+	p.SetTitle(title)
+	p.onSelect = func(hex string) {
+		a.closeModal(pageColor)
+		onPick(hex)
+	}
+	p.onCustom = func() {
+		a.closeModal(pageColor)
+		a.promptInput("Custom color (#rrggbb, blank cancels)", "Color: ", func(text string) {
+			if strings.TrimSpace(text) == "" {
+				return
+			}
+			hex, ok := normalizeColor(text)
+			if !ok {
+				a.flash("Invalid color — use #rrggbb")
+				return
+			}
+			onPick(hex)
+		})
+	}
+	p.onCancel = func() { a.closeModal(pageColor) }
+	a.openModal(pageColor, p, 40, 12)
+}
+
+// openColorPicker recolors an existing calendar directly (from `:calendar color`
+// with no hex): the swatch grid applied via applyCalendarColor.
+func (a *app) openColorPicker(calID string) {
+	cal, ok := a.store.Calendar(calID)
+	if !ok {
+		a.flash("Calendar not found")
+		return
+	}
+	if !a.guardWrite(calID) {
+		return
+	}
+	a.openColorPickerCallback(cal.Color, " Color · "+cal.DisplayName+" ", func(hex string) {
+		a.applyCalendarColor(calID, hex)
+	})
+}
+
+// applyCalendarColor sets a calendar's color offline-first (pushed as a CalDAV
+// PROPPATCH on the next sync). Shared by the color picker and `:calendar color`.
+func (a *app) applyCalendarColor(calID, hex string) {
+	if !a.guardWrite(calID) {
+		return
+	}
+	if err := a.store.UpdateCalendarMeta(context.Background(), calID, "", hex); err != nil {
+		a.flash(err.Error())
+		return
+	}
+	a.buildCalendars()
+	a.flash("Color set (pushes on next sync)")
 }
 
 // deleteCollection (D) deletes the highlighted calendar (Calendars) or task list

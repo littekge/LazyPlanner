@@ -196,21 +196,17 @@ func (a *app) cmdCalendar(args string) {
 		a.echo(":calendar rename")
 		a.flash("Renamed (pushes on next sync)")
 	case "color":
+		a.echo(":calendar color")
+		if rest == "" {
+			a.openColorPicker(id) // no hex → the swatch picker
+			return
+		}
 		c, ok := normalizeColor(rest)
 		if !ok {
 			a.flash("calendar color <#rrggbb>")
 			return
 		}
-		if !a.guardWrite(id) {
-			return
-		}
-		if err := a.store.UpdateCalendarMeta(context.Background(), id, "", c); err != nil {
-			a.flash(err.Error())
-			return
-		}
-		a.buildCalendars()
-		a.echo(":calendar color")
-		a.flash("Color set (pushes on next sync)")
+		a.applyCalendarColor(id, c)
 	case "hide":
 		a.hidden[id] = true
 		a.afterVisibilityChange()

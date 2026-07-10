@@ -54,6 +54,7 @@ const (
 	pageForm     = "modal-form"
 	pageConfirm  = "modal-confirm"
 	pageWhichKey = "which-key"
+	pageColor    = "modal-color"
 )
 
 type bordered struct {
@@ -116,7 +117,7 @@ type app struct {
 	treeListID      string              // calendar id the tree currently shows (to detect list changes)
 	suspendTree     bool                // ignore tasklist change events while the panel is rebuilt
 	stickyDone      map[string]bool     // tasks completed while hidden, kept visible until the list is left
-	savedFocus      focusState          // where focus was before a modal opened, to restore on close
+	focusStack      []focusState        // pre-modal focus states, one per open modal (supports nesting, e.g. a color picker over the calendar form)
 
 	// Sync (wired in step 9). syncFn is nil when no server is configured.
 	syncFn      func(context.Context) (sync.SyncResult, error)

@@ -4,6 +4,36 @@
 
 ---
 
+## 2026-07-10 — Color-path audit: RGB-based swatch matching (alpha/case-insensitive)
+
+- Pre-commit sweep of the coloring behaviors for undefined edges. Findings were sound (new calendars render their color via `refresh`; `normalizeColor` matches `model.ParseHexColor`'s accepted forms; read-only calendars are guarded on every color path; blank-on-edit = unchanged) — except one.
+- **Fix** (`internal/ui/colorpicker.go`, `calendar.go`): the picker matched the calendar's current color to a swatch with `strings.EqualFold`, so a server color carrying an **alpha suffix** (NextCloud stores `#RRGGBBFF`) — or a different case / missing `#` — failed to preselect the swatch or draw the `✓`, silently landing on "Custom". Added `sameColor` (compares parsed RGB, ignoring alpha/case/`#`) and a `colorPicker.preselect` method used by both the opener and the `✓` render.
+- Tests (`colorpicker_test.go`): `TestSameColor` (case/`#`/alpha variants), `TestColorPickerPreselect` (alpha color → swatch 6, non-palette → Custom, empty → first). Full gate + `-race` pass.
+
+## 2026-07-10 — Created calendars default to a palette color (never colorless)
+
+- Owner report: creating a calendar/list without picking a color left it colorless (app default). It should always get a color.
+- **Fix** (`internal/ui/colorpicker.go`, `calendar.go`): new `defaultCalendarColor = "#0082c9"` (NextCloud blue, a palette swatch). The create form's Color field is pre-seeded with it (so it's visible and the picker preselects it), and `createCalendarWithColor` falls back to it when the field is blank — so every created collection always has a color. Edit is unaffected (blank there still means "leave unchanged").
+- Docs: `main.md`, `README.md`, `CLAUDE.md`.
+- Tests (`colorpicker_test.go`): `TestCalendarCreateDefaultsColor` — creating with an empty color yields `defaultCalendarColor`. Full gate + `go test -race ./internal/ui` pass.
+
+## 2026-07-10 — Color built into the calendar create/edit form (fixes colorless new calendars)
+
+- Owner report + request: creating a calendar/list **never assigned a color** (it showed the default until manually recolored in NextCloud), and the color picker should be **part of the create/edit GUI** rather than a chained step. Root cause: `createCollection` called `CreateCalendarLocal` with `CalendarMeta{DisplayName: name}` — no color — so a new calendar (and its MKCALENDAR) carried none.
+- **Unified form** (`internal/ui/calendar.go`): replaced `createCollection` with `showCalendarForm(editID, defaultType)` — one form for create *and* edit. Fields: Name, Type (create only; a calendar's component set can't change on the server), and a **Color** hex field with a **"Pick color…"** button that opens the swatch grid; the pick is written back into the field (which also accepts a typed hex). Create passes the color to `CreateCalendarLocal` (new `createCalendarWithColor` seam), so it's set from the start and carried in the MKCALENDAR; Save uses `UpdateCalendarMeta(name, color)`. `e` on the Calendars pane now opens this edit form (was: the bare picker).
+- **Nested modals** (`internal/ui/edit.go`, `app.go`): the picker opens *over* the form, so modal focus save/restore became a **stack** (`focusStack []focusState`, push in `captureFocus` / pop in `restoreFocus`) instead of a single slot — backward-compatible for the existing single-level modals, and it lets form→picker→custom-hex-prompt nest and unwind cleanly.
+- **Picker opener** refactored into `openColorPickerCallback(current, title, onPick)` (shared by the form's Pick button and the direct `:calendar color` recolor); `openColorPicker(calID)` now wraps it with `applyCalendarColor`. `:calendar color` no-arg still opens the picker; with a hex still sets directly.
+- Docs: help overlay, `main.md` (Color section + `e` row), `CLAUDE.md`, `README.md`.
+- Tests (`colorpicker_test.go`): `TestCalendarFormCreatesWithColor` (create seam stores the color + PendingCreate), `TestFocusStackNesting` (push/pop balance, extra pop is safe), `TestEditOnCalendarsPaneOpensForm` (was OpensPicker). Verified headlessly: the create form renders Name/Type/Color + Pick color…/Create/Cancel, and a nested picker-over-form opens both pages then unwinds leaving the form intact. Full gate (`build`/`vet`/`staticcheck`) + `go test -race ./internal/ui` pass.
+
+## 2026-07-10 — Swatch-grid color picker for calendars (create + edit)
+
+- Owner request: pick a calendar color in the UI instead of typing a hex. Chosen (via Q&A): a **swatch-grid picker** with a "Custom hex…" escape hatch, reachable when creating a calendar, from `e` on the Calendars pane, and from `:calendar color` with no hex.
+- **Picker widget** (`internal/ui/colorpicker.go`): a custom tview `Box` primitive drawing `calendarPalette` (a 15-color NextCloud-like preset set, incl. NextCloud blue `#0082c9`) as a 5×3 grid of color-filled cells, a trailing "Custom hex…" entry, and a "current: #…" hint. Cursor is accent brackets around the selected swatch; the calendar's current color is marked with a contrasting `✓`. `hjkl`/arrows move (grid + drop-to/return-from Custom), `Enter` selects, `Esc` cancels — via `onSelect`/`onCustom`/`onCancel` callbacks.
+- **Wiring** (`internal/ui/calendar.go`): `openColorPicker(calID)` preselects the current color (or the first swatch for a new calendar), applies a pick via `applyCalendarColor` (offline-first `UpdateCalendarMeta`, pushed as PROPPATCH on next sync — same path as `:calendar color`), and routes "Custom hex…" to `promptInput` + `normalizeColor`. It's a **standalone modal** (never nested — `openModal` uses a single saved-focus), so `createCollection` chains into it after the name/type form, and `editSelected` opens it when `e` is pressed on the Calendars pane with no item drilled. `cmdCalendar` "color" opens the picker with no arg and sets directly with a hex (backward compatible), sharing `applyCalendarColor`.
+- Docs: help overlay (`e` + `:calendar`), `main.md` (Creation/Color section, `e` keymap row, `:calendar` command), `CLAUDE.md`, `README.md`.
+- Tests (`colorpicker_test.go`): picker navigation (grid clamps, drop-to/return-from Custom), select/custom/cancel callbacks, `applyCalendarColor` sets the stored color, `e` on the Calendars pane opens the picker, and `:calendar color` routes (hex sets directly, no-arg opens the picker). Verified the render visually (5×3 grid, cursor brackets, `✓` on the current color, Custom entry). Full gate (`build`/`vet`/`staticcheck`) + `go test -race ./internal/ui` pass.
+
 ## 2026-07-10 — `:config` reload now applies color_mode live
 
 - Follow-up to the truecolor change: `:config` (edit in `$EDITOR`, reload on exit) previously re-applied only the `[server]` connection; a `color_mode` change needed a full restart. Now it applies live.

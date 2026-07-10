@@ -35,8 +35,8 @@ var chords = map[rune][]chordEntry{
 		{'E', "event (form)", (*app).addEventFull},
 		{'s', "subtask", (*app).addSubtaskQuick},
 		{'S', "subtask (form)", (*app).addSubtaskFull},
-		{'c', "calendar", func(a *app) { a.createCollection(0) }},
-		{'l', "list", func(a *app) { a.createCollection(1) }},
+		{'c', "calendar", func(a *app) { a.showCalendarForm("", 0) }},
+		{'l', "list", func(a *app) { a.showCalendarForm("", 1) }},
 	},
 	'g': {
 		{'g', "top", (*app).gotoTop},

@@ -35,7 +35,7 @@ var helpSections = []struct {
 		{"i ! e / i ! t", "force-create on an unknown-type [?] calendar"},
 	}},
 	{"Edit & organize", [][2]string{
-		{"e", "edit selected (full form)"},
+		{"e", "edit selected (full form); on the Calendars pane, edit the calendar (name + color)"},
 		{"s p / s d", "quick-set task priority / due date"},
 		{"d", "delete (item, or calendar/list when its panel is focused)"},
 		{"Space", "toggle task done (hide/show calendar in Calendar view)"},
@@ -60,7 +60,7 @@ var helpSections = []struct {
 		{"r", "sync now (= :sync)"},
 		{": ", "cmd — :sync :view :goto :search :config :calendar :conflicts :q"},
 		{":config", "edit config in $EDITOR, reload on exit"},
-		{":calendar", "rename / color / hide / show the current calendar"},
+		{":calendar", "rename / color / hide / show the current calendar (`color` with no hex opens the swatch picker)"},
 		{":conflicts", "resolve items that changed on both sides"},
 		{"?", "this help"},
 	}},
