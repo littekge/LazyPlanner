@@ -122,6 +122,10 @@ func (a *app) applyConfigReload(res ConfigReload, err error) {
 			a.calendars.SetCurrentItem(calIdx)
 		}
 	}
+	if res.Warning != "" {
+		a.flash("config: " + res.Warning)
+		return
+	}
 	a.flash("config reloaded")
 }
 

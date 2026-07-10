@@ -111,14 +111,40 @@ func Load() (cfg Config, configured bool, warning string, err error) {
 		return Config{}, false, "", fmt.Errorf("stat config %q: %w", path, statErr)
 	}
 
+	var warns []string
 	if w := permissionWarning(path, info.Mode()); w != "" {
-		warning = w
+		warns = append(warns, w)
 	}
 
 	if _, err := toml.DecodeFile(path, &cfg); err != nil {
-		return Config{}, false, warning, fmt.Errorf("parsing config %q: %w", path, err)
+		return Config{}, false, strings.Join(warns, "; "), fmt.Errorf("parsing config %q: %w", path, err)
 	}
-	return cfg, true, warning, nil
+	warns = append(warns, appearanceWarnings(cfg.Appearance)...)
+	return cfg, true, strings.Join(warns, "; "), nil
+}
+
+// appearanceWarnings flags unknown [appearance] enum values (a typo like
+// default_view="wek"). An unknown value is non-fatal — it falls back to the
+// default — but naming it makes the mistake visible instead of silent.
+func appearanceWarnings(a Appearance) []string {
+	var w []string
+	check := func(field, val string, allowed ...string) {
+		if val == "" {
+			return
+		}
+		for _, ok := range allowed {
+			if val == ok {
+				return
+			}
+		}
+		w = append(w, fmt.Sprintf("%s %q is unknown; using the default", field, val))
+	}
+	check("first_day_of_week", a.FirstDayOfWeek, "monday", "sunday")
+	check("default_view", a.DefaultView, "month", "week", "day")
+	check("time_format", a.TimeFormat, "12h", "24h")
+	check("date_format", a.DateFormat, "us", "iso")
+	check("color_mode", a.ColorMode, "auto", "truecolor", "16", "off")
+	return w
 }
 
 // permissionWarning returns a warning if the config file is readable by group or

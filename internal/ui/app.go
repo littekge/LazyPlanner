@@ -237,6 +237,9 @@ type ConfigReload struct {
 	Sync func(context.Context) (sync.SyncResult, error)
 	// ColorMode is the reloaded [appearance] color_mode ("auto"/"16"/"off"/…).
 	ColorMode string
+	// Warning, when set, explains why the reloaded connection is offline (e.g. a
+	// failed password_command); the UI flashes it so it isn't lost to stderr.
+	Warning string
 }
 
 // Run builds the TUI and blocks until quit.

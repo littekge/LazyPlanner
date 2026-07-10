@@ -107,11 +107,16 @@ func runTUI() error {
 		_ = os.Setenv("COLORTERM", "truecolor")
 	}
 
+	syncFn, syncWarn := buildSyncFn(cfg.Server, s)
+	if syncWarn != "" {
+		fmt.Fprintln(os.Stderr, "lazyplanner:", syncWarn)
+	}
+
 	title := fmt.Sprintf("%s %s", appName, appVersion)
 	return ui.Run(ui.Options{
 		Store:          s,
 		Title:          title,
-		Sync:           buildSyncFn(cfg.Server, s),
+		Sync:           syncFn,
 		LeftWidth:      uiState.LeftWidth,
 		Hidden:         uiState.HiddenCalendars,
 		RowsPerHour:    uiState.RowsPerHour,
@@ -155,25 +160,28 @@ func editConfigFn(configPath string, pathErr error, accountID string, s *store.S
 		if config.AccountID(cfg.Server.URL, cfg.Server.Username) != accountID {
 			return ui.ConfigReload{}, fmt.Errorf("server/account changed — restart to switch caches")
 		}
-		return ui.ConfigReload{Sync: buildSyncFn(cfg.Server, s), ColorMode: cfg.Appearance.ColorMode}, nil
+		syncFn, warn := buildSyncFn(cfg.Server, s)
+		return ui.ConfigReload{Sync: syncFn, ColorMode: cfg.Appearance.ColorMode, Warning: warn}, nil
 	}
 }
 
-func buildSyncFn(srv config.Server, s *store.Store) func(context.Context) (sync.SyncResult, error) {
+// buildSyncFn returns the sync closure (nil = offline) and a warning describing
+// why it's offline (empty when fine or simply not configured). The warning lets
+// the UI flash the reason on a :config reload instead of losing it to stderr
+// behind the suspended TUI.
+func buildSyncFn(srv config.Server, s *store.Store) (func(context.Context) (sync.SyncResult, error), string) {
 	if !srv.Configured() {
-		return nil
+		return nil, ""
 	}
 	password, err := srv.ResolvePassword()
 	if err != nil {
-		fmt.Fprintln(os.Stderr, "lazyplanner:", err, "(starting offline)")
-		return nil
+		return nil, fmt.Sprintf("%v (offline)", err)
 	}
 	client, err := caldav.NewClient(caldav.Config{Endpoint: srv.URL, Username: srv.Username, Password: password})
 	if err != nil {
-		fmt.Fprintln(os.Stderr, "lazyplanner:", err, "(starting offline)")
-		return nil
+		return nil, fmt.Sprintf("%v (offline)", err)
 	}
 	return func(ctx context.Context) (sync.SyncResult, error) {
 		return sync.Sync(ctx, client, s)
-	}
+	}, ""
 }

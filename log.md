@@ -4,6 +4,12 @@
 
 ---
 
+## 2026-07-10 — Audit item 7: surface :config reload errors + validate appearance enums
+
+- **7a — reload connection errors reach the UI** (`cmd/lazyplanner/main.go`, `ui.ConfigReload`, `command.go`): `buildSyncFn` now returns `(closure, warning)` instead of printing to stderr; on a `:config` reload the warning (e.g. "password_command failed (offline)") is carried in `ConfigReload.Warning` and flashed in the status bar, so a reload that dropped to offline isn't lost behind the suspended TUI. Startup still prints the warning to stderr.
+- **7b — unknown [appearance] values warn** (`internal/config/config.go`): `appearanceWarnings` checks `first_day_of_week`/`default_view`/`time_format`/`date_format`/`color_mode` against their allowed sets and appends a non-fatal warning naming any typo (value still falls back to the default), joined with the permission warning.
+- Tests: `config` — `TestLoadWarnsOnUnknownAppearance` (bad default_view/time_format named); `ui` — `TestApplyConfigReloadFlashesWarning`. Full gate + `-race` pass.
+
 ## 2026-07-10 — Audit item 6: wire the [appearance] config options
 
 - The four `[appearance]` options were parsed but never consumed (the UI hardcoded them). Wired all four end-to-end.

@@ -79,3 +79,13 @@ func TestApplyConfigReloadAppliesColorMode(t *testing.T) {
 		t.Error("color16 should have repopulated the calendar color")
 	}
 }
+
+// TestApplyConfigReloadFlashesWarning: a reloaded connection that went offline
+// (a warning present) is surfaced in the status bar.
+func TestApplyConfigReloadFlashesWarning(t *testing.T) {
+	a := newRootedTestApp(t, time.Date(2026, 7, 5, 12, 0, 0, 0, time.UTC))
+	a.applyConfigReload(ConfigReload{Warning: "bw not logged in (offline)"}, nil)
+	if got := a.statusLeft.GetText(true); !strings.Contains(got, "offline") {
+		t.Errorf("expected the reload warning flashed, got %q", got)
+	}
+}

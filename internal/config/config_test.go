@@ -186,3 +186,21 @@ func TestGenerateDefault(t *testing.T) {
 		t.Error("GenerateDefault overwrote an existing config")
 	}
 }
+
+func TestLoadWarnsOnUnknownAppearance(t *testing.T) {
+	dir := withConfigDir(t)
+	if err := os.MkdirAll(dir, 0o700); err != nil {
+		t.Fatal(err)
+	}
+	body := "[server]\nurl=\"https://x/dav\"\nusername=\"u\"\n[appearance]\ndefault_view=\"wek\"\ntime_format=\"bogus\"\n"
+	if err := os.WriteFile(filepath.Join(dir, configName), []byte(body), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	_, _, warning, err := Load()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !strings.Contains(warning, "default_view") || !strings.Contains(warning, "time_format") {
+		t.Errorf("warning = %q, want it to name the unknown default_view and time_format", warning)
+	}
+}
