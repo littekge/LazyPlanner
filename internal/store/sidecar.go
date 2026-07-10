@@ -22,10 +22,16 @@ type sidecar struct {
 	// locally-created calendar awaits MKCALENDAR on the next sync; one marked
 	// for deletion awaits a server DELETE then local removal. Components is the
 	// iCalendar component set (VEVENT/VTODO) to create.
-	PendingCreate bool     `json:"pending_create,omitempty"`
-	PendingDelete bool     `json:"pending_delete,omitempty"`
-	PendingProps  bool     `json:"pending_props,omitempty"`
-	Components    []string `json:"components,omitempty"`
+	PendingCreate bool `json:"pending_create,omitempty"`
+	PendingDelete bool `json:"pending_delete,omitempty"`
+	// PendingName/PendingColor track a locally-edited display name / color awaiting
+	// a PROPPATCH, independently so a pending name doesn't block a color pull (and
+	// vice-versa). PendingProps is the legacy single flag, read for backward
+	// compatibility and mapped onto both.
+	PendingName  bool     `json:"pending_name,omitempty"`
+	PendingColor bool     `json:"pending_color,omitempty"`
+	PendingProps bool     `json:"pending_props,omitempty"`
+	Components   []string `json:"components,omitempty"`
 	// ReadOnly caches the server's read-only status (no write privilege) so the
 	// UI knows not to allow writes even before the first sync of a session.
 	ReadOnly bool `json:"read_only,omitempty"`
@@ -88,7 +94,8 @@ func writeSidecar(root string, cs *calState) error {
 		Resources:     make(map[string]resourceMeta, len(cs.resources)),
 		PendingCreate: cs.pendingCreate,
 		PendingDelete: cs.pendingDelete,
-		PendingProps:  cs.pendingProps,
+		PendingName:   cs.pendingName,
+		PendingColor:  cs.pendingColor,
 		Components:    cs.components,
 		ReadOnly:      cs.readOnly,
 	}

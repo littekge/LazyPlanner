@@ -86,7 +86,8 @@ type calState struct {
 
 	pendingCreate bool     // created locally, awaiting MKCALENDAR on the next sync
 	pendingDelete bool     // marked for deletion, awaiting server DELETE then local removal
-	pendingProps  bool     // display name/color edited locally, awaiting PROPPATCH
+	pendingName   bool     // display name edited locally, awaiting PROPPATCH
+	pendingColor  bool     // color edited locally, awaiting PROPPATCH
 	components    []string // iCalendar component set to create (VEVENT/VTODO)
 	readOnly      bool     // server grants no write privilege; the app never writes here
 }
@@ -152,7 +153,9 @@ func (s *Store) loadCalendar(ctx context.Context, id string) (*calState, []LoadE
 	cs.conflicts = map[string]conflictMeta{}
 	cs.pendingCreate = sc.PendingCreate
 	cs.pendingDelete = sc.PendingDelete
-	cs.pendingProps = sc.PendingProps
+	// Split name/color pending flags; a legacy pending_props (both) maps to both.
+	cs.pendingName = sc.PendingName || sc.PendingProps
+	cs.pendingColor = sc.PendingColor || sc.PendingProps
 	cs.components = sc.Components
 	cs.readOnly = sc.ReadOnly
 

@@ -162,9 +162,15 @@ func (s *Store) UpdateCalendarMeta(ctx context.Context, id, displayName, color s
 		cs.color = color
 	}
 	// A never-pushed calendar carries its metadata in the pending MKCALENDAR; only
-	// an existing one needs a PROPPATCH.
+	// an existing one needs a PROPPATCH. Track name/color independently so a pending
+	// name doesn't block a color pull (and vice-versa).
 	if !cs.pendingCreate {
-		cs.pendingProps = true
+		if displayName != "" {
+			cs.pendingName = true
+		}
+		if color != "" {
+			cs.pendingColor = true
+		}
 	}
 	if err := writeSidecar(s.root, cs); err != nil {
 		return fmt.Errorf("updating sidecar for %q: %w", id, err)
@@ -191,7 +197,7 @@ func (s *Store) SyncCalendarColor(ctx context.Context, calID, serverColor string
 	if cs == nil {
 		return fmt.Errorf("store: unknown calendar %q", calID)
 	}
-	if cs.pendingProps || cs.color == serverColor {
+	if cs.pendingColor || cs.color == serverColor {
 		return nil
 	}
 	cs.color = serverColor
@@ -218,7 +224,7 @@ func (s *Store) SyncCalendarName(ctx context.Context, calID, serverName string) 
 	if cs == nil {
 		return fmt.Errorf("store: unknown calendar %q", calID)
 	}
-	if cs.pendingProps || cs.displayName == serverName {
+	if cs.pendingName || cs.displayName == serverName {
 		return nil
 	}
 	cs.displayName = serverName
@@ -240,7 +246,8 @@ func (s *Store) MarkCalendarPropsSynced(ctx context.Context, id string) error {
 	if cs == nil {
 		return fmt.Errorf("store: unknown calendar %q", id)
 	}
-	cs.pendingProps = false
+	cs.pendingName = false
+	cs.pendingColor = false
 	if err := writeSidecar(s.root, cs); err != nil {
 		return fmt.Errorf("updating sidecar for %q: %w", id, err)
 	}
@@ -248,7 +255,9 @@ func (s *Store) MarkCalendarPropsSynced(ctx context.Context, id string) error {
 }
 
 // CalendarPropUpdate is a calendar whose metadata changed locally and must be
-// pushed to the server with a PROPPATCH.
+// pushed to the server with a PROPPATCH. Only the fields that actually changed
+// locally are set (the other is empty, so PROPPATCH skips it and can't clobber a
+// concurrent server edit to it).
 type CalendarPropUpdate struct {
 	ID          string
 	Href        string
@@ -256,15 +265,23 @@ type CalendarPropUpdate struct {
 	Color       string
 }
 
-// PendingCalendarProps returns calendars whose display name/color changed locally
-// and need a server PROPPATCH (only those already on the server).
+// PendingCalendarProps returns calendars whose display name and/or color changed
+// locally and need a server PROPPATCH (only those already on the server); each
+// update carries just the pending field(s).
 func (s *Store) PendingCalendarProps() []CalendarPropUpdate {
 	s.mu.RLock()
 	defer s.mu.RUnlock()
 	var out []CalendarPropUpdate
 	for _, cs := range s.cals {
-		if cs.pendingProps && cs.href != "" {
-			out = append(out, CalendarPropUpdate{ID: cs.id, Href: cs.href, DisplayName: cs.displayName, Color: cs.color})
+		if (cs.pendingName || cs.pendingColor) && cs.href != "" {
+			u := CalendarPropUpdate{ID: cs.id, Href: cs.href}
+			if cs.pendingName {
+				u.DisplayName = cs.displayName
+			}
+			if cs.pendingColor {
+				u.Color = cs.color
+			}
+			out = append(out, u)
 		}
 	}
 	sort.Slice(out, func(i, j int) bool { return out[i].ID < out[j].ID })

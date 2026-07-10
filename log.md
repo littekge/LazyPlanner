@@ -4,6 +4,12 @@
 
 ---
 
+## 2026-07-10 — Audit item 11: split the calendar pending-props flag (name vs color)
+
+- Owner decision: the single `pendingProps` flag meant a pending local **name** edit blocked adopting the server's **color** (and vice-versa, now that name is pulled too). Split it.
+- **Fix** (`internal/store`): `calState`/sidecar gained `pendingName` + `pendingColor` (`pending_name`/`pending_color`), replacing `pendingProps`; the legacy `pending_props` is still read and mapped onto both for backward compatibility. `UpdateCalendarMeta` sets each flag only for the field it changed; `SyncCalendarColor`/`SyncCalendarName` skip only on their own flag; `PendingCalendarProps` emits **only the pending field(s)** so a PROPPATCH can't clobber a concurrent server edit to the other; `MarkCalendarPropsSynced` clears both.
+- Tests (`pendingflags_test.go`): a pending name doesn't block the color pull (and the pull-name is still blocked + only the name is pushed); a legacy `pending_props` sidecar loads as both pending. Full gate + `-race` pass.
+
 ## 2026-07-10 — Audit item 10: pull server-side calendar renames
 
 - Owner decision: names are "server-authoritative" but only color/read-only/components were pulled each sync — a rename on NextCloud web or another client never showed up locally. Also confirmed in-app renaming already exists (`:calendar rename` and the `e` edit-form Name field). (Item 9 — debounced push — deferred to build step 12.)
