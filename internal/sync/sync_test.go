@@ -866,3 +866,43 @@ func TestSyncSkipsFailedCalendarContinuesRest(t *testing.T) {
 		t.Error("the failed calendar should be recorded in Skipped")
 	}
 }
+
+// TestSyncPullsCalendarRename: a calendar renamed on the server is adopted locally.
+func TestSyncPullsCalendarRename(t *testing.T) {
+	ctx := context.Background()
+	st := newStore(t) // "personal" → DisplayName "Personal"
+	srv := newFakeServer()
+	srv.cals[0].Name = "Home" // renamed on the server
+
+	if _, err := sync.Sync(ctx, srv, st); err != nil {
+		t.Fatal(err)
+	}
+	cal, _ := st.Calendar("personal")
+	if cal.DisplayName != "Home" {
+		t.Errorf("display name after sync = %q, want the server's Home", cal.DisplayName)
+	}
+}
+
+// TestSyncDoesNotClobberPendingLocalRename: a local rename awaiting a PROPPATCH
+// is pushed and kept, not overwritten by the server's older name.
+func TestSyncDoesNotClobberPendingLocalRename(t *testing.T) {
+	ctx := context.Background()
+	st := newStore(t)
+	srv := newFakeServer()
+	srv.cals[0].Name = "Home" // server's current name
+
+	if err := st.UpdateCalendarMeta(ctx, "personal", "MyStuff", ""); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := sync.Sync(ctx, srv, st); err != nil {
+		t.Fatal(err)
+	}
+	cal, _ := st.Calendar("personal")
+	if cal.DisplayName != "MyStuff" {
+		t.Errorf("pending local rename should win until pushed, got %q", cal.DisplayName)
+	}
+	// And it was pushed to the server (PROPPATCH), so both sides now agree.
+	if len(srv.propPatched) == 0 || srv.propPatched[len(srv.propPatched)-1].displayName != "MyStuff" {
+		t.Errorf("local rename not pushed via PROPPATCH: %+v", srv.propPatched)
+	}
+}

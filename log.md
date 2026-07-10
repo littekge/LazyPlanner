@@ -4,6 +4,13 @@
 
 ---
 
+## 2026-07-10 — Audit item 10: pull server-side calendar renames
+
+- Owner decision: names are "server-authoritative" but only color/read-only/components were pulled each sync — a rename on NextCloud web or another client never showed up locally. Also confirmed in-app renaming already exists (`:calendar rename` and the `e` edit-form Name field). (Item 9 — debounced push — deferred to build step 12.)
+- **Fix** (`internal/store/calendar.go`, `sync/sync.go`): new `SyncCalendarName` mirrors `SyncCalendarColor` — adopt the server's display name, server-authoritative except when a local rename is still pending a PROPPATCH (no-op on empty/unchanged). Called per calendar in the sync discovery loop alongside the color pull.
+- Docs: `main.md` calendar-metadata decision + `CLAUDE.md` (names *and* colors sync both ways).
+- Tests (`sync_test.go`): `TestSyncPullsCalendarRename` (server rename adopted) and `TestSyncDoesNotClobberPendingLocalRename` (pending local rename wins and is pushed). Full gate + `-race` pass.
+
 ## 2026-07-10 — Audit item 8: cancellable sync context (clean shutdown)
 
 - Owner decision: honor the "all network I/O is cancellable" architecture rule at the one spot that didn't — the sync caller. (Data was already safe either way via atomic writes + ETag reconciliation; this is about a clean unwind vs a detach/hard-kill on quit.)

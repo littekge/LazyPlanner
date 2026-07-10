@@ -201,6 +201,33 @@ func (s *Store) SyncCalendarColor(ctx context.Context, calID, serverColor string
 	return nil
 }
 
+// SyncCalendarName adopts the server's display name for a calendar (mirroring
+// SyncCalendarColor), so a rename done on NextCloud web or another client shows
+// up locally. The server is authoritative except when a local rename is still
+// pending a PROPPATCH (that edit wins until pushed). Empty/unchanged is a no-op.
+func (s *Store) SyncCalendarName(ctx context.Context, calID, serverName string) error {
+	if err := ctx.Err(); err != nil {
+		return err
+	}
+	if serverName == "" {
+		return nil
+	}
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	cs := s.cals[calID]
+	if cs == nil {
+		return fmt.Errorf("store: unknown calendar %q", calID)
+	}
+	if cs.pendingProps || cs.displayName == serverName {
+		return nil
+	}
+	cs.displayName = serverName
+	if err := writeSidecar(s.root, cs); err != nil {
+		return fmt.Errorf("updating sidecar for %q: %w", calID, err)
+	}
+	return nil
+}
+
 // MarkCalendarPropsSynced clears a calendar's pending-props flag after a
 // successful server PROPPATCH.
 func (s *Store) MarkCalendarPropsSynced(ctx context.Context, id string) error {

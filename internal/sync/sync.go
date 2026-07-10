@@ -133,6 +133,11 @@ func Sync(ctx context.Context, client Syncer, st *store.Store) (SyncResult, erro
 		if err := st.SyncCalendarColor(ctx, localID, sc.Color); err != nil {
 			return res, fmt.Errorf("sync: recording color for %q: %w", localID, err)
 		}
+		// Adopt a server-side rename too (unless a local rename is pending), so
+		// names stay server-authoritative like colors.
+		if err := st.SyncCalendarName(ctx, localID, sc.Name); err != nil {
+			return res, fmt.Errorf("sync: recording name for %q: %w", localID, err)
+		}
 
 		if err := reconcileCalendar(ctx, client, st, localID, sc, &res); err != nil {
 			// One calendar's failure (e.g. its download/REPORT) shouldn't block the
