@@ -115,7 +115,7 @@ func (a *app) moveSubtree(uid, targetParent, srcCal, dstCal string) {
 	uids := append([]string{uid}, a.descendants(uid)...)
 	ctx := context.Background()
 
-	var ops []undoOp     // user-facing undo (u), pushed only on full success
+	var ops []undoOp      // user-facing undo (u), pushed only on full success
 	var rollback []func() // reversals of committed writes, run newest-first on failure
 	fail := func(msg string) {
 		for i := len(rollback) - 1; i >= 0; i-- {

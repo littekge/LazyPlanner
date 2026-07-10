@@ -21,6 +21,7 @@ type agendaBoard struct {
 	items    []model.AgendaItem
 	selected int
 	scroll   int
+	clock24  bool // 24h time labels (from time_format)
 
 	// itemColor resolves an item to its calendar's color for the title line; ok is
 	// false when the calendar has none, so the default event/task color is used.
@@ -59,13 +60,13 @@ type styledLine struct {
 // agendaItemLines renders one item as its stacked detail lines (title, meta, and
 // an optional description). titleColor tints the title line (the item's calendar
 // color, or the default event/task color).
-func agendaItemLines(it model.AgendaItem, titleColor tcell.Color) []styledLine {
+func agendaItemLines(it model.AgendaItem, titleColor tcell.Color, use24 bool) []styledLine {
 	gray := tcell.StyleDefault.Foreground(adjacentColor)
 	plain := tcell.StyleDefault
 	if it.Todo != nil {
 		t := it.Todo
 		lines := []styledLine{
-			{whenLabel(it) + "  " + nonEmpty(t.Summary, "(untitled)"), tcell.StyleDefault.Foreground(titleColor)},
+			{whenLabel(it, use24) + "  " + nonEmpty(t.Summary, "(untitled)"), tcell.StyleDefault.Foreground(titleColor)},
 			{"task · " + statusText(t.Status) + " · priority " + priorityText(t.Priority), gray},
 		}
 		if t.Description != "" {
@@ -75,7 +76,7 @@ func agendaItemLines(it model.AgendaItem, titleColor tcell.Color) []styledLine {
 	}
 	e := it.Event
 	lines := []styledLine{
-		{whenLabel(it) + "  " + nonEmpty(e.Summary, "(untitled)"), tcell.StyleDefault.Foreground(titleColor)},
+		{whenLabel(it, use24) + "  " + nonEmpty(e.Summary, "(untitled)"), tcell.StyleDefault.Foreground(titleColor)},
 	}
 	if e.Location != "" {
 		lines = append(lines, styledLine{"at " + e.Location, gray})
@@ -128,7 +129,7 @@ func (b *agendaBoard) Draw(screen tcell.Screen) {
 				tc = cc.fg
 			}
 		}
-		blocks[i] = agendaItemLines(it, tc)
+		blocks[i] = agendaItemLines(it, tc, b.clock24)
 		starts[i] = line
 		line += len(blocks[i]) + 1 // block plus a one-row gap
 	}

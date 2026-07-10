@@ -4,6 +4,14 @@
 
 ---
 
+## 2026-07-10 — Audit item 6: wire the [appearance] config options
+
+- The four `[appearance]` options were parsed but never consumed (the UI hardcoded them). Wired all four end-to-end.
+- **Plumbing** (`cmd/lazyplanner/main.go`, `ui.Options`, `app`): pass `FirstDayOfWeek`/`DefaultView`/`TimeFormat`/`DateFormat`; `Run` resolves them into `a.weekStartMonday`, `a.viewMode`, `a.clock24`, `a.dateISO`, and mirrors `clock24` onto the three custom widgets.
+- **Format helpers** (`internal/ui/format.go`): `clockStr` (12h/24h), `hourAxisLabel` (axis/cell hour), `dateStr`/`dateShortStr` (US `01/02/2006` vs ISO `2006-01-02`), plus `parseWeekStartMonday`/`parseDefaultView`. Replaced the literal `Format("3pm")`/`"3:04pm"`/`"15:04"`/date calls across `render.go`, `calendarview.go`, `timegridview.go`, `agendaboard.go`, `sync.go` (agenda times, hour axis, event-block span, month-cell times, due dates, detail When/Due, status-bar date, last-sync time). Editable form date/time fields keep their fixed ISO/24h layout (they round-trip through the parser).
+- **Effects**: `first_day_of_week=sunday` → Sunday-start grid; `default_view=week|day` → opening view; `time_format=24h` → 14:30 clock everywhere; `date_format=iso` → 2026-07-04 dates. Note: `date_format` now renders **numeric** dates (default US `07/04/2026`) in the data displays (due dates, detail, status) — previously month-name `Jan 2`; the calendar/agenda prose headers stay month-name.
+- Tests (`format_test.go`): `clockStr`/`hourAxisLabel`/`dateStr` tables, `parseWeekStartMonday`/`parseDefaultView`, and a detail-pane render asserting 24h+ISO take effect. Updated the sync-status test to set `clock24`. Full gate + `-race` pass.
+
 ## 2026-07-10 — Audit item 5: task-subtree zoom (`>`/`<`) implemented
 
 - Closed the highest-value gap: `>`/`<` subtree zoom was documented (main.md/CLAUDE.md) but entirely unimplemented. Built it to spec (full re-root + breadcrumb).

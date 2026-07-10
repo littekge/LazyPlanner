@@ -50,6 +50,7 @@ type timeGridView struct {
 	allDay   map[string][]model.Occurrence
 	now      time.Time
 	selected time.Time
+	clock24  bool // 24h time labels (from time_format)
 
 	eventMode  bool // cycling the selected day's items (all-day, then timed events + tasks)
 	eventIndex int
@@ -599,7 +600,7 @@ func (tg *timeGridView) Draw(screen tcell.Screen) {
 		if row < bodyY || row >= bodyY+bodyH {
 			continue
 		}
-		printStyled(screen, x, row, gutterWidth-1, hourLabel(hour), tcell.StyleDefault.Foreground(adjacentColor))
+		printStyled(screen, x, row, gutterWidth-1, hourAxisLabel(hour, tg.clock24), tcell.StyleDefault.Foreground(adjacentColor))
 	}
 	// Column separators, down to the bottom of the grid. A uniform grid can leave
 	// a small blank margin below the last hour when the pane isn't a whole number
@@ -723,7 +724,7 @@ func (tg *timeGridView) drawBlock(screen tcell.Screen, p model.Placement, colX, 
 	}
 	printStyled(screen, bx, top, bw, nonEmpty(p.Occ.Event.Summary, "(untitled)"), style)
 	if height >= 2 {
-		span := startT.Format("3:04") + "-" + endT.Format("3:04pm")
+		span := clockStr(startT, tg.clock24) + "-" + clockStr(endT, tg.clock24)
 		printStyled(screen, bx, top+1, bw, span, spanStyle)
 	}
 }
@@ -732,6 +733,6 @@ func hourFloat(t time.Time) float64 {
 	return float64(t.Hour()) + float64(t.Minute())/60
 }
 
-func hourLabel(hour int) string {
-	return time.Date(2000, 1, 1, hour, 0, 0, 0, time.UTC).Format("3pm")
-}
+// hourLabel is the 12h axis label; the grid now draws via hourAxisLabel(hour,
+// clock24), but tests still reference this for the default (12h) form.
+func hourLabel(hour int) string { return hourAxisLabel(hour, false) }

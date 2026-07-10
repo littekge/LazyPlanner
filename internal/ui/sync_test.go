@@ -40,6 +40,7 @@ func TestRenderSyncStatus(t *testing.T) {
 			name: "synced shows time",
 			setup: func(a *app) {
 				a.syncFn = noopSync
+				a.clock24 = true // 24h clock (time_format)
 				a.lastSyncAt = time.Date(2026, 7, 5, 14, 32, 0, 0, time.Local)
 			},
 			want:    "synced 14:32",

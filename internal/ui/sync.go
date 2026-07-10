@@ -56,7 +56,7 @@ func (a *app) renderSyncStatus() {
 	default:
 		text := "[green]synced"
 		if !a.lastSyncAt.IsZero() {
-			text += " " + a.lastSyncAt.In(a.loc).Format("15:04")
+			text += " " + clockStr(a.lastSyncAt.In(a.loc), a.clock24)
 		}
 		text += "[-]"
 		if n := len(a.store.Conflicts()); n > 0 {

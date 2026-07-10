@@ -25,6 +25,7 @@ type calendarView struct {
 	now         time.Time
 	month       time.Month // for dimming adjacent-month days; 0 = don't dim (week)
 	mondayFirst bool
+	clock24     bool // 24h time labels (from time_format)
 
 	eventMode  bool // cycling events within the selected day
 	eventIndex int
@@ -282,7 +283,7 @@ func (cv *calendarView) drawCell(screen tcell.Screen, day time.Time, cellX, cell
 		if selected && cv.eventMode && i == cv.eventIndex {
 			style = style.Reverse(true)
 		}
-		printStyled(screen, cx, row, cw, itemLabel(items[i], cv.folderItem(items[i])), style)
+		printStyled(screen, cx, row, cw, itemLabel(items[i], cv.folderItem(items[i]), cv.clock24), style)
 	}
 	drawMore := func(row, count int) {
 		printStyled(screen, cx, row, cw, fmt.Sprintf("+%d more", count),
@@ -380,14 +381,14 @@ func (cv *calendarView) folderItem(it model.AgendaItem) bool {
 
 // itemLabel and itemStyle format a day-cell agenda line. folder marks a task with
 // incomplete children (▸, matching the tree) instead of a checkbox.
-func itemLabel(it model.AgendaItem, folder bool) string {
+func itemLabel(it model.AgendaItem, folder, use24 bool) string {
 	switch {
 	case it.IsTodo():
 		return todoMark(it.Todo, folder) + nonEmpty(it.Title, "(untitled)")
 	case it.AllDay:
 		return nonEmpty(it.Title, "(untitled)")
 	default:
-		return it.Start.In(time.Local).Format("3pm") + " " + nonEmpty(it.Title, "(untitled)")
+		return hourAxisLabel(it.Start.In(time.Local).Hour(), use24) + " " + nonEmpty(it.Title, "(untitled)")
 	}
 }
 

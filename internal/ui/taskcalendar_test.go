@@ -197,7 +197,7 @@ func TestFolderCaretInCalendarViews(t *testing.T) {
 	if it.Todo == nil {
 		t.Fatal("dated folder missing from the day's items — it should still appear on the calendar")
 	}
-	if got := itemLabel(it, a.isFolder(parent)); !strings.HasPrefix(got, "▸ ") {
+	if got := itemLabel(it, a.isFolder(parent), false); !strings.HasPrefix(got, "▸ ") {
 		t.Errorf("month-cell label = %q, want a ▸ folder caret", got)
 	}
 	if got := a.agendaLeftLabel(it); !strings.Contains(got, "▸ ") {

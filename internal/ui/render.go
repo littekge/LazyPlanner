@@ -441,7 +441,7 @@ func (a *app) nodeLabel(t *model.Todo, expanded bool) string {
 		label += fmt.Sprintf("  !%d", t.Priority)
 	}
 	if t.HasDue {
-		label += "  due " + fmtDate(t.Due, t.DueAllDay)
+		label += "  due " + a.fmtDate(t.Due, t.DueAllDay)
 	}
 	return label
 }
@@ -481,7 +481,7 @@ func (a *app) setDayDetail(day time.Time) {
 		if it.IsTodo() {
 			kind = "task"
 		}
-		fmt.Fprintf(&b, "[gray]%-8s[-] %s  [gray](%s)[-]\n", whenLabel(it), tview.Escape(nonEmpty(it.Title, "(untitled)")), kind)
+		fmt.Fprintf(&b, "[gray]%-8s[-] %s  [gray](%s)[-]\n", whenLabel(it, a.clock24), tview.Escape(nonEmpty(it.Title, "(untitled)")), kind)
 	}
 	a.setDetail(b.String())
 }
@@ -500,7 +500,7 @@ func (a *app) setTodoDetail(t *model.Todo) {
 	fmt.Fprintf(&b, "[gray]Status[-]    %s\n", statusText(t.Status))
 	fmt.Fprintf(&b, "[gray]Priority[-]  %s\n", priorityText(t.Priority))
 	if t.HasDue {
-		fmt.Fprintf(&b, "[gray]Due[-]       %s\n", fmtWhen(t.Due, t.DueAllDay))
+		fmt.Fprintf(&b, "[gray]Due[-]       %s\n", a.fmtWhen(t.Due, t.DueAllDay))
 	} else {
 		fmt.Fprintf(&b, "[gray]Due[-]       —\n")
 	}
@@ -523,10 +523,10 @@ func (a *app) setEventDetail(e *model.Event) {
 	var b strings.Builder
 	fmt.Fprintf(&b, "[teal]Event[-]\n%s\n\n", tview.Escape(nonEmpty(e.Summary, "(untitled)")))
 	if e.AllDay {
-		fmt.Fprintf(&b, "[gray]When[-]      %s (all day)\n", fmtWhen(e.Start, true))
+		fmt.Fprintf(&b, "[gray]When[-]      %s (all day)\n", a.fmtWhen(e.Start, true))
 	} else {
-		fmt.Fprintf(&b, "[gray]When[-]      %s\n", fmtWhen(e.Start, false))
-		fmt.Fprintf(&b, "[gray]Until[-]     %s\n", fmtWhen(e.End, false))
+		fmt.Fprintf(&b, "[gray]When[-]      %s\n", a.fmtWhen(e.Start, false))
+		fmt.Fprintf(&b, "[gray]Until[-]     %s\n", a.fmtWhen(e.End, false))
 	}
 	if e.Location != "" {
 		fmt.Fprintf(&b, "[gray]Location[-]  %s\n", tview.Escape(e.Location))
@@ -557,7 +557,7 @@ func (a *app) updateStatus() {
 	if a.mode == modeCalendar {
 		mode += " · " + [...]string{"month", "week", "day"}[a.viewMode]
 	}
-	left := fmt.Sprintf("%s · %s · %d cals · %d tasks", mode, a.anchor.Format("Jan 2 2006"), len(a.store.Calendars()), len(a.store.Todos()))
+	left := fmt.Sprintf("%s · %s · %d cals · %d tasks", mode, dateStr(a.anchor, a.dateISO), len(a.store.Calendars()), len(a.store.Todos()))
 	if n := len(a.store.LoadErrors()); n > 0 {
 		left += fmt.Sprintf("  [red]!%d load error(s)[-]", n)
 	}
@@ -632,28 +632,30 @@ func (a *app) agendaLeftLabel(it model.AgendaItem) string {
 	if it.IsTodo() {
 		mark = todoMark(it.Todo, a.isFolder(it.Todo.UID))
 	}
-	return fmt.Sprintf("%-8s %s%s", whenLabel(it), mark, tview.Escape(nonEmpty(it.Title, "(untitled)")))
+	return fmt.Sprintf("%-8s %s%s", whenLabel(it, a.clock24), mark, tview.Escape(nonEmpty(it.Title, "(untitled)")))
 }
 
-func whenLabel(it model.AgendaItem) string {
+func whenLabel(it model.AgendaItem, use24 bool) string {
 	if it.AllDay {
 		return "all-day"
 	}
-	return it.Start.In(time.Local).Format("3:04pm")
+	return clockStr(it.Start.In(time.Local), use24)
 }
 
-func fmtWhen(t time.Time, allDay bool) string {
+func (a *app) fmtWhen(t time.Time, allDay bool) string {
+	local := t.In(time.Local)
 	if allDay {
-		return t.In(time.Local).Format("Mon Jan 2, 2006")
+		return local.Format("Mon ") + dateStr(local, a.dateISO)
 	}
-	return t.In(time.Local).Format("Mon Jan 2, 2006 3:04pm")
+	return local.Format("Mon ") + dateStr(local, a.dateISO) + " " + clockStr(local, a.clock24)
 }
 
-func fmtDate(t time.Time, allDay bool) string {
+func (a *app) fmtDate(t time.Time, allDay bool) string {
+	local := t.In(time.Local)
 	if allDay {
-		return t.In(time.Local).Format("Jan 2")
+		return dateShortStr(local, a.dateISO)
 	}
-	return t.In(time.Local).Format("Jan 2 3:04pm")
+	return dateShortStr(local, a.dateISO) + " " + clockStr(local, a.clock24)
 }
 
 func statusText(s model.TodoStatus) string {

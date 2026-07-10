@@ -108,6 +108,8 @@ type app struct {
 	viewMode        int
 	anchor          time.Time
 	weekStartMonday bool
+	clock24         bool // time_format: 24h clock when true
+	dateISO         bool // date_format: ISO (2006-01-02) when true, else US
 	showCompleted   bool
 	tasklistIDs     []string            // calendar ids parallel to the tasklists panel
 	calColors       map[string]calColor // calendar id → resolved server color; mappable only
@@ -206,13 +208,18 @@ func useTerminalTheme() {
 // store, a sync closure (nil = offline), and the persisted UI state plus a
 // callback to save it — so the UI never touches disk itself.
 type Options struct {
-	Store     *store.Store
-	Title     string
-	Sync      func(context.Context) (sync.SyncResult, error)
+	Store       *store.Store
+	Title       string
+	Sync        func(context.Context) (sync.SyncResult, error)
 	LeftWidth   int      // remembered left-column width (0 = default)
 	Hidden      []string // calendar ids hidden from the calendar/agenda views
 	RowsPerHour int      // remembered week/day hour-row height (0 = auto-fit)
 	ColorMode   string   // how server calendar colors render: "auto"/"truecolor", "16", or "off"
+	// Appearance ([appearance] config): empty = the built-in default.
+	FirstDayOfWeek string // "monday" (default) or "sunday"
+	DefaultView    string // "month" (default), "week", or "day"
+	TimeFormat     string // "12h" (default) or "24h"
+	DateFormat     string // "us" (default) or "iso"
 	// SaveState persists remembered UI state (nil = don't persist). Every save
 	// passes the full state, so the caller can rewrite the file wholesale.
 	SaveState func(leftWidth int, hidden []string, rowsPerHour int)
@@ -239,6 +246,13 @@ func Run(opts Options) error {
 	a.saveState = opts.SaveState
 	a.editConfig = opts.EditConfig
 	a.colorMode = parseColorMode(opts.ColorMode)
+	a.weekStartMonday = parseWeekStartMonday(opts.FirstDayOfWeek)
+	a.viewMode = parseDefaultView(opts.DefaultView)
+	a.clock24 = opts.TimeFormat == "24h"
+	a.dateISO = opts.DateFormat == "iso"
+	a.month.clock24 = a.clock24
+	a.timegrid.clock24 = a.clock24
+	a.agenda.clock24 = a.clock24
 	for _, id := range opts.Hidden {
 		a.hidden[id] = true
 	}
