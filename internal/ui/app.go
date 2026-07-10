@@ -115,6 +115,7 @@ type app struct {
 	colorMode       colorMode           // how server colors are rendered (auto/16/off)
 	folders         map[string]bool     // task UIDs that are folders (≥1 incomplete child); global, for tree + calendar + agenda markers
 	treeListID      string              // calendar id the tree currently shows (to detect list changes)
+	zoomUID         string              // task UID the tree is re-rooted at (> zoom-in / < zoom-out); "" = list root
 	suspendTree     bool                // ignore tasklist change events while the panel is rebuilt
 	stickyDone      map[string]bool     // tasks completed while hidden, kept visible until the list is left
 	focusStack      []focusState        // pre-modal focus states, one per open modal (supports nesting, e.g. a color picker over the calendar form)
@@ -378,6 +379,7 @@ func (a *app) build() {
 			id = a.tasklistIDs[index]
 			if id != a.treeListID {
 				a.stickyDone = map[string]bool{}
+				a.zoomUID = "" // a subtree zoom doesn't carry across lists
 				a.treeListID = id
 			}
 		}
@@ -699,6 +701,16 @@ func (a *app) globalKeys(ev *tcell.EventKey) *tcell.EventKey {
 		case '}':
 			a.cycleTasklist(1)
 			return nil
+		case '>':
+			if a.mode == modeTasks {
+				a.zoomInTree()
+				return nil
+			}
+		case '<':
+			if a.mode == modeTasks {
+				a.zoomOutTree()
+				return nil
+			}
 		}
 	}
 	return ev

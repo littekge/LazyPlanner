@@ -242,6 +242,83 @@ func (a *app) splitOccs(days []time.Time) (timed, allday map[string][]model.Occu
 
 func (a *app) buildTree() { a.buildTreeForList(a.selectedTasklistID()) }
 
+// zoomInTree re-roots the task tree at the selected task (`>`), like cd-ing into
+// a subtree; `<` (zoomOutTree) pops one level back toward the list root.
+func (a *app) zoomInTree() {
+	node := a.tree.GetCurrentNode()
+	if node == nil {
+		a.flash("Select a task to zoom into (>)")
+		return
+	}
+	td, ok := node.GetReference().(*model.Todo)
+	if !ok {
+		a.flash("Select a task to zoom into (>)")
+		return
+	}
+	a.zoomUID = td.UID
+	a.buildTree()
+}
+
+// zoomOutTree pops one level out of the task-subtree zoom (`<`) — to the zoomed
+// task's parent, or the list root at the top.
+func (a *app) zoomOutTree() {
+	if a.zoomUID == "" {
+		a.flash("Already at the list root")
+		return
+	}
+	if td := a.todoByUID(a.zoomUID); td != nil {
+		a.zoomUID = td.ParentUID
+	} else {
+		a.zoomUID = ""
+	}
+	a.buildTree()
+}
+
+// todoByUID returns the task with the given UID, or nil.
+func (a *app) todoByUID(uid string) *model.Todo {
+	if uid == "" {
+		return nil
+	}
+	if loc, ok := a.store.Locate(uid); ok {
+		return findTodo(loc.Object, uid)
+	}
+	return nil
+}
+
+// findTodoNode locates the node with uid anywhere in the forest.
+func findTodoNode(forest []*model.TodoNode, uid string) *model.TodoNode {
+	for _, n := range forest {
+		if n.Todo.UID == uid {
+			return n
+		}
+		if got := findTodoNode(n.Children, uid); got != nil {
+			return got
+		}
+	}
+	return nil
+}
+
+// zoomBreadcrumb builds the "List / ancestor / task" path shown as the zoomed
+// tree's root, walking up from zoomUID via ParentUID.
+func (a *app) zoomBreadcrumb(listName string, all []*model.Todo) string {
+	byUID := make(map[string]*model.Todo, len(all))
+	for _, t := range all {
+		byUID[t.UID] = t
+	}
+	var chain []string
+	seen := map[string]bool{}
+	for u := a.zoomUID; u != "" && !seen[u]; {
+		seen[u] = true
+		td := byUID[u]
+		if td == nil {
+			break
+		}
+		chain = append([]string{oneLine(nonEmpty(td.Summary, "(untitled)"))}, chain...)
+		u = td.ParentUID
+	}
+	return listName + " / " + strings.Join(chain, " / ")
+}
+
 // buildTreeForList rebuilds the task tree for the given list id. Callers that
 // know the target id explicitly (the tasklists changed-callback) must pass it
 // rather than relying on selectedTasklistID: tview fires List.changed BEFORE it
@@ -269,7 +346,20 @@ func (a *app) buildTreeForList(id string) {
 					visible = append(visible, td)
 				}
 			}
-			for _, n := range model.BuildTree(visible, true) {
+			forest := model.BuildTree(visible, true)
+
+			// `>`/`<` zoom: re-root the tree at zoomUID (cd-into-a-subtree), showing
+			// its children and a breadcrumb; a stale zoom (task gone) resets.
+			roots := forest
+			if a.zoomUID != "" {
+				if zn := findTodoNode(forest, a.zoomUID); zn != nil {
+					roots = zn.Children
+					name = a.zoomBreadcrumb(cal.DisplayName, all)
+				} else {
+					a.zoomUID = ""
+				}
+			}
+			for _, n := range roots {
 				root.AddChild(a.treeNode(n))
 			}
 		}

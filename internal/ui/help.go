@@ -40,6 +40,7 @@ var helpSections = []struct {
 		{"d", "delete (item, or calendar/list when its panel is focused)"},
 		{"Space", "toggle task done (hide/show calendar in Calendar view)"},
 		{"H / L", "outdent / indent task (re-parent)"},
+		{"> / <", "zoom into / out of the selected task's subtree"},
 		{"y / p", "yank / paste a task (move to another parent or list)"},
 		{"z R / z M / z a", "fold — expand all / collapse all / toggle"},
 		{"u", "undo last local change"},

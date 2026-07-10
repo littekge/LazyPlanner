@@ -4,6 +4,13 @@
 
 ---
 
+## 2026-07-10 — Audit item 5: task-subtree zoom (`>`/`<`) implemented
+
+- Closed the highest-value gap: `>`/`<` subtree zoom was documented (main.md/CLAUDE.md) but entirely unimplemented. Built it to spec (full re-root + breadcrumb).
+- **Impl** (`internal/ui/render.go`, `app.go`): new `a.zoomUID` (task the tree is re-rooted at; "" = list root). `buildTreeForList` now, when zoomed, finds the node (`findTodoNode`), shows its children as the tree roots, and sets the root label to a `List / ancestor / task` breadcrumb (`zoomBreadcrumb`). `zoomInTree` (`>`) re-roots at the selected task; `zoomOutTree` (`<`) pops one level (to the task's parent, or the list root). A stale zoom (task deleted) resets; switching lists clears it. `>`/`<` wired in `globalKeys` (Tasks mode only) — they were inert before.
+- Docs: help overlay (`> / <` row), `README.md` Tasks section. (main.md/CLAUDE.md already described it.)
+- Tests (`zoom_test.go`): `TestTreeSubtreeZoom` — zoom-in re-roots with a breadcrumb and shows the subtask as the child, zoom-out returns to the list root, and a list switch clears the zoom. Verified the render visually (`Personal / ECE384` root over its subtasks). Full gate + `-race` pass.
+
 ## 2026-07-10 — Audit item 4: atomic .ics/sidecar mutations (rollback on sidecar failure)
 
 - Owner decision: make each store mutation all-or-nothing across the two on-disk files. Before, the `.ics` was written/removed first, then the sidecar; a sidecar-write failure (disk-full/EIO) left the `.ics`+memory changed but the sidecar stale — across a restart a lost tombstone could resurrect a deleted item or a lost dirty flag strand an edit.
