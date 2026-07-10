@@ -4,6 +4,13 @@
 
 ---
 
+## 2026-07-10 — Audit item 1: confirm read-only before discarding a 403'd edit
+
+- Owner decision on the reactive-403 data-loss risk: don't trust a bare 403 (it can be transient — auth blip, rate-limit, WAF, maintenance); re-check the calendar's privileges and only discard the stuck local edit when read-only is *confirmed*.
+- **caldav** (`privileges.go`): new `Client.CalendarWritable(ctx, calPath)` — a Depth-0 `current-user-privilege-set` PROPFIND for one calendar (reusing the existing privilege parsing), fail-open on an ambiguous answer.
+- **sync** (`sync.go`): `Syncer` gained `CalendarWritable`; `markReadOnlyDiscard` → `handleWriteForbidden` re-checks on a 403: confirmed read-only → flag + `Forget` (as before); still-writable or the check errored → **keep the local edit** and `recordSkip` a "kept local change, will retry" message. `pushUpdate` now takes the calendar path so it can re-check.
+- Tests (`sync_test.go`): fake gained `CalendarWritable` (+ `writable`/`writableErr` maps); `TestSyncReactiveReadOnlyOn403` now sets the re-check to confirm read-only; new `TestSyncTransient403KeepsEdit` asserts a writable-on-recheck 403 keeps the edit and doesn't flag read-only. Full gate + `-race` pass.
+
 ## 2026-07-10 — Full-codebase audit: bug + undefined-behavior fixes
 
 - Ran a parallel multi-agent audit of the whole codebase (model, store, caldav+sync, ui, config/cmd) for genuine bugs, undefined behaviors, and spec-vs-impl feature gaps. Fixed the genuine bugs and obvious undefined behaviors automatically; gaps and design-call items are reported to the owner separately.

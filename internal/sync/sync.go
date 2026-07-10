@@ -32,6 +32,9 @@ type Syncer interface {
 	DeleteCalendar(ctx context.Context, path string) error
 	// SetCalendarProps pushes a calendar's display name/color (PROPPATCH).
 	SetCalendarProps(ctx context.Context, path, displayName, color string) error
+	// CalendarWritable reports whether the current user may write to the calendar
+	// at path — the reactive confirmation used when a write returns 403.
+	CalendarWritable(ctx context.Context, path string) (bool, error)
 }
 
 // SyncError records one resource that could not be synced. The rest of the sync
@@ -279,7 +282,7 @@ func reconcileCalendar(ctx context.Context, client Syncer, st *store.Store, calI
 				stashServerConflict(ctx, st, calID, r.Name, serverObj, res)
 			case r.Dirty:
 				// Local edit only → push it (conditional on the server ETag).
-				pushUpdate(ctx, client, st, calID, r, serverObj, res)
+				pushUpdate(ctx, client, st, calID, sc.Path, r, serverObj, res)
 			case serverObj.ETag != r.ETag:
 				// Server edit only → pull it.
 				pullInto(ctx, st, calID, r.Name, serverObj, res)
@@ -364,16 +367,30 @@ func reconcileReadOnly(ctx context.Context, st *store.Store, calID string, serve
 	return nil
 }
 
-// markReadOnlyDiscard is the reactive safety net: a write refused with 403
-// (ErrReadOnly) means the calendar is read-only after all (privilege discovery
-// missed it). Flag it and discard the stuck local change.
-func markReadOnlyDiscard(ctx context.Context, st *store.Store, calID, name string, res *SyncResult) {
-	_ = st.SetCalendarReadOnly(ctx, calID, true)
-	if err := st.Forget(ctx, calID, name); err != nil {
-		recordSkip(res, calID, name, err)
+// handleWriteForbidden reacts to a write refused with 403. A bare 403 is not
+// trusted — it can be transient (auth blip, rate-limit, WAF, maintenance) — so
+// the calendar's privileges are re-checked: only a *confirmed* read-only calendar
+// is flagged and its stuck local change discarded (the settled pull-only design).
+// Otherwise the local edit is kept and surfaced, to retry on the next sync,
+// rather than being silently lost on a spurious 403.
+func handleWriteForbidden(ctx context.Context, client Syncer, st *store.Store, calID, calPath, name string, res *SyncResult) {
+	writable, err := client.CalendarWritable(ctx, calPath)
+	if err == nil && !writable {
+		_ = st.SetCalendarReadOnly(ctx, calID, true)
+		if ferr := st.Forget(ctx, calID, name); ferr != nil {
+			recordSkip(res, calID, name, ferr)
+			return
+		}
+		res.Discarded++
 		return
 	}
-	res.Discarded++
+	// Not confirmed read-only (still writable, or the re-check itself failed):
+	// keep the local edit and surface it; it retries next sync.
+	if err != nil {
+		recordSkip(res, calID, name, fmt.Errorf("write refused (403); privilege re-check failed (%w) — kept local change, will retry", err))
+	} else {
+		recordSkip(res, calID, name, fmt.Errorf("write refused (403) but calendar still grants write — kept local change, will retry"))
+	}
 }
 
 func pushCreate(ctx context.Context, client Syncer, st *store.Store, calID, calPath string, r *store.Resource, res *SyncResult) {
@@ -385,7 +402,7 @@ func pushCreate(ctx context.Context, client Syncer, st *store.Store, calID, calP
 	href := joinHref(calPath, r.Name)
 	etag, err := client.PutObject(ctx, href, data, "", true)
 	if errors.Is(err, caldav.ErrReadOnly) {
-		markReadOnlyDiscard(ctx, st, calID, r.Name, res)
+		handleWriteForbidden(ctx, client, st, calID, calPath, r.Name, res)
 		return
 	}
 	if errors.Is(err, caldav.ErrPreconditionFailed) {
@@ -404,7 +421,7 @@ func pushCreate(ctx context.Context, client Syncer, st *store.Store, calID, calP
 	res.Pushed++
 }
 
-func pushUpdate(ctx context.Context, client Syncer, st *store.Store, calID string, r *store.Resource, serverObj caldav.Object, res *SyncResult) {
+func pushUpdate(ctx context.Context, client Syncer, st *store.Store, calID, calPath string, r *store.Resource, serverObj caldav.Object, res *SyncResult) {
 	data, err := r.Object.Encode()
 	if err != nil {
 		recordSkip(res, calID, r.Name, err)
@@ -412,7 +429,7 @@ func pushUpdate(ctx context.Context, client Syncer, st *store.Store, calID strin
 	}
 	etag, err := client.PutObject(ctx, r.Href, data, r.ETag, false)
 	if errors.Is(err, caldav.ErrReadOnly) {
-		markReadOnlyDiscard(ctx, st, calID, r.Name, res)
+		handleWriteForbidden(ctx, client, st, calID, calPath, r.Name, res)
 		return
 	}
 	if errors.Is(err, caldav.ErrPreconditionFailed) {

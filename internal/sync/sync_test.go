@@ -61,6 +61,8 @@ type fakeServer struct {
 	deletes     int
 	failPut     map[string]error
 	failDel     map[string]error
+	writable    map[string]bool  // path -> writable (missing = writable); the 403 re-check
+	writableErr map[string]error // path -> error from the writability re-check
 	seq         int
 	homeSet     string
 	created     []caldav.CalendarSpec // MKCALENDAR calls, by path order
@@ -76,11 +78,25 @@ type propPatchOp struct {
 func newFakeServer() *fakeServer {
 	return &fakeServer{
 		cals:    []caldav.Calendar{{Path: calPath, Name: "Personal"}},
-		data:    map[string]caldav.Object{},
-		failPut: map[string]error{},
-		failDel: map[string]error{},
-		homeSet: "/dav/cal/",
+		data:        map[string]caldav.Object{},
+		failPut:     map[string]error{},
+		failDel:     map[string]error{},
+		writable:    map[string]bool{},
+		writableErr: map[string]error{},
+		homeSet:     "/dav/cal/",
 	}
+}
+
+// CalendarWritable is the reactive privilege re-check. Missing key = writable
+// (fail-open), matching the real client.
+func (f *fakeServer) CalendarWritable(_ context.Context, path string) (bool, error) {
+	if err := f.writableErr[path]; err != nil {
+		return false, err
+	}
+	if w, ok := f.writable[path]; ok {
+		return w, nil
+	}
+	return true, nil
 }
 
 func (f *fakeServer) CalendarHomeSet(context.Context) (string, error) { return f.homeSet, nil }
@@ -684,8 +700,10 @@ func TestSyncReactiveReadOnlyOn403(t *testing.T) {
 	if _, err := st.Put(ctx, "personal", name, mkParsed(t, eventICS("e1@test", "Local"))); err != nil {
 		t.Fatal(err)
 	}
-	// But the server refuses the write with 403.
+	// The server refuses the write with 403, AND the privilege re-check confirms
+	// the calendar is genuinely read-only.
 	srv.failPut[calPath+name] = caldav.ErrReadOnly
+	srv.writable[calPath] = false
 
 	res, err := sync.Sync(ctx, srv, st)
 	if err != nil {
@@ -695,12 +713,42 @@ func TestSyncReactiveReadOnlyOn403(t *testing.T) {
 		t.Fatalf("Discarded = %d, want 1", res.Discarded)
 	}
 	if findResByName(t, st, "personal", name) != nil {
-		t.Error("stuck event not discarded after 403")
+		t.Error("stuck event not discarded after a confirmed-read-only 403")
 	}
 	// The calendar is now flagged read-only so future syncs won't retry.
 	cal, _ := st.Calendar("personal")
 	if !cal.ReadOnly {
-		t.Error("calendar not marked read-only after a 403 write")
+		t.Error("calendar not marked read-only after a confirmed 403")
+	}
+}
+
+// TestSyncTransient403KeepsEdit: a 403 whose privilege re-check still reports the
+// calendar writable is treated as transient — the local edit is kept (not
+// discarded) and the calendar is not flagged read-only, so it retries next sync.
+func TestSyncTransient403KeepsEdit(t *testing.T) {
+	ctx := context.Background()
+	st := newStore(t)
+	srv := newFakeServer()
+
+	name := store.ResourceName("e1@test")
+	if _, err := st.Put(ctx, "personal", name, mkParsed(t, eventICS("e1@test", "Local"))); err != nil {
+		t.Fatal(err)
+	}
+	srv.failPut[calPath+name] = caldav.ErrReadOnly
+	// Default writable = true (re-check says the calendar still grants write).
+
+	res, err := sync.Sync(ctx, srv, st)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if res.Discarded != 0 {
+		t.Errorf("Discarded = %d, want 0 (transient 403 must not drop the edit)", res.Discarded)
+	}
+	if findResByName(t, st, "personal", name) == nil {
+		t.Error("local edit was lost on a transient 403")
+	}
+	if cal, _ := st.Calendar("personal"); cal.ReadOnly {
+		t.Error("calendar wrongly flagged read-only on a transient 403")
 	}
 }
 

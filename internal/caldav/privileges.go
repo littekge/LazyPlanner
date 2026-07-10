@@ -56,6 +56,50 @@ func (c *Client) discoverWritable(ctx context.Context, homeSet string) (map[stri
 	return out, nil
 }
 
+// CalendarWritable reports whether the current user may write to the single
+// calendar at calPath, via a Depth-0 current-user-privilege-set PROPFIND. It is
+// the reactive confirmation used when a write is refused with 403: a bare 403 can
+// be transient (auth blip, rate-limit, maintenance), so callers re-check here
+// before treating the calendar as genuinely read-only. On an ambiguous answer
+// (no matching response) it fails open (writable) so a local edit isn't discarded
+// on uncertainty.
+func (c *Client) CalendarWritable(ctx context.Context, calPath string) (bool, error) {
+	body := []byte(xml.Header + `<d:propfind xmlns:d="DAV:"><d:prop><d:current-user-privilege-set/></d:prop></d:propfind>`)
+	target, err := c.resolve(calPath)
+	if err != nil {
+		return false, err
+	}
+	req, err := http.NewRequestWithContext(ctx, "PROPFIND", target, bytes.NewReader(body))
+	if err != nil {
+		return false, fmt.Errorf("caldav: building PROPFIND request: %w", err)
+	}
+	req.Header.Set("Content-Type", `application/xml; charset="utf-8"`)
+	req.Header.Set("Depth", "0")
+
+	resp, err := c.httpClient.Do(req)
+	if err != nil {
+		return false, fmt.Errorf("caldav: PROPFIND privileges %q: %w", calPath, err)
+	}
+	defer resp.Body.Close()
+	if resp.StatusCode != http.StatusMultiStatus {
+		return false, fmt.Errorf("caldav: PROPFIND privileges %q: %s%s", calPath, resp.Status, responseHint(resp.Body))
+	}
+	var ms privMultistatus
+	if err := xml.NewDecoder(resp.Body).Decode(&ms); err != nil {
+		return false, fmt.Errorf("caldav: parsing privilege response: %w", err)
+	}
+	if len(ms.Responses) == 0 {
+		return true, nil // ambiguous → fail open (keep the edit)
+	}
+	want := strings.TrimRight(calPath, "/")
+	for _, r := range ms.Responses {
+		if strings.TrimRight(r.Href, "/") == want {
+			return r.writable(), nil
+		}
+	}
+	return ms.Responses[0].writable(), nil
+}
+
 // --- current-user-privilege-set response (RFC 3744 / WebDAV) ---
 
 type privMultistatus struct {
