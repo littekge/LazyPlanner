@@ -15,7 +15,7 @@ func TestRoundTrip(t *testing.T) {
 	if got := state.Load(p); got.LeftWidth != 0 || len(got.HiddenCalendars) != 0 {
 		t.Errorf("missing file loaded %+v, want zero", got)
 	}
-	if err := state.Save(p, state.State{LeftWidth: 33, HiddenCalendars: []string{"work"}}); err != nil {
+	if err := state.Save(p, state.State{LeftWidth: 33, HiddenCalendars: []string{"work"}, RowsPerHour: 3}); err != nil {
 		t.Fatal(err)
 	}
 	got := state.Load(p)
@@ -24,6 +24,9 @@ func TestRoundTrip(t *testing.T) {
 	}
 	if len(got.HiddenCalendars) != 1 || got.HiddenCalendars[0] != "work" {
 		t.Errorf("HiddenCalendars = %v, want [work]", got.HiddenCalendars)
+	}
+	if got.RowsPerHour != 3 {
+		t.Errorf("RowsPerHour = %d, want 3", got.RowsPerHour)
 	}
 }
 

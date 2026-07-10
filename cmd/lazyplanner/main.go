@@ -104,10 +104,11 @@ func runTUI() error {
 		Store:     s,
 		Title:     title,
 		Sync:      buildSyncFn(cfg.Server, s),
-		LeftWidth: uiState.LeftWidth,
-		Hidden:    uiState.HiddenCalendars,
-		SaveState: func(leftWidth int, hidden []string) {
-			_ = state.Save(statePath, state.State{LeftWidth: leftWidth, HiddenCalendars: hidden})
+		LeftWidth:   uiState.LeftWidth,
+		Hidden:      uiState.HiddenCalendars,
+		RowsPerHour: uiState.RowsPerHour,
+		SaveState: func(leftWidth int, hidden []string, rowsPerHour int) {
+			_ = state.Save(statePath, state.State{LeftWidth: leftWidth, HiddenCalendars: hidden, RowsPerHour: rowsPerHour})
 		},
 		EditConfig: editConfigFn(configPath, pathErr, accountID, s),
 	})

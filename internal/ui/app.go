@@ -130,7 +130,12 @@ type app struct {
 	leftCol   *tview.Flex
 	leftWidth int
 	accordion bool
-	saveState func(leftWidth int, hidden []string)
+	saveState func(leftWidth int, hidden []string, rowsPerHour int)
+
+	// hourRows is the week/day time-grid hour-row height set with +/- (0 =
+	// auto-fit the whole day to the pane); mirrored onto the time grid and
+	// persisted in the state file.
+	hourRows int
 
 	// hidden holds the calendar ids the user has hidden from the calendar/agenda
 	// views (persisted in the state file). A local view preference, not server data.
@@ -201,11 +206,12 @@ type Options struct {
 	Store     *store.Store
 	Title     string
 	Sync      func(context.Context) (sync.SyncResult, error)
-	LeftWidth int      // remembered left-column width (0 = default)
-	Hidden    []string // calendar ids hidden from the calendar/agenda views
+	LeftWidth   int      // remembered left-column width (0 = default)
+	Hidden      []string // calendar ids hidden from the calendar/agenda views
+	RowsPerHour int      // remembered week/day hour-row height (0 = auto-fit)
 	// SaveState persists remembered UI state (nil = don't persist). Every save
 	// passes the full state, so the caller can rewrite the file wholesale.
-	SaveState func(leftWidth int, hidden []string)
+	SaveState func(leftWidth int, hidden []string, rowsPerHour int)
 	// EditConfig opens the config file in $EDITOR and reloads it, returning a
 	// fresh sync closure to swap in (nil = keep the current one) and an error.
 	// The UI calls it inside a tview Suspend so the editor owns the terminal.
@@ -225,7 +231,11 @@ func Run(opts Options) error {
 	if opts.LeftWidth != 0 {
 		a.leftWidth = clampLeftWidth(opts.LeftWidth)
 	}
+	if opts.RowsPerHour != 0 {
+		a.hourRows = clampRowsPerHour(opts.RowsPerHour)
+	}
 	a.build()
+	a.timegrid.rowsPerHour = a.hourRows
 	a.reload()
 	a.setMode(modeCalendar)
 
@@ -619,10 +629,18 @@ func (a *app) globalKeys(ev *tcell.EventKey) *tcell.EventKey {
 			a.showHelp()
 			return nil
 		case '+':
-			a.setAccordion(true)
+			if a.timeGridActive() {
+				a.zoomHour(1)
+			} else {
+				a.setAccordion(true)
+			}
 			return nil
 		case '-':
-			a.setAccordion(false)
+			if a.timeGridActive() {
+				a.zoomHour(-1)
+			} else {
+				a.setAccordion(false)
+			}
 			return nil
 		case 'H':
 			if a.mode == modeTasks {

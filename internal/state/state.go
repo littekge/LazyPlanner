@@ -21,6 +21,9 @@ type State struct {
 	// HiddenCalendars are the ids of calendars the user has hidden locally from
 	// the calendar/agenda views. This is a local view preference, not server data.
 	HiddenCalendars []string `json:"hidden_calendars,omitempty"`
+	// RowsPerHour is the remembered week/day time-grid hour-row height set with
+	// +/-; 0 means auto-fit the whole day to the pane.
+	RowsPerHour int `json:"rows_per_hour,omitempty"`
 }
 
 // Load reads the state file at path. Any problem (missing file, bad JSON) yields

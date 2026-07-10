@@ -53,7 +53,7 @@ var helpSections = []struct {
 		{"g d", "go to date (smart-parsed)"},
 	}},
 	{"Layout", [][2]string{
-		{"+ / -", "collapse / restore the overview (accordion)"},
+		{"+ / -", "week/day: zoom hour height (remembered) · else: collapse / restore the overview (accordion)"},
 		{"Ctrl-← / Ctrl-→", "narrow / widen the overview column"},
 	}},
 	{"Sync & commands", [][2]string{

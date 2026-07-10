@@ -263,3 +263,105 @@ func TestTimeGridSpatialDrillNav(t *testing.T) {
 		t.Errorf("Left from A = %q, want A (no move at edge)", got)
 	}
 }
+
+// hourLabelRows maps each visible hour label to its screen row, matching the
+// gutter text exactly (so "1am" isn't confused with "11am").
+func hourLabelRows(t *testing.T, tg *timeGridView, w, h int) map[int]int {
+	t.Helper()
+	cells, cw, ch := drawCells(t, tg, w, h)
+	rows := map[int]int{}
+	for r := 0; r < ch; r++ {
+		var b strings.Builder
+		for c := 0; c < gutterWidth-1 && c < cw; c++ { // stop before the separator column
+			if rs := cells[r*cw+c].Runes; len(rs) > 0 {
+				b.WriteRune(rs[0])
+			} else {
+				b.WriteByte(' ')
+			}
+		}
+		gut := strings.TrimSpace(b.String())
+		for hour := 0; hour < hoursPerDay; hour++ {
+			if gut == hourLabel(hour) {
+				rows[hour] = r
+			}
+		}
+	}
+	return rows
+}
+
+// TestTimeGridUniformHourSpacing: when the whole day fits, every hour occupies
+// the same number of rows, so consecutive hour labels are evenly spaced. The old
+// float-scaled mapping produced a mix of gaps at a height like this (body 52 →
+// 2.17 rows/hour truncated unevenly); the uniform grid gives a constant 2.
+func TestTimeGridUniformHourSpacing(t *testing.T) {
+	tg := newTimeGridView()
+	day := time.Date(2026, 7, 4, 0, 0, 0, 0, time.Local)
+	tg.setData([]time.Time{day}, nil, nil, day, day)
+
+	// Body height = h-3 = 52 rows → 24*2=48 fit with a small margin (no scroll).
+	rows := hourLabelRows(t, tg, 100, 55)
+	if len(rows) != hoursPerDay {
+		t.Fatalf("expected all %d hour labels to fit, got %d", hoursPerDay, len(rows))
+	}
+	gap := rows[1] - rows[0]
+	for hour := 1; hour < hoursPerDay; hour++ {
+		if d := rows[hour] - rows[hour-1]; d != gap {
+			t.Errorf("uneven spacing: %s..%s gap %d, want a uniform %d",
+				hourLabel(hour-1), hourLabel(hour), d, gap)
+		}
+	}
+	if gap != 2 {
+		t.Errorf("expected 2 rows per hour at this height, got %d", gap)
+	}
+}
+
+// TestTimeGridRowsPerHourOverride: an explicit rowsPerHour (the +/- zoom) sets a
+// uniform hour height regardless of the pane, and is recorded in lastRowsPerHour.
+func TestTimeGridRowsPerHourOverride(t *testing.T) {
+	tg := newTimeGridView()
+	day := time.Date(2026, 7, 4, 0, 0, 0, 0, time.Local)
+	tg.setData([]time.Time{day}, nil, nil, day, day)
+	tg.rowsPerHour = 3 // zoom to 3 rows/hour
+
+	// Body height = h-3 = 72 = 24*3, so the whole day fits at 3 rows/hour.
+	rows := hourLabelRows(t, tg, 100, 75)
+	if len(rows) != hoursPerDay {
+		t.Fatalf("expected all %d hour labels at 3 rows/hour, got %d", hoursPerDay, len(rows))
+	}
+	for hour := 1; hour < hoursPerDay; hour++ {
+		if d := rows[hour] - rows[hour-1]; d != 3 {
+			t.Errorf("override spacing: %s..%s gap %d, want 3", hourLabel(hour-1), hourLabel(hour), d)
+		}
+	}
+	if tg.lastRowsPerHour != 3 {
+		t.Errorf("lastRowsPerHour = %d, want 3", tg.lastRowsPerHour)
+	}
+}
+
+// TestTimeGridScrollsShortPaneToDrilledItem: on a pane too short to show all 24
+// hours at one row each, the grid scrolls to keep the drilled item visible
+// instead of squashing the hours together.
+func TestTimeGridScrollsShortPaneToDrilledItem(t *testing.T) {
+	tg := newTimeGridView()
+	day := time.Date(2026, 7, 4, 0, 0, 0, 0, time.Local)
+	ev := &model.Event{Summary: "LateMtg", Start: time.Date(2026, 7, 4, 21, 0, 0, 0, time.Local)}
+	timed := map[string][]model.Occurrence{
+		dayKey(day): {{Start: ev.Start, End: ev.Start.Add(time.Hour), Event: ev}},
+	}
+	tg.setData([]time.Time{day}, timed, nil, day, day)
+	tg.items = map[string][]model.AgendaItem{dayKey(day): {{Start: ev.Start, Title: ev.Summary, Event: ev}}}
+
+	// Body height = h-3 = 15 rows < 24, so the day must scroll. Undrilled it
+	// anchors to the current time (midnight here), leaving a 9pm event off-screen.
+	const w, h = 100, 18
+	if strings.Contains(renderPrimitive(t, tg, w, h), "LateMtg") {
+		t.Fatal("expected the 9pm event off-screen before drilling on a short pane")
+	}
+
+	// Drilling to it scrolls the grid so it comes into view.
+	tg.eventMode = true
+	tg.eventIndex = 0
+	if !strings.Contains(renderPrimitive(t, tg, w, h), "LateMtg") {
+		t.Error("drilled 9pm event should scroll into view on a short pane")
+	}
+}

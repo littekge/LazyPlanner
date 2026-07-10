@@ -1,6 +1,7 @@
 package ui
 
 import (
+	"fmt"
 	"sort"
 
 	"github.com/gdamore/tcell/v2"
@@ -298,8 +299,9 @@ func (a *app) resizeLeft(delta int) {
 	a.persistState()
 }
 
-// persistState saves the remembered UI prefs (pane width + hidden calendars) via
-// the callback wired from main. No-op when persistence is disabled.
+// persistState saves the remembered UI prefs (pane width, hidden calendars, and
+// the week/day hour-row zoom) via the callback wired from main. No-op when
+// persistence is disabled.
 func (a *app) persistState() {
 	if a.saveState == nil {
 		return
@@ -311,7 +313,7 @@ func (a *app) persistState() {
 		}
 	}
 	sort.Strings(hidden) // stable file output
-	a.saveState(a.leftWidth, hidden)
+	a.saveState(a.leftWidth, hidden, a.hourRows)
 }
 
 // toggleCalendarVisibility hides or shows the highlighted calendar's items on the
@@ -344,6 +346,35 @@ func (a *app) afterVisibilityChange() {
 	}
 	a.buildAgendaLeft()
 	a.reloadCurrent()
+}
+
+// timeGridActive reports whether the week or day time-grid is the current Main
+// view — where +/- zoom the hour-row height instead of driving the accordion.
+func (a *app) timeGridActive() bool {
+	return a.mode == modeCalendar && (a.viewMode == viewWeek || a.viewMode == viewDay)
+}
+
+// zoomHour adjusts the week/day time-grid's hour-row height by delta rows per
+// hour (clamped) and remembers it. It steps from the height currently in effect:
+// the explicit zoom if one is set, otherwise the auto-fit height last drawn — so
+// the first press zooms relative to what's on screen. The taller the hours, the
+// more the day scrolls.
+func (a *app) zoomHour(delta int) {
+	cur := a.timegrid.rowsPerHour
+	if cur < 1 {
+		cur = a.timegrid.lastRowsPerHour
+		if cur < 1 {
+			cur = 1
+		}
+	}
+	n := clampRowsPerHour(cur + delta)
+	if n == a.hourRows {
+		return
+	}
+	a.hourRows = n
+	a.timegrid.rowsPerHour = n
+	a.persistState()
+	a.flash(fmt.Sprintf("Hour rows: %d", n))
 }
 
 // setAccordion collapses (on) or restores (off) the left overview column so the

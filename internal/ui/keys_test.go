@@ -341,7 +341,7 @@ func TestToggleCalendarVisibility(t *testing.T) {
 		t.Skip("fixture has no calendars")
 	}
 	var savedHidden []string
-	a.saveState = func(_ int, hidden []string) { savedHidden = hidden }
+	a.saveState = func(_ int, hidden []string, _ int) { savedHidden = hidden }
 
 	a.calendars.SetCurrentItem(0)
 	id := a.selectedCalendarID()
@@ -387,5 +387,36 @@ func TestHiddenCalendarDropsFromAgenda(t *testing.T) {
 	got, _ := a.store.EventOccurrencesVisible(from, to, a.hidden)
 	if len(got) != 0 {
 		t.Errorf("hiding all calendars left %d occurrences (of %d)", len(got), len(base))
+	}
+}
+
+// TestPlusMinusContextual: in the week/day time-grid + / - zoom the hour-row
+// height; in any other view they drive the accordion (unchanged).
+func TestPlusMinusContextual(t *testing.T) {
+	a := newRootedTestApp(t, time.Date(2026, 7, 5, 12, 0, 0, 0, time.UTC))
+	a.saveState = func(int, []string, int) {}
+
+	// Week view: + zooms and does not collapse the overview.
+	a.setMode(modeCalendar)
+	a.viewMode = viewWeek
+	before := a.hourRows
+	a.globalKeys(runeKey('+'))
+	if a.hourRows == before {
+		t.Error("+ in week view should change the hour-row zoom")
+	}
+	if a.accordion {
+		t.Error("+ in week view should not trigger the accordion")
+	}
+
+	// Month view: + drives the accordion, leaving the zoom alone.
+	a.viewMode = viewMonth
+	a.accordion = false
+	zoom := a.hourRows
+	a.globalKeys(runeKey('+'))
+	if !a.accordion {
+		t.Error("+ in month view should trigger the accordion")
+	}
+	if a.hourRows != zoom {
+		t.Error("+ in month view should not change the hour-row zoom")
 	}
 }

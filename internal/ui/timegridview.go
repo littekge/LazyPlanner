@@ -14,12 +14,34 @@ const (
 	gutterWidth = 6 // width of the hour-label column ("12pm ")
 	blockColor  = tcell.ColorDarkSlateGray
 	hoursPerDay = 24
+
+	// defaultAnchorHour is where a scrolled day centers when nothing is drilled
+	// and no shown day is today — mid-morning, so the working day is on screen.
+	defaultAnchorHour = 8
+
+	// Bounds for the +/- hour-row zoom (rows per hour).
+	minRowsPerHour = 1
+	maxRowsPerHour = 12
 )
+
+// clampRowsPerHour keeps a zoom value within the supported range.
+func clampRowsPerHour(n int) int {
+	switch {
+	case n < minRowsPerHour:
+		return minRowsPerHour
+	case n > maxRowsPerHour:
+		return maxRowsPerHour
+	default:
+		return n
+	}
+}
 
 // timeGridView is the week/day view: a 24-hour axis with events drawn as blocks
 // sized by duration, all-day items in a band at the top, and overlapping events
 // placed side by side (via model.LayoutDay). Day view is one column, week seven.
-// The whole day is scaled to fill the pane height (no vertical scrolling).
+// Every hour is a uniform height so hours are evenly spaced; when the full day
+// is taller than the pane the grid scrolls (following the drilled item, else the
+// current time) rather than squashing the hour rows unevenly.
 type timeGridView struct {
 	*tview.Box
 
@@ -54,6 +76,12 @@ type timeGridView struct {
 	taskColor func(*model.Todo) (calColor, bool)
 	// isFolder reports whether a task UID is a folder (▸ marker instead of a box).
 	isFolder func(uid string) bool
+
+	// rowsPerHour is an explicit hour-row height set by the +/- zoom (0 = auto-fit
+	// the whole day to the pane). lastRowsPerHour records the value actually used
+	// on the last draw so the zoom can step from what's on screen.
+	rowsPerHour     int
+	lastRowsPerHour int
 }
 
 // folderTask reports whether a task is a folder (has incomplete children).
@@ -439,6 +467,61 @@ func (tg *timeGridView) handleEventMode(ev *tcell.EventKey) {
 	}
 }
 
+// vScale maps fractional hours (0..24) onto screen rows for the time-grid body.
+// Every hour is a uniform rowsPerHour tall, so the hour axis is evenly spaced;
+// scroll hides that many grid rows above the top of the pane when the full day
+// is taller than the pane.
+type vScale struct {
+	bodyY, bodyH int
+	rowsPerHour  int
+	scroll       int
+}
+
+// row returns the screen row for a fractional hour; callers clip to the pane.
+func (s vScale) row(hf float64) int {
+	return s.bodyY + int(hf*float64(s.rowsPerHour)) - s.scroll
+}
+
+// newVScale sizes the uniform hour grid for the given body. It uses the largest
+// whole rows-per-hour that fits; when even one row per hour overflows the pane
+// (a very short body) it keeps one row per hour and scrolls to the anchor hour.
+func (tg *timeGridView) newVScale(bodyY, bodyH int) vScale {
+	rph := tg.rowsPerHour // explicit +/- zoom (0 = auto-fit)
+	if rph < 1 {
+		rph = bodyH / hoursPerDay
+		if rph < 1 {
+			rph = 1
+		}
+	}
+	tg.lastRowsPerHour = rph
+	vs := vScale{bodyY: bodyY, bodyH: bodyH, rowsPerHour: rph}
+	if gridH := rph * hoursPerDay; gridH > bodyH {
+		// Center the anchor hour in the pane, clamped so the ends stay flush.
+		vs.scroll = int(tg.anchorHour()*float64(rph)) - bodyH/2
+		if maxScroll := gridH - bodyH; vs.scroll > maxScroll {
+			vs.scroll = maxScroll
+		}
+		if vs.scroll < 0 {
+			vs.scroll = 0
+		}
+	}
+	return vs
+}
+
+// anchorHour is the hour kept in view when the day scrolls: the drilled timed
+// item's time, else the current time when a shown day is today, else mid-morning.
+func (tg *timeGridView) anchorHour() float64 {
+	if sel := tg.selectedItem(); sel != nil && !isAllDayItem(*sel) {
+		return hourFloat(sel.Start.In(time.Local))
+	}
+	for _, day := range tg.days {
+		if model.SameDay(day, tg.now) {
+			return hourFloat(tg.now.In(time.Local))
+		}
+	}
+	return defaultAnchorHour
+}
+
 func (tg *timeGridView) Draw(screen tcell.Screen) {
 	tg.Box.DrawForSubclass(screen, tg)
 	x, y, w, h := tg.GetInnerRect()
@@ -507,25 +590,30 @@ func (tg *timeGridView) Draw(screen tcell.Screen) {
 	if bodyH < 1 {
 		return
 	}
+	vs := tg.newVScale(bodyY, bodyH)
 
-	// Hour labels: all 24 hours mapped across the body height. Skip a label when
-	// the day is compressed enough that it would land on an already-labelled row.
-	lastRow := -1
+	// Hour labels: every hour sits rowsPerHour apart (uniform). Hours scrolled
+	// off the top/bottom of the pane are skipped.
 	for hour := 0; hour < hoursPerDay; hour++ {
-		row := bodyY + hour*bodyH/hoursPerDay
-		if row == lastRow || row >= bodyY+bodyH {
+		row := vs.row(float64(hour))
+		if row < bodyY || row >= bodyY+bodyH {
 			continue
 		}
 		printStyled(screen, x, row, gutterWidth-1, hourLabel(hour), tcell.StyleDefault.Foreground(adjacentColor))
-		lastRow = row
 	}
-	// Column separators.
+	// Column separators, down to the bottom of the grid. A uniform grid can leave
+	// a small blank margin below the last hour when the pane isn't a whole number
+	// of hours tall and it isn't scrolling.
+	gridBottom := vs.row(hoursPerDay)
+	if gridBottom > bodyY+bodyH {
+		gridBottom = bodyY + bodyH
+	}
 	for di := 0; di <= n; di++ {
 		sx := colStart + di*colW - 1
 		if di == 0 {
 			sx = colStart - 1
 		}
-		for yy := bodyY; yy < bodyY+bodyH && yy < y+h; yy++ {
+		for yy := bodyY; yy < gridBottom && yy < y+h; yy++ {
 			screen.SetContent(sx, yy, tcell.RuneVLine, nil, sepStyle)
 		}
 	}
@@ -537,14 +625,14 @@ func (tg *timeGridView) Draw(screen tcell.Screen) {
 		for _, p := range places {
 			selected := sel != nil && sel.Event != nil && !sel.Event.AllDay && model.SameDay(day, tg.selected) &&
 				p.Occ.Event == sel.Event && p.Occ.Start.Equal(sel.Start)
-			tg.drawBlock(screen, p, colStart+di*colW, colW, bodyY, bodyH, selected)
+			tg.drawBlock(screen, p, colStart+di*colW, colW, vs, selected)
 		}
 		// Timed due-task markers, drawn on top at their due time; the cycled task on
 		// the selected day is highlighted.
 		_, timedTasks := tg.dueParts(day)
 		for _, t := range timedTasks {
 			selected := sel != nil && sel.Todo != nil && sel.Todo.UID == t.UID && model.SameDay(day, tg.selected)
-			tg.drawTaskMarker(screen, t, colStart+di*colW, colW, bodyY, bodyH, selected)
+			tg.drawTaskMarker(screen, t, colStart+di*colW, colW, vs, selected)
 		}
 	}
 }
@@ -559,14 +647,11 @@ func isAllDayItem(it model.AgendaItem) bool {
 // time in the grid body. It's a foreground marker (no fill), distinguishing a due
 // task from the filled event blocks; it may sit over an event block at the same
 // time.
-func (tg *timeGridView) drawTaskMarker(screen tcell.Screen, t *model.Todo, colX, colW, bodyY, bodyH int, selected bool) {
+func (tg *timeGridView) drawTaskMarker(screen tcell.Screen, t *model.Todo, colX, colW int, vs vScale, selected bool) {
 	due := t.Due.In(time.Local)
-	row := bodyY + int(hourFloat(due)*float64(bodyH)/hoursPerDay)
-	if row < bodyY {
-		row = bodyY
-	}
-	if row >= bodyY+bodyH {
-		row = bodyY + bodyH - 1
+	row := vs.row(hourFloat(due))
+	if row < vs.bodyY || row >= vs.bodyY+vs.bodyH {
+		return // due time is scrolled out of view
 	}
 	style := tcell.StyleDefault.Foreground(tg.taskFg(t))
 	if selected {
@@ -575,7 +660,7 @@ func (tg *timeGridView) drawTaskMarker(screen tcell.Screen, t *model.Todo, colX,
 	printStyled(screen, colX, row, colW-1, taskMarkerLabel(t, tg.folderTask(t)), style)
 }
 
-func (tg *timeGridView) drawBlock(screen tcell.Screen, p model.Placement, colX, colW, bodyY, bodyH int, selected bool) {
+func (tg *timeGridView) drawBlock(screen tcell.Screen, p model.Placement, colX, colW int, vs vScale, selected bool) {
 	startT := p.Occ.Start.In(time.Local)
 	endT := p.Occ.End.In(time.Local)
 	startHF := hourFloat(startT)
@@ -584,18 +669,19 @@ func (tg *timeGridView) drawBlock(screen tcell.Screen, p model.Placement, colX, 
 		endHF = hoursPerDay // ends at/after midnight: extend to the bottom of the day
 	}
 
-	top := bodyY + int(startHF*float64(bodyH)/hoursPerDay)
-	bottom := bodyY + int(endHF*float64(bodyH)/hoursPerDay)
-	if top < bodyY {
-		top = bodyY
+	top := vs.row(startHF)
+	bottom := vs.row(endHF)
+	if bottom < top+1 {
+		bottom = top + 1 // a sub-hour block still occupies one row
+	}
+	// Clip to the visible pane — the block may be partly (or fully) scrolled out.
+	if top < vs.bodyY {
+		top = vs.bodyY
+	}
+	if bottom > vs.bodyY+vs.bodyH {
+		bottom = vs.bodyY + vs.bodyH
 	}
 	height := bottom - top
-	if height < 1 {
-		height = 1
-	}
-	if top+height > bodyY+bodyH {
-		height = bodyY + bodyH - top
-	}
 	if height < 1 {
 		return
 	}
