@@ -177,6 +177,14 @@ func (a *app) cmdGoto(arg string) {
 func (a *app) cmdCalendar(args string) {
 	sub, rest, _ := strings.Cut(args, " ")
 	rest = strings.TrimSpace(rest)
+
+	// `new` needs no highlighted calendar — it opens the create form (like `ic`).
+	if strings.EqualFold(sub, "new") {
+		a.echo(":calendar new")
+		a.showCalendarForm("", 0)
+		return
+	}
+
 	id := a.currentCalendarID()
 	if id == "" {
 		a.flash("select a calendar first")
@@ -220,7 +228,7 @@ func (a *app) cmdCalendar(args string) {
 		a.afterVisibilityChange()
 		a.echo(":calendar show")
 	default:
-		a.flash("calendar rename|color|hide|show")
+		a.flash("calendar new|rename|color|hide|show")
 	}
 }
 

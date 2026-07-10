@@ -64,3 +64,12 @@ func TestCalendarHideShowViaCommand(t *testing.T) {
 		t.Errorf(":calendar show did not un-hide %q", id)
 	}
 }
+
+func TestCalendarNewOpensForm(t *testing.T) {
+	a := newRootedTestApp(t, time.Date(2026, 7, 5, 9, 0, 0, 0, time.UTC))
+	a.setMode(modeCalendar)
+	a.cmdCalendar("new")
+	if !a.root.HasPage(pageForm) {
+		t.Error(":calendar new should open the create/edit calendar form")
+	}
+}

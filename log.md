@@ -4,6 +4,12 @@
 
 ---
 
+## 2026-07-10 — Audit item 14: `:calendar new` command
+
+- Gap: main.md's command list included `:calendar new` but `cmdCalendar` only handled rename/color/hide/show (creation was only on the `ic`/`il` chords).
+- **Fix** (`internal/ui/command.go`): `:calendar new` opens the create/edit calendar form (`showCalendarForm("", 0)`), handled before the "select a calendar first" guard since it needs no highlight. Fallback hint + help overlay updated to list `new`.
+- Tests (`calendarcmd_test.go`): `TestCalendarNewOpensForm` — `:calendar new` opens the form page. Full gate pass.
+
 ## 2026-07-10 — Audit item 13: clearing an event's end removes DTEND
 
 - Owner decision: make the event edit contract symmetric with the todo one — `applyEvent` only wrote DTEND when End was set, so a zero End left the old DTEND in place (couldn't make an event zero-duration). Benign today (the UI form always supplies End), but the asymmetry with `applyTodo`'s DUE handling was real.

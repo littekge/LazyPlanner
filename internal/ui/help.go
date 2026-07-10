@@ -61,7 +61,7 @@ var helpSections = []struct {
 		{"r", "sync now (= :sync)"},
 		{": ", "cmd — :sync :view :goto :search :config :calendar :conflicts :q"},
 		{":config", "edit config in $EDITOR, reload on exit"},
-		{":calendar", "rename / color / hide / show the current calendar (`color` with no hex opens the swatch picker)"},
+		{":calendar", "new / rename / color / hide / show (`new` opens the create form; `color` with no hex opens the swatch picker)"},
 		{":conflicts", "resolve items that changed on both sides"},
 		{"?", "this help"},
 	}},
