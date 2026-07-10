@@ -4,6 +4,12 @@
 
 ---
 
+## 2026-07-10 — Audit item 2: cross-list task move rolls back on partial failure
+
+- Owner decision: make the cross-list yank/paste move **all-or-nothing**. Previously `moveSubtree` did Put(target)+Delete(source) per node and only recorded undo after the whole loop, so a mid-loop failure could leave nodes moved with no undo (or a node duplicated in both lists).
+- **Fix** (`internal/ui/yankpaste.go`): accumulate a `rollback` list of reversals as each write commits (Put → `Forget` the copy; Delete → `Restore` the original, which clears its tombstone). On any error, run them newest-first so the subtree ends up entirely back in the source list; `yankUID` is kept so the user can retry. Undo is still pushed only on full success.
+- Tests (`yankpaste_test.go`): `TestMoveSubtreeRollsBackOnFailure` forces a mid-move failure by making the source calendar dir read-only (source delete fails, dest Put succeeds) and asserts both nodes remain in the source with no stray copy in the dest (skips as root, where the perms trick doesn't hold). Full gate + `-race` pass.
+
 ## 2026-07-10 — Audit item 1: confirm read-only before discarding a 403'd edit
 
 - Owner decision on the reactive-403 data-loss risk: don't trust a bare 403 (it can be transient — auth blip, rate-limit, WAF, maintenance); re-check the calendar's privileges and only discard the stuck local edit when read-only is *confirmed*.

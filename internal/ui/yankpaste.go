@@ -106,13 +106,25 @@ func (a *app) reparentTo(src store.Located, targetParent string) {
 // moveSubtree relocates the task rooted at uid and all its descendants from
 // srcCal to dstCal: each resource is recreated in the target and deleted from the
 // source, in one compound undo step. The moved root also adopts targetParent.
+// The move is all-or-nothing: if any step fails partway, the already-moved nodes
+// are rolled back so the subtree never ends up split across the two lists.
 func (a *app) moveSubtree(uid, targetParent, srcCal, dstCal string) {
 	if !a.guardWrite(srcCal) || !a.guardWrite(dstCal) {
 		return
 	}
 	uids := append([]string{uid}, a.descendants(uid)...)
 	ctx := context.Background()
-	var ops []undoOp
+
+	var ops []undoOp     // user-facing undo (u), pushed only on full success
+	var rollback []func() // reversals of committed writes, run newest-first on failure
+	fail := func(msg string) {
+		for i := len(rollback) - 1; i >= 0; i-- {
+			rollback[i]()
+		}
+		a.refresh(uid) // yankUID kept so the user can retry
+		a.flash(msg)
+	}
+
 	for _, u := range uids {
 		loc, ok := a.store.Locate(u)
 		if !ok {
@@ -122,20 +134,28 @@ func (a *app) moveSubtree(uid, targetParent, srcCal, dstCal string) {
 		if u == uid { // the moved root adopts the paste target as its parent
 			edited, err := model.SetTodoParent(loc.Object, u, targetParent, a.now, a.loc)
 			if err != nil {
-				a.flash("Move failed: " + err.Error())
+				fail("Move failed: " + err.Error())
 				return
 			}
 			obj = edited
 		}
 		name := store.ResourceName(u)
 		if _, err := a.store.Put(ctx, dstCal, name, obj); err != nil {
-			a.flash("Move failed: " + err.Error())
+			fail("Move failed: " + err.Error())
 			return
 		}
+		// Reversal for the Put: drop the just-created copy (never synced → Forget
+		// leaves no tombstone).
+		rollback = append(rollback, func() { _ = a.store.Forget(ctx, dstCal, name) })
+
 		if err := a.store.Delete(ctx, srcCal, loc.Name); err != nil {
-			a.flash("Move failed: " + err.Error())
+			fail("Move failed: " + err.Error())
 			return
 		}
+		// Reversal for the Delete: restore the original (clears its tombstone).
+		srcName, srcPrev := loc.Name, loc.Prev
+		rollback = append(rollback, func() { _, _ = a.store.Restore(ctx, srcCal, srcName, srcPrev) })
+
 		// Undo reverses both writes: delete the new copy, restore the original.
 		ops = append(ops,
 			undoOp{calID: dstCal, name: name, prev: nil},
