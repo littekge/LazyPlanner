@@ -62,7 +62,9 @@ type fakeServer struct {
 	deletes      int
 	failPut      map[string]error
 	failDel      map[string]error
-	failDownload map[string]error // calendar path -> DownloadAll error
+	failDownload map[string]error         // calendar path -> DownloadAll error
+	getData      map[string]caldav.Object // href -> version GetObject returns (else f.data)
+	gets         int
 	writable     map[string]bool  // path -> writable (missing = writable); the 403 re-check
 	writableErr  map[string]error // path -> error from the writability re-check
 	seq          int
@@ -84,6 +86,7 @@ func newFakeServer() *fakeServer {
 		failPut:      map[string]error{},
 		failDel:      map[string]error{},
 		failDownload: map[string]error{},
+		getData:      map[string]caldav.Object{},
 		writable:     map[string]bool{},
 		writableErr:  map[string]error{},
 		homeSet:      "/dav/cal/",
@@ -141,6 +144,20 @@ func (f *fakeServer) DeleteCalendar(_ context.Context, path string) error {
 
 func (f *fakeServer) DiscoverCalendars(context.Context) ([]caldav.Calendar, error) {
 	return f.cals, nil
+}
+
+// GetObject returns the getData override for an href when present (so a test can
+// make the re-fetched version differ from the start-of-sync download), else the
+// live data. Missing -> not found.
+func (f *fakeServer) GetObject(_ context.Context, href string) (caldav.Object, error) {
+	f.gets++
+	if o, ok := f.getData[href]; ok {
+		return o, nil
+	}
+	if o, ok := f.data[href]; ok {
+		return o, nil
+	}
+	return caldav.Object{}, errors.New("not found")
 }
 
 func (f *fakeServer) DownloadAll(_ context.Context, p string) ([]caldav.Object, error) {
@@ -904,5 +921,46 @@ func TestSyncDoesNotClobberPendingLocalRename(t *testing.T) {
 	// And it was pushed to the server (PROPPATCH), so both sides now agree.
 	if len(srv.propPatched) == 0 || srv.propPatched[len(srv.propPatched)-1].displayName != "MyStuff" {
 		t.Errorf("local rename not pushed via PROPPATCH: %+v", srv.propPatched)
+	}
+}
+
+// TestSyncRefetchesOn412: a push that 412s re-fetches the current server version
+// (not the stale start-of-sync one) and stashes it as the conflict.
+func TestSyncRefetchesOn412(t *testing.T) {
+	ctx := context.Background()
+	st := newStore(t)
+	srv := newFakeServer()
+	name := store.ResourceName("e1@test")
+	href := calPath + name
+
+	// Synced clean at srv-1 on both sides.
+	if _, err := st.PutRemote(ctx, "personal", name, mkParsed(t, eventICS("e1@test", "Base")), "srv-1", href); err != nil {
+		t.Fatal(err)
+	}
+	srv.data[href] = caldav.Object{Path: href, ETag: "srv-1", Data: mkICal(t, eventICS("e1@test", "Base"))}
+	// Local edit (dirty, still srv-1 on our side).
+	if _, err := st.Put(ctx, "personal", name, mkParsed(t, eventICS("e1@test", "LocalEdit"))); err != nil {
+		t.Fatal(err)
+	}
+	// The PUT 412s; the *current* server version (what a re-fetch returns) is srv-2.
+	srv.failPut[href] = caldav.ErrPreconditionFailed
+	srv.getData[href] = caldav.Object{Path: href, ETag: "srv-2", Data: mkICal(t, eventICS("e1@test", "ServerEdit"))}
+
+	res, err := sync.Sync(ctx, srv, st)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if res.Conflicts != 1 {
+		t.Fatalf("Conflicts = %d, want 1", res.Conflicts)
+	}
+	if srv.gets == 0 {
+		t.Error("GetObject was not called on the 412")
+	}
+	cons := st.Conflicts()
+	if len(cons) != 1 {
+		t.Fatalf("stored conflicts = %d, want 1", len(cons))
+	}
+	if cons[0].ServerETag != "srv-2" {
+		t.Errorf("stashed conflict ETag = %q, want the fresh srv-2 (not the stale srv-1)", cons[0].ServerETag)
 	}
 }

@@ -35,6 +35,9 @@ type Syncer interface {
 	// CalendarWritable reports whether the current user may write to the calendar
 	// at path — the reactive confirmation used when a write returns 403.
 	CalendarWritable(ctx context.Context, path string) (bool, error)
+	// GetObject fetches a single resource fresh — used to re-read the current
+	// server version when a conditional write returns 412.
+	GetObject(ctx context.Context, href string) (caldav.Object, error)
 }
 
 // SyncError records one resource that could not be synced. The rest of the sync
@@ -445,7 +448,13 @@ func pushUpdate(ctx context.Context, client Syncer, st *store.Store, calID, calP
 		return
 	}
 	if errors.Is(err, caldav.ErrPreconditionFailed) {
-		// The server changed between our download and this write → conflict.
+		// The server changed between our download and this write → conflict. The
+		// serverObj from the start of the sync is now stale (that's what the 412
+		// means), so re-fetch the current server version to stash an accurate
+		// conflict; fall back to serverObj if the re-fetch fails.
+		if fresh, gerr := client.GetObject(ctx, r.Href); gerr == nil {
+			serverObj = fresh
+		}
 		stashServerConflict(ctx, st, calID, r.Name, serverObj, res)
 		return
 	}

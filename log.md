@@ -4,6 +4,12 @@
 
 ---
 
+## 2026-07-10 — Audit item 12: re-fetch the server version on a 412 conflict
+
+- Owner decision: on a 412 (server changed since our download), the conflict was stashed with the `serverObj` fetched at the *start* of the sync — stale by definition of a 412, so the conflict view could show an out-of-date server side and keep-server needed an extra round.
+- **Fix** (`internal/caldav/client.go`, `sync/sync.go`): new `Client.GetObject(ctx, href)` (wraps go-webdav's `GetCalendarObject`) fetches a single resource fresh; `Syncer` gained `GetObject`; `pushUpdate`'s 412 branch now re-fetches the current server version and stashes that (falls back to the start-of-sync `serverObj` if the re-fetch fails). Conflict now reflects the true server state and resolves in one round.
+- Tests (`sync_test.go`): fake gained `GetObject` (+ a `getData` override so the re-fetched version can differ, and a `gets` spy); `TestSyncRefetchesOn412` asserts the stashed conflict carries the fresh `srv-2` ETag, not the stale `srv-1`. Full gate + `-race` pass.
+
 ## 2026-07-10 — Audit item 11: split the calendar pending-props flag (name vs color)
 
 - Owner decision: the single `pendingProps` flag meant a pending local **name** edit blocked adopting the server's **color** (and vice-versa, now that name is pulled too). Split it.

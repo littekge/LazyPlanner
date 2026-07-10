@@ -176,3 +176,15 @@ func (c *Client) DownloadAll(ctx context.Context, calendarPath string) ([]Object
 	}
 	return out, nil
 }
+
+// GetObject fetches a single calendar resource fresh from the server. It is used
+// to re-read the current server version when a conditional write returns 412, so
+// the stashed conflict holds the up-to-date server copy (the version downloaded
+// at the start of the sync is stale by definition of a 412).
+func (c *Client) GetObject(ctx context.Context, href string) (Object, error) {
+	o, err := c.dav.GetCalendarObject(ctx, href)
+	if err != nil {
+		return Object{}, fmt.Errorf("caldav: getting object %q: %w", href, err)
+	}
+	return Object{Path: o.Path, ETag: o.ETag, Data: o.Data}, nil
+}
