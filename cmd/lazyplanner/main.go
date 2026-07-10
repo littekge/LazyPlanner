@@ -9,6 +9,7 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"strings"
 
 	// Embed the IANA time-zone database in the binary so time.LoadLocation
 	// resolves zones even where the OS ships none (a minimal Pi image, Windows),
@@ -99,14 +100,22 @@ func runTUI() error {
 	accountID := config.AccountID(cfg.Server.URL, cfg.Server.Username)
 	configPath, pathErr := config.ConfigPath()
 
+	// color_mode "truecolor" force-enables tcell's 24-bit output for terminals
+	// that don't advertise it (tcell reads COLORTERM at screen init). "auto"
+	// leaves detection to the terminal; the UI renders RGB either way.
+	if strings.EqualFold(strings.TrimSpace(cfg.Appearance.ColorMode), "truecolor") {
+		_ = os.Setenv("COLORTERM", "truecolor")
+	}
+
 	title := fmt.Sprintf("%s %s", appName, appVersion)
 	return ui.Run(ui.Options{
-		Store:     s,
-		Title:     title,
-		Sync:      buildSyncFn(cfg.Server, s),
+		Store:       s,
+		Title:       title,
+		Sync:        buildSyncFn(cfg.Server, s),
 		LeftWidth:   uiState.LeftWidth,
 		Hidden:      uiState.HiddenCalendars,
 		RowsPerHour: uiState.RowsPerHour,
+		ColorMode:   cfg.Appearance.ColorMode,
 		SaveState: func(leftWidth int, hidden []string, rowsPerHour int) {
 			_ = state.Save(statePath, state.State{LeftWidth: leftWidth, HiddenCalendars: hidden, RowsPerHour: rowsPerHour})
 		},

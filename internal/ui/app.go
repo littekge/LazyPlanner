@@ -109,8 +109,9 @@ type app struct {
 	weekStartMonday bool
 	showCompleted   bool
 	tasklistIDs     []string            // calendar ids parallel to the tasklists panel
-	calColors       map[string]calColor // calendar id → server color (nearest palette); mappable only
+	calColors       map[string]calColor // calendar id → resolved server color; mappable only
 	itemColors      map[string]calColor // event/todo UID → its calendar's color
+	colorMode       colorMode           // how server colors are rendered (auto/16/off)
 	folders         map[string]bool     // task UIDs that are folders (≥1 incomplete child); global, for tree + calendar + agenda markers
 	treeListID      string              // calendar id the tree currently shows (to detect list changes)
 	suspendTree     bool                // ignore tasklist change events while the panel is rebuilt
@@ -209,6 +210,7 @@ type Options struct {
 	LeftWidth   int      // remembered left-column width (0 = default)
 	Hidden      []string // calendar ids hidden from the calendar/agenda views
 	RowsPerHour int      // remembered week/day hour-row height (0 = auto-fit)
+	ColorMode   string   // how server calendar colors render: "auto"/"truecolor", "16", or "off"
 	// SaveState persists remembered UI state (nil = don't persist). Every save
 	// passes the full state, so the caller can rewrite the file wholesale.
 	SaveState func(leftWidth int, hidden []string, rowsPerHour int)
@@ -225,6 +227,7 @@ func Run(opts Options) error {
 	a.syncFn = opts.Sync
 	a.saveState = opts.SaveState
 	a.editConfig = opts.EditConfig
+	a.colorMode = parseColorMode(opts.ColorMode)
 	for _, id := range opts.Hidden {
 		a.hidden[id] = true
 	}

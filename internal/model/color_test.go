@@ -56,3 +56,31 @@ func TestANSI16IsDark(t *testing.T) {
 		t.Error("ANSI16IsDark(99) should be false for out-of-range")
 	}
 }
+
+func TestParseHexColor(t *testing.T) {
+	r, g, b, ok := model.ParseHexColor("#3FB950")
+	if !ok || r != 0x3f || g != 0xb9 || b != 0x50 {
+		t.Errorf("ParseHexColor(#3FB950) = (%d,%d,%d,%v), want (63,185,80,true)", r, g, b, ok)
+	}
+	if _, _, _, ok := model.ParseHexColor("nope"); ok {
+		t.Error("ParseHexColor(nope) should not parse")
+	}
+}
+
+func TestReadableFg(t *testing.T) {
+	// A bright color is above the floor and returned unchanged.
+	if r, g, b := model.ReadableFg(0x3f, 0xb9, 0x50); r != 0x3f || g != 0xb9 || b != 0x50 {
+		t.Errorf("ReadableFg(bright) = (%d,%d,%d), want unchanged", r, g, b)
+	}
+	// A dark color is lifted to at least the readability floor.
+	for _, in := range [][3]int{{0, 0, 0x80}, {0x20, 0x20, 0x20}, {0, 0, 0}} {
+		r, g, b := model.ReadableFg(in[0], in[1], in[2])
+		if lum := model.Luminance(r, g, b); lum < 96 {
+			t.Errorf("ReadableFg(%v) lum = %d, want >= 96", in, lum)
+		}
+	}
+	// White stays white (no division by zero at lum 255).
+	if r, g, b := model.ReadableFg(255, 255, 255); r != 255 || g != 255 || b != 255 {
+		t.Errorf("ReadableFg(white) = (%d,%d,%d), want white", r, g, b)
+	}
+}

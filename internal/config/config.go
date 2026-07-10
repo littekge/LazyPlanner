@@ -56,6 +56,11 @@ type Appearance struct {
 	TimeFormat string `toml:"time_format"`
 	// DateFormat is "us" (default, 07/04/2026) or "iso" (2026-07-04).
 	DateFormat string `toml:"date_format"`
+	// ColorMode is how server calendar colors render: "auto" (default; exact
+	// truecolor, downsampled by the terminal), "truecolor" (force-enable
+	// truecolor for terminals that underreport), "16" (nearest themed ANSI
+	// color, inherits the terminal theme), or "off" (no calendar colors).
+	ColorMode string `toml:"color_mode"`
 }
 
 // Behavior controls non-visual behavior.
@@ -76,6 +81,7 @@ func Default() Config {
 			DefaultView:    "month",
 			TimeFormat:     "12h",
 			DateFormat:     "us",
+			ColorMode:      "auto",
 		},
 		Behavior: Behavior{
 			SyncIntervalMinutes: 15,

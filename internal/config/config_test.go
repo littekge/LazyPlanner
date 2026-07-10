@@ -85,6 +85,9 @@ time_format = "24h"
 	if cfg.Appearance.FirstDayOfWeek != "monday" {
 		t.Errorf("FirstDayOfWeek = %q, want the default monday", cfg.Appearance.FirstDayOfWeek)
 	}
+	if cfg.Appearance.ColorMode != "auto" {
+		t.Errorf("ColorMode = %q, want the default auto", cfg.Appearance.ColorMode)
+	}
 }
 
 func TestLoadWarnsOnLoosePermissions(t *testing.T) {

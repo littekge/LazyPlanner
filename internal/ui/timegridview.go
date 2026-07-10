@@ -701,13 +701,14 @@ func (tg *timeGridView) drawBlock(screen tcell.Screen, p model.Placement, colX, 
 	spanStyle := style.Foreground(tcell.ColorSilver) // dimmed time line on the default block
 	if tg.occColor != nil {
 		if cc, ok := tg.occColor(p.Occ); ok {
-			// The calendar color fills the block; pick a contrasting text color and
-			// keep the time line the same (silver is unreadable on light fills).
+			// The exact calendar color fills the block; pick a contrasting text
+			// color (silver is unreadable on light fills). The block supplies its
+			// own background, so it uses cc.fill (not the readability-lifted fg).
 			text := tcell.ColorBlack
 			if cc.dark {
 				text = tcell.ColorWhite
 			}
-			style = tcell.StyleDefault.Background(cc.fg).Foreground(text)
+			style = tcell.StyleDefault.Background(cc.fill).Foreground(text)
 			spanStyle = style
 		}
 	}

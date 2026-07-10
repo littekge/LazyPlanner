@@ -37,6 +37,10 @@ username = ""
 # default_view = "month"         # "month", "week", or "day"
 # time_format = "12h"            # "12h" (2:30pm) or "24h" (14:30)
 # date_format = "us"             # "us" (07/04/2026) or "iso" (2026-07-04)
+# color_mode = "auto"            # calendar colors: "auto" (exact truecolor,
+#                                #   downsampled by your terminal), "truecolor"
+#                                #   (force it on for terminals that underreport),
+#                                #   "16" (nearest themed ANSI color), or "off"
 
 # [behavior]
 # sync_interval_minutes = 15     # periodic background sync; 0 disables it

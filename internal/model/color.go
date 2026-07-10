@@ -63,6 +63,42 @@ func ANSI16IsDark(index int) bool {
 	return lum < 128
 }
 
+// Luminance returns the Rec. 601 perceived luminance (0–255) of an RGB color.
+func Luminance(r, g, b int) int {
+	return (299*r + 587*g + 114*b) / 1000
+}
+
+// ParseHexColor parses an "#rrggbb"/"#rrggbbaa" color (the Apple calendar-color
+// forms; leading '#' optional, alpha ignored) into 0–255 components. ok is false
+// when s is not a valid hex color, so the caller can keep its default.
+func ParseHexColor(s string) (r, g, b int, ok bool) {
+	return parseHexRGB(s)
+}
+
+// minReadableLum is the luminance floor ReadableFg lifts foreground colors to.
+// Item colors are drawn as foreground text on the terminal's *default*
+// background, which the app can't read; assuming the common dark-terminal case,
+// a very dark server color (e.g. navy) would be nearly invisible, so it is
+// lightened until it clears this floor. Fills, which carry their own contrasting
+// text, keep the exact color.
+const minReadableLum = 96
+
+// ReadableFg lightens a color toward white until its luminance clears
+// minReadableLum, so it stays legible as foreground text on a dark background. A
+// color already at or above the floor is returned unchanged. This assumes a dark
+// background (a light-terminal user can force the themed 16-color mode).
+func ReadableFg(r, g, b int) (int, int, int) {
+	lum := Luminance(r, g, b)
+	if lum >= minReadableLum || lum >= 255 {
+		return r, g, b
+	}
+	// Luminance is linear under a blend toward white, so the blend fraction t
+	// that reaches the floor exactly is (floor-lum)/(255-lum).
+	t := float64(minReadableLum-lum) / float64(255-lum)
+	lift := func(c int) int { return c + int(t*float64(255-c)+0.5) }
+	return lift(r), lift(g), lift(b)
+}
+
 // parseHexRGB parses "#rrggbb" / "#rrggbbaa" (with or without '#', alpha ignored)
 // into 0–255 components.
 func parseHexRGB(s string) (r, g, b int, ok bool) {

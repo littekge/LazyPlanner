@@ -1,10 +1,41 @@
 package ui
 
 import (
+	"fmt"
+	"strings"
+
 	"github.com/gdamore/tcell/v2"
 
 	"github.com/littekge/LazyPlanner/internal/model"
 )
+
+// colorMode selects how a server calendar color is rendered.
+type colorMode int
+
+const (
+	// colorAuto draws the exact server color as truecolor RGB; tcell downsamples
+	// to 256 or 16 on terminals that can't do truecolor (including a bare TTY).
+	colorAuto colorMode = iota
+	// color16 maps to the nearest of the themed 16 ANSI colors (inherits the
+	// terminal theme; the pre-truecolor behavior).
+	color16
+	// colorOff ignores server colors entirely (default event/task colors only).
+	colorOff
+)
+
+// parseColorMode maps a config color_mode string to a colorMode. "truecolor" is
+// treated as colorAuto here — main force-enables tcell truecolor for it; the
+// rendering is identical. Unknown values fall back to auto.
+func parseColorMode(s string) colorMode {
+	switch strings.ToLower(strings.TrimSpace(s)) {
+	case "16", "ansi", "themed":
+		return color16
+	case "off", "none", "mono":
+		return colorOff
+	default: // "auto", "truecolor", "" …
+		return colorAuto
+	}
+}
 
 // ansi16Colors maps the 16 ANSI palette indices returned by model.NearestANSI16
 // to tcell's named colors, in the same order as model's RGB table. tcell
@@ -25,22 +56,46 @@ var ansi16Names = [16]string{
 	"gray", "red", "lime", "yellow", "blue", "fuchsia", "aqua", "white",
 }
 
-// calColor is a calendar's server color resolved to the terminal palette.
+// calColor is a calendar's server color resolved for the terminal.
 type calColor struct {
-	fg   tcell.Color // accent: list bullets, day-cell lines, agenda titles, all-day band
-	name string      // tview color-tag name (for list-item bullets)
-	dark bool        // fg is a dark color → use white (not black) text over it as a fill
+	fg   tcell.Color // foreground accent (bullets, day-cell lines, agenda titles, all-day band); readability-adjusted
+	fill tcell.Color // exact color for filled blocks (their own text supplies contrast)
+	name string      // tview color tag matching fg (for list-item bullets)
+	dark bool        // fill is a dark color → use white (not black) text over it
 }
 
-// resolveCalColor maps a server hex color (e.g. "#FF2968FF") to the nearest
-// terminal palette color. ok is false when hex is empty or unparseable, so the
-// caller keeps its default (event green / task aqua).
-func resolveCalColor(hex string) (calColor, bool) {
-	idx, ok := model.NearestANSI16(hex)
-	if !ok {
+// resolveCalColor maps a server hex color (e.g. "#FF2968FF") to a calColor under
+// the given mode. ok is false when the color is empty/unparseable or the mode is
+// colorOff, so the caller keeps its default (event green / task aqua).
+//
+// In colorAuto the exact color is used as a truecolor fill, while the foreground
+// variant is lifted to a readability floor (see model.ReadableFg) since it sits
+// on the terminal's unknown default background. In color16 both collapse to the
+// nearest themed ANSI color.
+func resolveCalColor(hex string, mode colorMode) (calColor, bool) {
+	switch mode {
+	case colorOff:
 		return calColor{}, false
+	case color16:
+		idx, ok := model.NearestANSI16(hex)
+		if !ok {
+			return calColor{}, false
+		}
+		c := ansi16Colors[idx]
+		return calColor{fg: c, fill: c, name: ansi16Names[idx], dark: model.ANSI16IsDark(idx)}, true
+	default: // colorAuto
+		r, g, b, ok := model.ParseHexColor(hex)
+		if !ok {
+			return calColor{}, false
+		}
+		fr, fgc, fb := model.ReadableFg(r, g, b)
+		return calColor{
+			fg:   tcell.NewRGBColor(int32(fr), int32(fgc), int32(fb)),
+			fill: tcell.NewRGBColor(int32(r), int32(g), int32(b)),
+			name: fmt.Sprintf("#%02x%02x%02x", fr, fgc, fb),
+			dark: model.Luminance(r, g, b) < 128,
+		}, true
 	}
-	return calColor{fg: ansi16Colors[idx], name: ansi16Names[idx], dark: model.ANSI16IsDark(idx)}, true
 }
 
 // rebuildColorIndex recomputes the per-calendar and per-item color maps from the
@@ -52,7 +107,7 @@ func (a *app) rebuildColorIndex() {
 	calC := map[string]calColor{}
 	itemC := map[string]calColor{}
 	for _, cal := range a.store.Calendars() {
-		cc, ok := resolveCalColor(cal.Color)
+		cc, ok := resolveCalColor(cal.Color, a.colorMode)
 		if !ok {
 			continue
 		}

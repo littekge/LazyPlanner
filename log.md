@@ -4,6 +4,15 @@
 
 ---
 
+## 2026-07-10 — Truecolor calendar colors (exact NextCloud hex) with 16-color fallback
+
+- Owner request: move off the nearest-of-16 color mapping (which collapsed NextCloud's several blues/greens onto the same terminal color) to render the **exact** server hex. Chosen approach (via Q&A): **truecolor RGB with tcell auto-downsampling** (not a hand-built 256 table — tcell degrades RGB to 256/16 per terminal, incl. a bare TTY, in one code path), plus a **readability floor** and a **`color_mode` config knob**.
+- **Model** (`internal/model/color.go`): added `ParseHexColor` (exported hex→RGB), `Luminance` (Rec. 601), and `ReadableFg` — lifts a dark color toward white until it clears a luminance floor (`minReadableLum = 96`). Kept `NearestANSI16`/`ANSI16IsDark` for the 16-color mode. The floor exists because item colors are drawn as **foreground text on the terminal's unknown default background**; a dark navy would otherwise be invisible on a dark terminal (assumes dark bg — the `16` mode is the light-terminal escape hatch).
+- **UI** (`internal/ui/color.go`): `calColor` now carries both `fill` (exact color, for event-block backgrounds, which supply their own contrasting text) and `fg` (readability-lifted, for bullets/day-cell lines/agenda titles). New `colorMode` enum (`auto`/`16`/`off`) + `parseColorMode`; `resolveCalColor(hex, mode)` builds truecolor RGB in `auto`, nearest-ANSI named color in `16`, nothing in `off`. Only `drawBlock` uses `fill`; every other site already used `fg`. `dark` now reflects the exact fill's luminance.
+- **Config** (`internal/config`): `[appearance] color_mode` (default `auto`; `truecolor`/`16`/`off`), added to `Default()` and the first-run template. Wired through `ui.Options.ColorMode`. `main.go` force-enables tcell truecolor (`COLORTERM=truecolor`) when `color_mode = "truecolor"`, for terminals that underreport; the UI renders RGB either way.
+- Docs: `main.md` (Colors design note rewritten + calendar-metadata decision + config scope), `CLAUDE.md` UI line, `README.md` (calendars bullet + an `[appearance]`/`color_mode` note), config template. This reverses the earlier "terminal 16-color palette only" decision — recorded as such.
+- Tests: model — `ParseHexColor`, `ReadableFg` (bright unchanged, dark lifted to the floor, white safe), `Luminance` via existing; ui — `resolveCalColor` per mode (exact truecolor + fill/fg split, dark color's fg lifted while fill stays exact, `16` named, `off`/empty don't resolve), `parseColorMode` table, and the render tests migrated to bright colors + `.Hex()` comparisons (SimulationScreen preserves the RGB value); config — default `color_mode == "auto"`. Full gate (`build`/`vet`/`staticcheck`) + `go test -race ./internal/ui ./internal/model ./internal/config` pass.
+
 ## 2026-07-10 — Week/day time-grid: `+`/`-` zoom the hour-row height (remembered)
 
 - Owner follow-up to the uniform-hour change: let the hour-row height be adjusted, with `+`/`-`, and remember it between sessions. The `vScale` rework already renders any rows-per-hour with correct scrolling, so this is purely a control surface + persistence.
