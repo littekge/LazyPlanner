@@ -4,6 +4,12 @@
 
 ---
 
+## 2026-07-10 — Audit item 13: clearing an event's end removes DTEND
+
+- Owner decision: make the event edit contract symmetric with the todo one — `applyEvent` only wrote DTEND when End was set, so a zero End left the old DTEND in place (couldn't make an event zero-duration). Benign today (the UI form always supplies End), but the asymmetry with `applyTodo`'s DUE handling was real.
+- **Fix** (`internal/model/edit.go`): `applyEvent` now always drops DURATION, writes DTEND when End is set, and `Del`s DTEND when End is zero (mirroring how a missing DUE is deleted).
+- Tests (`edit_test.go`): `TestEditEventClearsDTEND` — editing an event with a zero End removes DTEND while DTSTART remains. Full gate + `-race` pass.
+
 ## 2026-07-10 — Audit item 12: re-fetch the server version on a 412 conflict
 
 - Owner decision: on a 412 (server changed since our download), the conflict was stashed with the `serverObj` fetched at the *start* of the sync — stale by definition of a 412, so the conflict view could show an out-of-date server side and keep-server needed an extra round.

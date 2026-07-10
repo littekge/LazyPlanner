@@ -193,10 +193,14 @@ func applyEvent(comp *ical.Component, d EventDraft, now time.Time) {
 	setTextOrDel(comp, ical.PropLocation, d.Location)
 
 	setDateOrTime(comp, ical.PropDateTimeStart, d.Start, d.AllDay)
+	// DTEND and DURATION are mutually exclusive; a set End writes DTEND (dropping
+	// any inherited DURATION), a zero End clears both (zero-duration / point) —
+	// symmetric with how applyTodo handles DUE.
+	comp.Props.Del(ical.PropDuration)
 	if !d.End.IsZero() {
-		// DTEND and DURATION are mutually exclusive; drop any inherited DURATION.
-		comp.Props.Del(ical.PropDuration)
 		setDateOrTime(comp, ical.PropDateTimeEnd, d.End, d.AllDay)
+	} else {
+		comp.Props.Del(ical.PropDateTimeEnd)
 	}
 
 	bumpSequence(comp)

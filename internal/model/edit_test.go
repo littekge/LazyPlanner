@@ -208,3 +208,27 @@ func TestEditUnknownUID(t *testing.T) {
 		t.Fatal("expected error editing unknown UID")
 	}
 }
+
+// TestEditEventClearsDTEND: editing an event with a zero End removes the existing
+// DTEND (symmetric with clearing a todo's DUE).
+func TestEditEventClearsDTEND(t *testing.T) {
+	now := time.Date(2026, 7, 5, 12, 0, 0, 0, time.UTC)
+	start := time.Date(2026, 7, 6, 15, 0, 0, 0, time.UTC)
+	obj, err := NewEventObject(EventDraft{Summary: "Sync", Start: start, End: start.Add(time.Hour)}, now)
+	if err != nil {
+		t.Fatal(err)
+	}
+	uid := obj.Events[0].UID
+
+	edited, err := EditEvent(obj, uid, EventDraft{Summary: "Sync", Start: start}, now, time.UTC)
+	if err != nil {
+		t.Fatal(err)
+	}
+	out, _ := edited.Encode()
+	if strings.Contains(string(out), "DTEND") {
+		t.Errorf("DTEND should be cleared when End is zero:\n%s", out)
+	}
+	if !strings.Contains(string(out), "DTSTART:20260706T150000Z") {
+		t.Errorf("DTSTART should remain:\n%s", out)
+	}
+}
