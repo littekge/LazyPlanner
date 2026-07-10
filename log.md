@@ -4,6 +4,12 @@
 
 ---
 
+## 2026-07-10 — Audit item 4: atomic .ics/sidecar mutations (rollback on sidecar failure)
+
+- Owner decision: make each store mutation all-or-nothing across the two on-disk files. Before, the `.ics` was written/removed first, then the sidecar; a sidecar-write failure (disk-full/EIO) left the `.ics`+memory changed but the sidecar stale — across a restart a lost tombstone could resurrect a deleted item or a lost dirty flag strand an edit.
+- **Fix** (`internal/store/mutate.go`): new `revertMutation` restores the `.ics` (rewrite previous content, or remove for a create) plus the in-memory resource/conflict/tombstone maps to their pre-write state. `writeResource` and `remove` capture the prior state and call it when `writeSidecar` fails, then return the error — so the two files never diverge.
+- Tests (`rollback_test.go`): sabotage the sidecar by replacing it with a directory (atomic rename fails, `.ics` write still works); `TestDeleteRollsBackOnSidecarFailure` (resource + no tombstone survive, and a later delete works) and `TestPutRollsBackOnSidecarFailure` (previous content kept, not left dirty). Full gate + `-race` pass.
+
 ## 2026-07-10 — Audit item 3: one calendar's failure no longer aborts the whole sync
 
 - Owner decision: a per-calendar download/REPORT failure should be recorded and skipped, not abort the entire sync — so a flaky calendar can't block healthy ones (with pending edits) from syncing.
