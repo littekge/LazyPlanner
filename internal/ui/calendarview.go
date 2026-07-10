@@ -271,33 +271,8 @@ func (cv *calendarView) drawCell(screen tcell.Screen, day time.Time, cellX, cell
 		return
 	}
 	n := len(items)
-	capItems := avail
-	overflow := n > avail
-	if overflow {
-		capItems = avail - 1 // reserve one row for the "+N more" indicator
-		if capItems < 0 {
-			capItems = 0
-		}
-	}
-	// When this day is drilled, scroll the visible window so the highlighted item
-	// stays on screen instead of disappearing into the overflow.
-	start := 0
-	if overflow && selected && cv.eventMode && capItems > 0 {
-		if cv.eventIndex >= capItems {
-			start = cv.eventIndex - capItems + 1
-		}
-		if maxStart := n - capItems; start > maxStart {
-			start = maxStart
-		}
-		if start < 0 {
-			start = 0
-		}
-	}
-	end := start + capItems
-	if end > n {
-		end = n
-	}
-	for i := start; i < end; i++ {
+
+	drawItem := func(i, row int) {
 		style := itemStyle(items[i])
 		if cv.itemColor != nil {
 			if cc, ok := cv.itemColor(items[i]); ok {
@@ -307,16 +282,94 @@ func (cv *calendarView) drawCell(screen tcell.Screen, day time.Time, cellX, cell
 		if selected && cv.eventMode && i == cv.eventIndex {
 			style = style.Reverse(true)
 		}
-		printStyled(screen, cx, cy+1+(i-start), cw, itemLabel(items[i], cv.folderItem(items[i])), style)
+		printStyled(screen, cx, row, cw, itemLabel(items[i], cv.folderItem(items[i])), style)
 	}
-	if overflow {
-		// The indicator counts only items *below* the window ("more" = further
-		// down), so it shrinks as you drill down and disappears at the bottom.
-		// (Items scrolled off the top are reachable by drilling back up.)
-		if below := n - end; below > 0 {
-			printStyled(screen, cx, cy+1+capItems, cw, fmt.Sprintf("+%d more", below),
-				tcell.StyleDefault.Foreground(adjacentColor))
+	drawMore := func(row, count int) {
+		printStyled(screen, cx, row, cw, fmt.Sprintf("+%d more", count),
+			tcell.StyleDefault.Foreground(adjacentColor))
+	}
+
+	if n <= avail {
+		for i := 0; i < n; i++ {
+			drawItem(i, cy+1+i)
 		}
+		return
+	}
+
+	// Overflow: reserve a "+N more" indicator row at the bottom for items below
+	// the window and, once drilled and scrolled down, another at the top for
+	// items hidden above. sel is the drilled item index, or -1 when this day
+	// isn't drilled. Both indicators count only the items outside the window in
+	// their direction, so each shrinks and disappears as you drill toward it.
+	sel := -1
+	if selected && cv.eventMode {
+		sel = cv.eventIndex
+	}
+	bottomRow := cy + avail
+
+	// A top indicator needs a third row (top marker + at least one item + bottom
+	// marker); in a cell too short for that, keep just the bottom indicator and
+	// scroll to keep the drilled item on screen.
+	if avail < 3 {
+		capItems := avail - 1
+		start := 0
+		if sel >= capItems && capItems > 0 {
+			start = sel - capItems + 1
+		}
+		if maxStart := n - capItems; start > maxStart {
+			start = maxStart
+		}
+		if start < 0 {
+			start = 0
+		}
+		end := start + capItems
+		if end > n {
+			end = n
+		}
+		for i := start; i < end; i++ {
+			drawItem(i, cy+1+(i-start))
+		}
+		if below := n - end; below > 0 {
+			drawMore(bottomRow, below)
+		}
+		return
+	}
+
+	// Choose the scroll window by regime so the drilled item stays visible: at
+	// the top of the list only a bottom marker shows, at the bottom only a top
+	// marker, in the middle both (the selection pinned to the last item row,
+	// matching the single-indicator scroll feel).
+	capOne := avail - 1 // items shown beside one indicator
+	capTwo := avail - 2 // items shown between both indicators
+	var start, end int
+	switch {
+	case sel < capOne:
+		start, end = 0, capOne
+	case sel >= n-capOne:
+		start, end = n-capOne, n
+	default:
+		start = sel - capTwo + 1
+		end = start + capTwo
+	}
+	if start < 0 {
+		start = 0
+	}
+	if end > n {
+		end = n
+	}
+
+	itemTop := cy + 1
+	if start > 0 {
+		itemTop = cy + 2
+	}
+	for i := start; i < end; i++ {
+		drawItem(i, itemTop+(i-start))
+	}
+	if start > 0 {
+		drawMore(cy+1, start)
+	}
+	if below := n - end; below > 0 {
+		drawMore(bottomRow, below)
 	}
 }
 

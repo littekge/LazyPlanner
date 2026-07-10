@@ -4,6 +4,13 @@
 
 ---
 
+## 2026-07-10 — Month view: "+N more" indicator at the top too (items hidden above)
+
+- Owner request: the month grid already drew a `+N more` line at the **bottom** of an overflowing day cell (items below the scrolled window, correctly shrinking as you drill down); add the mirror-image `+N more` at the **top** once the window has scrolled down far enough to hide items above.
+- **Fix** (`internal/ui/calendarview.go` `drawCell`): reworked the overflow render. A `drawItem`/`drawMore` closure pair removes the duplicated item-draw logic. When a day overflows and the cell has room for both markers (`avail >= 3`), the scroll window is chosen by regime — at the top of the list only a bottom marker shows, at the bottom only a top marker, in the middle both (selection pinned to the last item row, matching the prior single-indicator feel). The top marker counts items above the window (`start`), the bottom counts items below (`n - end`); each shrinks and disappears as you drill toward that edge, and the drilled item is always fully visible (never hidden under a marker). Cells too short for two markers (`avail < 3`) keep the original single bottom-indicator scroll behavior.
+- Docs: `main.md` Month-view description updated (top + bottom `+N more`). README/CLAUDE.md don't mention the marker, so unchanged.
+- Tests (`calendarview_test.go`): added `rowStrings`/`firstRowContaining` helpers; reworked `TestMonthGridOverflowIndicatorReflectsBelow` to assert the *below*-window marker specifically (sits below the first item at the top, gone once the last item is reached) and added `TestMonthGridTopOverflowIndicator` (drilled to the bottom, a `+N more` marker appears above the first visible item and Task0 is scrolled off the top). Existing scroll-to-drilled-item test unchanged. Full gate (`build`/`vet`/`staticcheck`) + `go test -race ./internal/ui` pass.
+
 ## 2026-07-09 — Calendar navigation overhaul: spatial 2D drill + f/b stays drilled
 
 - Owner revised calendar-pane navigation. Rules now:
