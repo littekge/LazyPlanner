@@ -4,6 +4,15 @@
 
 ---
 
+## 2026-07-10 — `:config` reload now applies color_mode live
+
+- Follow-up to the truecolor change: `:config` (edit in `$EDITOR`, reload on exit) previously re-applied only the `[server]` connection; a `color_mode` change needed a full restart. Now it applies live.
+- **Reload payload** (`internal/ui/app.go`): the `EditConfig` callback now returns a `ConfigReload{Sync, ColorMode}` struct instead of a bare sync closure — keeps config parsing in `main` (architecture rule) while letting the UI apply more than one reloaded setting.
+- **Apply** (`internal/ui/command.go` `applyConfigReload`): still swaps the sync closure; additionally re-parses `color_mode` and, when it changed, updates `a.colorMode` and rebuilds the color index + Calendars list (the list bullets bake in the color tag; center views read the index live and repaint on resume). The highlighted calendar row is preserved across the rebuild. `auto`↔`truecolor` is a no-op for the mode (both parse to colorAuto) — 24-bit output is negotiated at tcell init, so that specific switch still needs a restart (documented).
+- **main** (`cmd/lazyplanner/main.go`): `editConfigFn` returns `ui.ConfigReload{Sync: buildSyncFn(...), ColorMode: cfg.Appearance.ColorMode}`; the account-change guard is unchanged. Dropped the now-unused `sync` import from `command.go`.
+- Docs: `README.md` (`:config` note — color_mode applies live, auto↔truecolor/account need restart), `main.md` config-editing decision.
+- Tests (`configreload_test.go`): migrated the two existing tests to the `ConfigReload` signature; added `TestApplyConfigReloadAppliesColorMode` — a reload to `off` clears a calendar's color from the index, and back to `16` repopulates it, with `a.colorMode` tracking each change. Full gate (`build`/`vet`/`staticcheck`) + `go test -race ./internal/ui` pass.
+
 ## 2026-07-10 — Truecolor calendar colors (exact NextCloud hex) with 16-color fallback
 
 - Owner request: move off the nearest-of-16 color mapping (which collapsed NextCloud's several blues/greens onto the same terminal color) to render the **exact** server hex. Chosen approach (via Q&A): **truecolor RGB with tcell auto-downsampling** (not a hand-built 256 table — tcell degrades RGB to 256/16 per terminal, incl. a bare TTY, in one code path), plus a **readability floor** and a **`color_mode` config knob**.

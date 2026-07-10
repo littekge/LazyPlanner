@@ -120,7 +120,7 @@ type app struct {
 
 	// Sync (wired in step 9). syncFn is nil when no server is configured.
 	syncFn      func(context.Context) (sync.SyncResult, error)
-	editConfig  func() (func(context.Context) (sync.SyncResult, error), error)
+	editConfig  func() (ConfigReload, error)
 	syncing     bool
 	lastSyncAt  time.Time
 	lastSyncErr error
@@ -214,11 +214,20 @@ type Options struct {
 	// SaveState persists remembered UI state (nil = don't persist). Every save
 	// passes the full state, so the caller can rewrite the file wholesale.
 	SaveState func(leftWidth int, hidden []string, rowsPerHour int)
-	// EditConfig opens the config file in $EDITOR and reloads it, returning a
-	// fresh sync closure to swap in (nil = keep the current one) and an error.
-	// The UI calls it inside a tview Suspend so the editor owns the terminal.
-	// nil disables :config. main owns the path, editor launch, and parsing.
-	EditConfig func() (func(context.Context) (sync.SyncResult, error), error)
+	// EditConfig opens the config file in $EDITOR and reloads it, returning the
+	// settings the running app can apply live and an error. The UI calls it
+	// inside a tview Suspend so the editor owns the terminal. nil disables
+	// :config. main owns the path, editor launch, and parsing.
+	EditConfig func() (ConfigReload, error)
+}
+
+// ConfigReload carries the reloaded settings the running app applies live after
+// the :config editor flow. main parses the config; the UI never does.
+type ConfigReload struct {
+	// Sync is a rebuilt sync closure (nil = keep the current one / offline).
+	Sync func(context.Context) (sync.SyncResult, error)
+	// ColorMode is the reloaded [appearance] color_mode ("auto"/"16"/"off"/…).
+	ColorMode string
 }
 
 // Run builds the TUI and blocks until quit.

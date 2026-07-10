@@ -130,11 +130,11 @@ func runTUI() error {
 // reload it, and return a fresh sync closure. It refuses a reload that changes
 // the account (the local cache is account-keyed, so switching accounts safely
 // requires a restart). Returns nil to disable :config when the path is unknown.
-func editConfigFn(configPath string, pathErr error, accountID string, s *store.Store) func() (func(context.Context) (sync.SyncResult, error), error) {
+func editConfigFn(configPath string, pathErr error, accountID string, s *store.Store) func() (ui.ConfigReload, error) {
 	if pathErr != nil || configPath == "" {
 		return nil
 	}
-	return func() (func(context.Context) (sync.SyncResult, error), error) {
+	return func() (ui.ConfigReload, error) {
 		editor := os.Getenv("EDITOR")
 		if editor == "" {
 			editor = "vi"
@@ -142,16 +142,16 @@ func editConfigFn(configPath string, pathErr error, accountID string, s *store.S
 		ed := exec.Command(editor, configPath)
 		ed.Stdin, ed.Stdout, ed.Stderr = os.Stdin, os.Stdout, os.Stderr
 		if err := ed.Run(); err != nil {
-			return nil, fmt.Errorf("editor: %w", err)
+			return ui.ConfigReload{}, fmt.Errorf("editor: %w", err)
 		}
 		cfg, _, _, err := config.Load()
 		if err != nil {
-			return nil, err
+			return ui.ConfigReload{}, err
 		}
 		if config.AccountID(cfg.Server.URL, cfg.Server.Username) != accountID {
-			return nil, fmt.Errorf("server/account changed — restart to switch caches")
+			return ui.ConfigReload{}, fmt.Errorf("server/account changed — restart to switch caches")
 		}
-		return buildSyncFn(cfg.Server, s), nil
+		return ui.ConfigReload{Sync: buildSyncFn(cfg.Server, s), ColorMode: cfg.Appearance.ColorMode}, nil
 	}
 }
 

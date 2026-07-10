@@ -8,7 +8,6 @@ import (
 	"github.com/rivo/tview"
 
 	"github.com/littekge/LazyPlanner/internal/model"
-	"github.com/littekge/LazyPlanner/internal/sync"
 )
 
 const pageCommand = "command"
@@ -96,20 +95,32 @@ func (a *app) cmdConfig() {
 	// Suspend releases the screen for the editor; applyConfigReload runs inside so
 	// the swap + flash happen before the TUI redraws on resume.
 	a.tv.Suspend(func() {
-		newSync, err := a.editConfig()
-		a.applyConfigReload(newSync, err)
+		res, err := a.editConfig()
+		a.applyConfigReload(res, err)
 	})
 }
 
-// applyConfigReload swaps in a reloaded sync closure (if any) or surfaces the
-// reload error. Split out so it is testable without a running application.
-func (a *app) applyConfigReload(newSync func(context.Context) (sync.SyncResult, error), err error) {
+// applyConfigReload applies the reloaded settings (sync closure, color mode) or
+// surfaces the reload error. Split out so it is testable without a running
+// application.
+func (a *app) applyConfigReload(res ConfigReload, err error) {
 	if err != nil {
 		a.flash("config: " + err.Error())
 		return
 	}
-	if newSync != nil {
-		a.syncFn = newSync
+	if res.Sync != nil {
+		a.syncFn = res.Sync
+	}
+	if mode := parseColorMode(res.ColorMode); mode != a.colorMode {
+		a.colorMode = mode
+		// Rebuild the color index and the Calendars list, whose bullets bake in
+		// the color tag; the center views read the index live and repaint on
+		// resume. Preserve the highlighted row (a rebuild parks it at the top).
+		calIdx := a.calendars.GetCurrentItem()
+		a.buildCalendars()
+		if calIdx >= 0 && calIdx < a.calendars.GetItemCount() {
+			a.calendars.SetCurrentItem(calIdx)
+		}
 	}
 	a.flash("config reloaded")
 }
