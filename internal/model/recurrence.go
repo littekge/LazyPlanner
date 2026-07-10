@@ -97,14 +97,17 @@ func (e *Event) recurrenceSet(hasRRULE bool) (*rrule.Set, error) {
 	}
 
 	for _, prop := range e.Raw.Props.Values(ical.PropRecurrenceDates) {
-		dt, err := prop.DateTime(loc)
+		// resolveDateTime (not prop.DateTime) so a Windows/Outlook TZID on an
+		// RDATE recovers the same way DTSTART does, instead of erroring out and
+		// blanking the whole event's expansion.
+		dt, err := resolveDateTime(&prop, loc)
 		if err != nil {
 			return nil, fmt.Errorf("event %q: parsing RDATE: %w", e.UID, err)
 		}
 		set.RDate(dt)
 	}
 	for _, prop := range e.Raw.Props.Values(ical.PropExceptionDates) {
-		dt, err := prop.DateTime(loc)
+		dt, err := resolveDateTime(&prop, loc)
 		if err != nil {
 			return nil, fmt.Errorf("event %q: parsing EXDATE: %w", e.UID, err)
 		}
@@ -183,7 +186,10 @@ func recurrenceID(e *Event) (time.Time, bool) {
 	if prop == nil {
 		return time.Time{}, false
 	}
-	t, err := prop.DateTime(e.Start.Location())
+	// resolveDateTime so a Windows/Outlook TZID resolves (matching how the
+	// master's DTSTART is parsed); prop.DateTime would fail on such a zone and
+	// the override would be misclassified as a second master, dropping the series.
+	t, err := resolveDateTime(prop, e.Start.Location())
 	if err != nil {
 		return time.Time{}, false
 	}

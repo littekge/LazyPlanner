@@ -97,7 +97,7 @@ func (a *app) chooseResolution(list *tview.List, c store.Conflict) {
 // conflictLabel is the row shown in the conflicts list.
 func (a *app) conflictLabel(c store.Conflict) string {
 	cal, _ := a.store.Calendar(c.CalID)
-	return fmt.Sprintf("%s — %s", nonEmpty(cal.DisplayName, c.CalID), a.conflictSummary(c))
+	return tview.Escape(fmt.Sprintf("%s — %s", nonEmpty(cal.DisplayName, c.CalID), a.conflictSummary(c)))
 }
 
 // conflictSummary is the local item's title (falling back to the file name).

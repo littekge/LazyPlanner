@@ -54,13 +54,24 @@ func BuildTree(todos []*Todo, includeCompleted bool) []*TodoNode {
 }
 
 // descends reports whether target is node or appears within node's subtree. It
-// guards BuildTree against attaching a node into a cycle.
+// guards BuildTree against attaching a node into a cycle. The seen set makes it
+// safe against malformed data that already formed a cycle in the partial graph
+// (e.g. B←→C plus a third child of B), which an unguarded walk would recurse
+// through forever and crash on.
 func descends(node, target *TodoNode) bool {
+	return descendsSeen(node, target, map[*TodoNode]bool{})
+}
+
+func descendsSeen(node, target *TodoNode, seen map[*TodoNode]bool) bool {
 	if node == target {
 		return true
 	}
+	if seen[node] {
+		return false
+	}
+	seen[node] = true
 	for _, c := range node.Children {
-		if descends(c, target) {
+		if descendsSeen(c, target, seen) {
 			return true
 		}
 	}

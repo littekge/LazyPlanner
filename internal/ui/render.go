@@ -59,7 +59,9 @@ func (a *app) buildTasklists() {
 		if cal.ReadOnly {
 			label += " [ro]"
 		}
-		a.tasklists.AddItem(label, "", 0, nil)
+		// Escape so a name (or the [ro] marker) containing [brackets] renders
+		// literally instead of being eaten by tview's style-tag parser.
+		a.tasklists.AddItem(tview.Escape(label), "", 0, nil)
 		a.tasklistIDs = append(a.tasklistIDs, cal.ID)
 	}
 	if len(a.tasklistIDs) == 0 {
@@ -344,7 +346,7 @@ func (a *app) nodeLabel(t *model.Todo, expanded bool) string {
 	default:
 		mark = "[ ] "
 	}
-	label := mark + nonEmpty(t.Summary, "(untitled)")
+	label := mark + tview.Escape(nonEmpty(t.Summary, "(untitled)"))
 	if t.Priority != model.PriorityUndefined {
 		label += fmt.Sprintf("  !%d", t.Priority)
 	}
@@ -389,7 +391,7 @@ func (a *app) setDayDetail(day time.Time) {
 		if it.IsTodo() {
 			kind = "task"
 		}
-		fmt.Fprintf(&b, "[gray]%-8s[-] %s  [gray](%s)[-]\n", whenLabel(it), nonEmpty(it.Title, "(untitled)"), kind)
+		fmt.Fprintf(&b, "[gray]%-8s[-] %s  [gray](%s)[-]\n", whenLabel(it), tview.Escape(nonEmpty(it.Title, "(untitled)")), kind)
 	}
 	a.setDetail(b.String())
 }
@@ -404,7 +406,7 @@ func (a *app) setAgendaItemDetail(it model.AgendaItem) {
 
 func (a *app) setTodoDetail(t *model.Todo) {
 	var b strings.Builder
-	fmt.Fprintf(&b, "[teal]Task[-]\n%s\n\n", nonEmpty(t.Summary, "(untitled)"))
+	fmt.Fprintf(&b, "[teal]Task[-]\n%s\n\n", tview.Escape(nonEmpty(t.Summary, "(untitled)")))
 	fmt.Fprintf(&b, "[gray]Status[-]    %s\n", statusText(t.Status))
 	fmt.Fprintf(&b, "[gray]Priority[-]  %s\n", priorityText(t.Priority))
 	if t.HasDue {
@@ -413,13 +415,13 @@ func (a *app) setTodoDetail(t *model.Todo) {
 		fmt.Fprintf(&b, "[gray]Due[-]       —\n")
 	}
 	if len(t.Categories) > 0 {
-		fmt.Fprintf(&b, "[gray]Tags[-]      %s\n", strings.Join(t.Categories, ", "))
+		fmt.Fprintf(&b, "[gray]Tags[-]      %s\n", tview.Escape(strings.Join(t.Categories, ", ")))
 	}
 	if t.Recurring {
 		fmt.Fprintf(&b, "[gray]Repeats[-]   yes\n")
 	}
 	if t.Description != "" {
-		fmt.Fprintf(&b, "\n%s\n", t.Description)
+		fmt.Fprintf(&b, "\n%s\n", tview.Escape(t.Description))
 	}
 	a.setDetail(b.String())
 }
@@ -429,7 +431,7 @@ func (a *app) setEventDetail(e *model.Event) {
 		return
 	}
 	var b strings.Builder
-	fmt.Fprintf(&b, "[teal]Event[-]\n%s\n\n", nonEmpty(e.Summary, "(untitled)"))
+	fmt.Fprintf(&b, "[teal]Event[-]\n%s\n\n", tview.Escape(nonEmpty(e.Summary, "(untitled)")))
 	if e.AllDay {
 		fmt.Fprintf(&b, "[gray]When[-]      %s (all day)\n", fmtWhen(e.Start, true))
 	} else {
@@ -437,7 +439,7 @@ func (a *app) setEventDetail(e *model.Event) {
 		fmt.Fprintf(&b, "[gray]Until[-]     %s\n", fmtWhen(e.End, false))
 	}
 	if e.Location != "" {
-		fmt.Fprintf(&b, "[gray]Location[-]  %s\n", e.Location)
+		fmt.Fprintf(&b, "[gray]Location[-]  %s\n", tview.Escape(e.Location))
 	}
 	var flags []string
 	if e.Recurring {
@@ -450,7 +452,7 @@ func (a *app) setEventDetail(e *model.Event) {
 		fmt.Fprintf(&b, "[gray]Flags[-]     %s\n", strings.Join(flags, ", "))
 	}
 	if e.Description != "" {
-		fmt.Fprintf(&b, "\n%s\n", e.Description)
+		fmt.Fprintf(&b, "\n%s\n", tview.Escape(e.Description))
 	}
 	a.setDetail(b.String())
 }
@@ -540,7 +542,7 @@ func (a *app) agendaLeftLabel(it model.AgendaItem) string {
 	if it.IsTodo() {
 		mark = todoMark(it.Todo, a.isFolder(it.Todo.UID))
 	}
-	return fmt.Sprintf("%-8s %s%s", whenLabel(it), mark, nonEmpty(it.Title, "(untitled)"))
+	return fmt.Sprintf("%-8s %s%s", whenLabel(it), mark, tview.Escape(nonEmpty(it.Title, "(untitled)")))
 }
 
 func whenLabel(it model.AgendaItem) string {

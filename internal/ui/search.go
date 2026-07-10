@@ -38,7 +38,12 @@ func (a *app) openSearch() {
 		case tcell.KeyEnter:
 			a.root.RemovePage(pageSearch)
 			if a.searchQuery != "" {
-				a.setFocus(a.searchWidget()) // land on the matched item
+				// Land on the matched item, discarding the pre-search selection —
+				// but still pop the captured focus so the stack stays balanced.
+				if n := len(a.focusStack); n > 0 {
+					a.focusStack = a.focusStack[:n-1]
+				}
+				a.setFocus(a.searchWidget())
 			} else {
 				a.restoreFocus()
 			}
@@ -149,7 +154,28 @@ func (a *app) currentSelectionRestore() func() {
 	switch a.mode {
 	case modeTasks:
 		n := a.tree.GetCurrentNode()
+		// Snapshot every node's expansion too, so Esc re-collapses folders that
+		// incremental search auto-expanded to reveal a match.
+		type nodeExp struct {
+			node *tview.TreeNode
+			open bool
+		}
+		var snap []nodeExp
+		var walk func(*tview.TreeNode)
+		walk = func(nd *tview.TreeNode) {
+			if nd == nil {
+				return
+			}
+			snap = append(snap, nodeExp{nd, nd.IsExpanded()})
+			for _, c := range nd.GetChildren() {
+				walk(c)
+			}
+		}
+		walk(a.tree.GetRoot())
 		return func() {
+			for _, e := range snap {
+				e.node.SetExpanded(e.open)
+			}
 			if n != nil {
 				a.tree.SetCurrentNode(n)
 			}

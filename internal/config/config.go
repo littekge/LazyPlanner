@@ -1,6 +1,7 @@
 package config
 
 import (
+	"bytes"
 	"crypto/sha256"
 	"encoding/hex"
 	"errors"
@@ -143,9 +144,17 @@ func (s Server) ResolvePassword() (string, error) {
 		return s.Password, nil
 	}
 	// Run through the shell so command strings like "bw get password foo" work
-	// as written in the config, matching the owner's Vaultwarden setup.
-	out, err := exec.Command("sh", "-c", cmd).Output()
+	// as written in the config, matching the owner's Vaultwarden setup. Capture
+	// stderr so a failure (e.g. "bw" not logged in) surfaces the real cause
+	// instead of a bare "exit status 1".
+	c := exec.Command("sh", "-c", cmd)
+	var errBuf bytes.Buffer
+	c.Stderr = &errBuf
+	out, err := c.Output()
 	if err != nil {
+		if hint := strings.TrimSpace(errBuf.String()); hint != "" {
+			return "", fmt.Errorf("running password_command: %w: %s", err, strings.SplitN(hint, "\n", 2)[0])
+		}
 		return "", fmt.Errorf("running password_command: %w", err)
 	}
 	return strings.TrimSpace(string(out)), nil

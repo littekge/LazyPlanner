@@ -64,6 +64,22 @@ func TestBuildTreeBreaksCycles(t *testing.T) {
 	}
 }
 
+// TestBuildTreeCycleWithExtraChild guards a stack-overflow regression: a 2-cycle
+// (B↔C) plus a third node D parented to B made the old unguarded descends() walk
+// B→C→B→… forever. It must terminate and drop the cyclic nodes.
+func TestBuildTreeCycleWithExtraChild(t *testing.T) {
+	todos := []*model.Todo{
+		{UID: "B", Summary: "B", ParentUID: "C"},
+		{UID: "C", Summary: "C", ParentUID: "B"},
+		{UID: "D", Summary: "D", ParentUID: "B"},
+	}
+	roots := model.BuildTree(todos, true) // must not crash
+	// All three are only reachable through the cycle, so none are acyclic roots.
+	if got := countNodes(roots); got != 0 {
+		t.Errorf("cyclic forest produced %d nodes, want 0 (all dropped)", got)
+	}
+}
+
 func TestSortTodos(t *testing.T) {
 	day1 := time.Date(2026, 7, 4, 9, 0, 0, 0, time.UTC)
 	day2 := time.Date(2026, 7, 5, 9, 0, 0, 0, time.UTC)

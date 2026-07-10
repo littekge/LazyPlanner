@@ -138,6 +138,15 @@ func (s *Store) ResolveKeepServer(ctx context.Context, calID, name string) error
 		return fmt.Errorf("store: no conflict for %s/%s", calID, name)
 	}
 
+	// Empty ServerData means the server DELETED the resource while it was edited
+	// locally. "Keep server" = accept the deletion: drop the local copy (no
+	// tombstone — it's already gone on the server) and clear the conflict. Without
+	// this, model.Decode on empty data errored and the conflict was unresolvable
+	// in the server's favor.
+	if cm.ServerData == "" {
+		return s.Forget(ctx, calID, name)
+	}
+
 	parsed, err := model.Decode([]byte(cm.ServerData), time.Local)
 	if err != nil {
 		return fmt.Errorf("store: decoding server version of %s/%s: %w", calID, name, err)

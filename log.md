@@ -4,6 +4,20 @@
 
 ---
 
+## 2026-07-10 — Full-codebase audit: bug + undefined-behavior fixes
+
+- Ran a parallel multi-agent audit of the whole codebase (model, store, caldav+sync, ui, config/cmd) for genuine bugs, undefined behaviors, and spec-vs-impl feature gaps. Fixed the genuine bugs and obvious undefined behaviors automatically; gaps and design-call items are reported to the owner separately.
+- **[BUG] crash — `model.BuildTree` stack-overflow on a malformed cycle** (`tree.go`): a 2-cycle B↔C plus a third child of B made the unguarded `descends` walk recurse forever (violates never-crash-on-bad-.ics). Added a visited set (`descendsSeen`); cyclic nodes are safely orphaned. Regression test `TestBuildTreeCycleWithExtraChild`.
+- **[BUG] recurrence — Windows/Outlook TZID on RDATE/EXDATE/RECURRENCE-ID broke expansion** (`recurrence.go`): these parsed via `prop.DateTime` (fails on non-IANA zones) instead of the resilient `resolveDateTime` used for DTSTART, so an Outlook event could blank the calendar or drop a series. Switched all three to `resolveDateTime`. Fixture `recur_exdate_winzone.ics` + `TestOccurrencesExdateWindowsZone`.
+- **[BUG] sync — "keep server" on a locally-edited-but-remotely-deleted conflict was unresolvable** (`store/conflict.go`): empty `ServerData` → `model.Decode` EOF → error forever. Now treats empty ServerData as "accept the deletion" (`Forget`). Test `TestResolveKeepServerAcceptsRemoteDeletion`.
+- **[BUG] caldav — update PUT with no stored ETag was unconditional** (`caldav/object.go`): `create=false && ifMatch==""` sent no precondition (blind overwrite). Now sends `If-Match: *` (condition on existence) so it can't resurrect a server-deleted resource.
+- **[BUG] ui — folder completion rule bypassed by the edit form's Completed checkbox** (`edit.go`): `showTodoForm` Save called `EditTodo` (no child check). Added the same guard `Space` uses (`hasIncompleteChildren`).
+- **[UNDEFINED] ui — tview style-tag injection in labels** (`render.go`, `conflicts.go`): only the Calendars panel escaped user text; task/calendar/list names, agenda titles, tree nodes, the detail pane, and conflict rows passed raw strings, so a name like `Review [draft]` mis-rendered (and the Tasks-panel `[ro]` marker never showed). Wrapped every user-supplied field in `tview.Escape`. Tests `TestDetailEscapesTagLikeText`, `TestTreeLabelEscapesTagLikeText`.
+- **[UNDEFINED] ui — search Esc didn't re-collapse folders it auto-expanded** (`search.go`): `currentSelectionRestore` now snapshots/restores every node's expansion. Also fixed a focus-stack leak: Enter-on-match popped nothing, slowly growing `focusStack`.
+- **[UNDEFINED] store — `CreateCalendarLocal` kept the caller's `components` slice** (`calendar.go`): now copies it (matching `SetCalendarComponents`).
+- **[UNDEFINED] config — `password_command` failure hid the cause** (`config.go`): capture stderr and fold the first line into the error (e.g. "bw not logged in").
+- Full gate (`build`/`vet`/`staticcheck`) + `go test -race ./...` pass.
+
 ## 2026-07-10 — Color-path audit: RGB-based swatch matching (alpha/case-insensitive)
 
 - Pre-commit sweep of the coloring behaviors for undefined edges. Findings were sound (new calendars render their color via `refresh`; `normalizeColor` matches `model.ParseHexColor`'s accepted forms; read-only calendars are guarded on every color path; blank-on-edit = unchanged) — except one.

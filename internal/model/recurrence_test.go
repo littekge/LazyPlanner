@@ -96,6 +96,27 @@ func TestOccurrencesExdate(t *testing.T) {
 	assertInstants(t, starts(occs), want)
 }
 
+// TestOccurrencesExdateWindowsZone: an EXDATE carrying a Windows/Outlook TZID
+// ("Eastern Standard Time") must resolve via the same resilient path as DTSTART,
+// not error out and blank the whole event's expansion.
+func TestOccurrencesExdateWindowsZone(t *testing.T) {
+	loc := testLoc(t)
+	ev := onlyEvent(t, decode(t, "recur_exdate_winzone.ics", loc))
+	from, to := wide()
+
+	occs, err := ev.Occurrences(from, to)
+	if err != nil {
+		t.Fatalf("Windows-zone EXDATE should expand, not error: %v", err)
+	}
+	// Same as recur_exdate: EXDATE (mapped to America/New_York) removes 3/6.
+	want := []time.Time{
+		time.Date(2026, 3, 4, 9, 0, 0, 0, loc),
+		time.Date(2026, 3, 5, 9, 0, 0, 0, loc),
+		time.Date(2026, 3, 7, 9, 0, 0, 0, loc),
+	}
+	assertInstants(t, starts(occs), want)
+}
+
 func TestOccurrencesAllDayRecurring(t *testing.T) {
 	loc := testLoc(t)
 	ev := onlyEvent(t, decode(t, "recur_allday.ics", loc))

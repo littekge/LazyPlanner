@@ -55,6 +55,13 @@ func (c *Client) PutObject(ctx context.Context, href string, data []byte, ifMatc
 		req.Header.Set("If-Match", httpETag(ifMatch))
 	case create:
 		req.Header.Set("If-None-Match", "*")
+	default:
+		// Update with no stored ETag (a server that omitted it on a prior PUT and
+		// in the REPORT): still condition on the resource existing, so this never
+		// blind-creates at this href or resurrects a server-deleted resource. We
+		// can't guard against a concurrent content change without an ETag, but an
+		// unconditional PUT (no header) would be a true blind overwrite.
+		req.Header.Set("If-Match", "*")
 	}
 
 	resp, err := c.httpClient.Do(req)

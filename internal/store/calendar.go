@@ -38,7 +38,9 @@ func (s *Store) CreateCalendarLocal(ctx context.Context, id string, meta Calenda
 		resources:     map[string]*Resource{},
 		conflicts:     map[string]conflictMeta{},
 		pendingCreate: true,
-		components:    components,
+		// Copy so a later mutation of the caller's slice can't reach store state
+		// (matches SetCalendarComponents).
+		components: append([]string(nil), components...),
 	}
 	s.cals[id] = cs
 	if err := writeSidecar(s.root, cs); err != nil {

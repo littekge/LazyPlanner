@@ -82,3 +82,43 @@ func TestResolveKeepServer(t *testing.T) {
 		t.Errorf("content = %q, want the server version", r.Object.Events[0].Summary)
 	}
 }
+
+// TestResolveKeepServerAcceptsRemoteDeletion: when a resource was edited locally
+// but DELETED on the server, its conflict is stashed with empty ServerData.
+// "Keep server" must accept the deletion (drop the local copy + clear the
+// conflict) rather than error on decoding empty data.
+func TestResolveKeepServerAcceptsRemoteDeletion(t *testing.T) {
+	ctx := context.Background()
+	dir := t.TempDir()
+	name := seedSyncedResource(t, dir, "cal1", "e@test", "Base")
+	s, err := store.Open(ctx, dir)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := s.Put(ctx, "cal1", name, mustDecode(t, "e@test", "Local edit")); err != nil {
+		t.Fatal(err)
+	}
+	// Server deleted it: conflict with EMPTY server data.
+	if err := s.MarkConflict(ctx, "cal1", name, nil, ""); err != nil {
+		t.Fatal(err)
+	}
+	if len(s.Conflicts()) != 1 {
+		t.Fatalf("expected 1 conflict, got %d", len(s.Conflicts()))
+	}
+
+	if err := s.ResolveKeepServer(ctx, "cal1", name); err != nil {
+		t.Fatalf("keep-server on a remote-deletion conflict should succeed, got: %v", err)
+	}
+	if len(s.Conflicts()) != 0 {
+		t.Error("conflict not cleared after accepting the deletion")
+	}
+	cal, _ := s.Calendar("cal1")
+	if r := findResource(cal, name); r != nil {
+		t.Errorf("local resource should be gone after keep-server on a deletion, got %+v", r)
+	}
+	// Survives reload.
+	s2, _ := store.Open(ctx, dir)
+	if cal2, _ := s2.Calendar("cal1"); findResource(cal2, name) != nil {
+		t.Error("resource reappeared after reload")
+	}
+}

@@ -615,6 +615,13 @@ func (a *app) showTodoForm(loc store.Located, uid string) {
 			a.flash(err.Error())
 			return
 		}
+		// Enforce the folder rule here too: the form's Completed checkbox must not
+		// complete a task that still has incomplete children (Space is guarded in
+		// toggleComplete; EditTodo has no child check).
+		if d.Completed && !td.Completed() && a.hasIncompleteChildren(uid) {
+			a.flash("Finish or remove its subtasks first")
+			return
+		}
 		d.ParentUID = td.ParentUID // preserve the existing parent
 		newObj, err := model.EditTodo(loc.Object, uid, d, a.now, a.loc)
 		if err != nil {
