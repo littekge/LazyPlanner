@@ -4,6 +4,13 @@
 
 ---
 
+## 2026-07-10 — Audit items 15 & 16: mouse — wheel-paging dropped, click-to-fold confirmed
+
+- **15 — wheel paging the calendar grid**: owner chose to drop it from the spec rather than implement. Updated `main.md`'s Mouse section (keyboard `f`/`b` pages the grids; the custom widgets take no wheel handler).
+- **16 — click a folder to expand/collapse**: audit finding was a **false positive** — this already works. `a.tree.SetSelectedFunc` (`app.go`) toggles a node's expansion and updates its `▸`/`▾` caret, and tview's TreeView fires that callback on a left-click (not just Enter). The agent missed it because the wiring is in `app.go`, not `mouse.go`. Verified by simulation (click flips a folder expanded→collapsed) and locked in with a regression test.
+- Tests (`treeclick_test.go`): `TestTreeClickTogglesFolder` drives a left-click on a folder row and asserts its expansion toggles. Full gate + `-race` pass.
+- **Audit follow-up plan complete** — all 16 items resolved (13 changes committed; item 9 deferred to step 12; item 16 was already implemented).
+
 ## 2026-07-10 — Audit item 14: `:calendar new` command
 
 - Gap: main.md's command list included `:calendar new` but `cmdCalendar` only handled rename/color/hide/show (creation was only on the `ic`/`il` chords).

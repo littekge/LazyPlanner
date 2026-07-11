@@ -216,7 +216,7 @@ The keyboard interface feels like **vim, not lazygit**: single keys for panel fo
 
 ### Mouse
 
-Click focuses panes and selects items; click `▸`/`▾` expands/collapses; double-click opens the edit form; scroll wheel scrolls panes and pages the calendar grid.
+Click focuses panes and selects items; clicking a folder in the task tree expands/collapses it; double-click opens the edit form; the scroll wheel scrolls panes/lists. (Wheel-paging the calendar month/week/day grid was considered and dropped — the keyboard `f`/`b` pages them; the custom grids take no wheel handler.)
 
 ---
 
