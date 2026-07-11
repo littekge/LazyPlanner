@@ -327,8 +327,9 @@ func (a *app) zoomBreadcrumb(listName string, all []*model.Todo) string {
 // updates the current item, so GetCurrentItem is stale inside that callback and
 // would rebuild the previously-selected list's tree.
 func (a *app) buildTreeForList(id string) {
-	// The root node shows the list's own name so the top-level tasks' connector
-	// stems attach to it (like a file tree rooted at the directory name).
+	// The root node shows the list's own name, so the tree reads as a file tree
+	// rooted at the directory name. (Branch-connector graphics are disabled — see
+	// build's SetGraphics(false) — so nesting is shown by indentation + ▸/▾ carets.)
 	name := "Tasks"
 	root := tview.NewTreeNode("").SetSelectable(false).SetColor(accentColor)
 

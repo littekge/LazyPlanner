@@ -106,3 +106,5 @@ See `main.md` for the full package layout. The hard rules:
 - `cmd/lazyplanner/main.go` is thin wiring only — no logic.
 - Tests live next to the code (`foo_test.go`); fixtures in per-package `testdata/` dirs.
 - The user hand-edits this code too: keep the structure conventional and boring, prefer obvious code over clever code.
+- **tview freeze traps (both hit and fixed 2026-07-10, guarded by tests — don't reintroduce):** (1) **Never call an app-lock method (`a.tv.GetFocus()`, etc.) from a `SetDrawFunc`/draw path** — `Application.draw()` holds the write-lock and `RWMutex` isn't reentrant, so it self-deadlocks; read a tracked field (`a.focused`, set in `setFocus`) instead. (2) **The task tree runs with `SetGraphics(false)`** — tview v0.42.0 `TreeView.Draw` has an infinite loop when a node's indent exceeds the pane width; leave graphics off (nesting shows via indentation + ▸/▾ carets). Regression tests: `modedeadlock_test.go`, `treedraw_regress_test.go`.
+- **Never hand-edit `vendor/`** — it's silently reverted by `go mod vendor`. Fix library bugs in our own code, or (if unavoidable) via a `replace` directive.

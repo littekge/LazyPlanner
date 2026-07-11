@@ -4,6 +4,13 @@
 
 ---
 
+## 2026-07-10 — Wrap-up: docs + freeze guardrails for the next agent
+
+- End-of-session housekeeping. Added a CLAUDE.md Architecture Rules block documenting the two tview freeze traps fixed today (no app-lock calls from a draw func; keep the task tree on `SetGraphics(false)`) plus the "never hand-edit `vendor/`" rule, so they aren't reintroduced.
+- Fixed a stale comment in `buildTreeForList` (it referred to tree "connector stems", which no longer render with branch-graphics off).
+- Refreshed project memory: added `project-status.md` (steps 1–10 + this session's grab/yank/mode-indicator polish complete; next = step 11 recurrence editing, which also unblocks grab's deferred recurring-event/undated-task cases).
+- Files: `CLAUDE.md`, `internal/ui/render.go` (comment), memory files.
+
 ## 2026-07-10 — Fix freeze on entering Tasks view (mode-indicator draw deadlock)
 
 - Reported: the app hangs the instant `t` is pressed. Root cause is the **status-bar mode indicator**: its `SetDrawFunc` (`drawModeIndicator` → `interactionMode`) called `a.tv.GetFocus()`, which takes the tview app **read-lock**. But `Application.draw()` holds the **write-lock** for the whole draw, and Go's `sync.RWMutex` isn't reentrant — so reading focus during a draw self-deadlocks. It only triggered in Tasks mode because the `GetFocus()` call sat behind a short-circuited `a.mode == modeTasks && …` (calendar/agenda never evaluated it), and only in the live event loop (a one-shot `primitive.Draw()` in tests doesn't take the app lock — which is why the earlier draw tests missed it). Independent of tree depth/data.
