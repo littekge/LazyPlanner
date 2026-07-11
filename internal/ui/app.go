@@ -105,6 +105,16 @@ type app struct {
 	searchRestore   func() // restores the pre-search selection on cancel
 	yankUID         string // task on the yank/copy clipboard (y cut / Y copy); "" when empty
 	yankCut         bool   // clipboard mode: true = cut (move), false = copy (duplicate)
+
+	// Grab mode (m): temporal manipulation of the current item — move an event's
+	// day/hour or resize it, or nudge a task's due date. Modal; hjkl edit, Enter
+	// keeps, Esc reverts to grabPrev (the pre-grab snapshot).
+	grabbing    bool
+	grabUID     string
+	grabIsEvent bool
+	grabCalID   string
+	grabName    string
+	grabPrev    *store.Resource
 	mode            int
 	viewMode        int
 	anchor          time.Time
@@ -534,6 +544,11 @@ func (a *app) globalKeys(ev *tcell.EventKey) *tcell.EventKey {
 	if a.modalOpen() {
 		return ev
 	}
+	// Grab mode is modal too: hjkl edit the grabbed item's timing, Enter keeps,
+	// Esc reverts. It claims every key so nothing leaks to the views.
+	if a.grabbing {
+		return a.handleGrabKey(ev)
+	}
 	// Vim counts: 1-9 start a count and 0 extends one; the next motion repeats.
 	// (Digits are free for this now that panel focus lives on c/t/a.)
 	if ev.Key() == tcell.KeyRune {
@@ -627,6 +642,9 @@ func (a *app) globalKeys(ev *tcell.EventKey) *tcell.EventKey {
 			return nil
 		case 'Y':
 			a.copyTask()
+			return nil
+		case 'm':
+			a.startGrab()
 			return nil
 		case 'p':
 			a.pasteUnderSelection()

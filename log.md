@@ -4,6 +4,13 @@
 
 ---
 
+## 2026-07-10 — Grab mode (`m`): move/resize events, nudge task due dates
+
+- Update 2 of 2: the temporal-manipulation layer, unified across tree/calendar/agenda (the "grab mode" designed earlier). Complements yank/paste (structural) — grab only touches *when*.
+- **Impl** (`internal/ui/grab.go`, `app.go`): `m` grabs the current target (via `currentTarget`); modal — `globalKeys` routes every key to `handleGrabKey` while `a.grabbing`. **Event** (week/day view): `j`/`k` ±hour, `h`/`l` ±day, `J`/`K` resize the end (min-duration guard); month/all-day = day-move only. **Task**: `j`/`k` due ±day, `h`/`l` ±week. Edits commit to the store on each nudge (via `EditEvent`/`EditTodo` + `draftFromEvent`/`draftFromTodo`, preserving all other props) so views update live; `focusGrabbed` re-anchors the calendar to the item's (possibly new) day and re-drills onto its block, or re-selects the task by UID. `Enter` keeps (pre-grab snapshot = one undo step); `Esc` `Restore`s the snapshot. Undated tasks and recurring events are skipped with a hint (recurrence editing is step 11).
+- Docs: help overlay, `main.md` keymap, `CLAUDE.md`, `README.md`.
+- Tests (`grab_test.go`): task due nudge (+2 days, commit), undated-task skip, event day-move + resize + Esc-reverts, and `m`/`j`/Enter wiring through `globalKeys`. Full gate + `-race` pass.
+
 ## 2026-07-10 — Yank/paste update: cut vs copy, top-level paste, persistent clipboard (tasks)
 
 - Owner request (Update 1 of 2; grab mode is Update 2). Reworked task yank/paste around a small target-agnostic clipboard: cut vs copy, paste at the top level, and a clipboard that survives paste (multi-paste). Scoped to **tasks** (events get the planned grab mode).

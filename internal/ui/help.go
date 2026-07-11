@@ -43,6 +43,7 @@ var helpSections = []struct {
 		{"> / <", "zoom into / out of the selected task's subtree"},
 		{"y / Y", "cut / copy a task (with its subtree) to the clipboard"},
 		{"p / P", "paste under the selected task / at the list top level (clipboard persists)"},
+		{"m", "grab: move an event (hjkl day/hour, J/K resize) or nudge a task's due date — Enter keep, Esc cancel"},
 		{"z R / z M / z a", "fold — expand all / collapse all / toggle"},
 		{"u", "undo last local change"},
 		{".", "show/hide completed tasks"},
