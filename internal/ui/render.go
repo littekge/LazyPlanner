@@ -569,7 +569,7 @@ func (a *app) interactionMode() string {
 		return modeGrab
 	case a.gridDrilled():
 		return modeDrill
-	case a.mode == modeTasks && a.tv.GetFocus() == a.tree:
+	case a.mode == modeTasks && a.focused == a.tree:
 		return modeDrill
 	default:
 		return modeNormal

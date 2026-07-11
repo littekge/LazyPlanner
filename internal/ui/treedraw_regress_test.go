@@ -59,3 +59,39 @@ func expandAllNodes(node *tview.TreeNode) {
 		expandAllNodes(c)
 	}
 }
+
+// TestPressTFullLayoutTerminates mirrors the real "hang on pressing t" report:
+// a deep subtask tree, then the full app layout drawn in Tasks mode across a
+// range of pane widths (the tree pane ends up far narrower than the deep indent).
+// With branch-graphics disabled it draws promptly; without the fix it would hang.
+func TestPressTFullLayoutTerminates(t *testing.T) {
+	a := newRootedTestApp(t, time.Date(2026, 7, 5, 9, 0, 0, 0, time.UTC))
+	cal := a.selectedTasklistID()
+	parent := ""
+	for i := 0; i < 25; i++ {
+		s := fmt.Sprintf("Deep%02d", i)
+		a.createTask(cal, parent, s)
+		parent = todoBySummary(a.store, s).UID
+	}
+
+	root := a.layout()
+	for _, w := range []int{80, 60, 40, 30, 20} {
+		screen := tcell.NewSimulationScreen("")
+		if err := screen.Init(); err != nil {
+			t.Fatal(err)
+		}
+		screen.SetSize(w, 24)
+		root.SetRect(0, 0, w, 24)
+		a.globalKeys(runeKey('t')) // press t → task view
+
+		done := make(chan struct{})
+		go func() { root.Draw(screen); close(done) }()
+		select {
+		case <-done:
+		case <-time.After(4 * time.Second):
+			screen.Fini()
+			t.Fatalf("HANG: press-t full-layout draw did not terminate at width %d", w)
+		}
+		screen.Fini()
+	}
+}

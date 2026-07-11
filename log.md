@@ -4,6 +4,13 @@
 
 ---
 
+## 2026-07-10 — Fix freeze on entering Tasks view (mode-indicator draw deadlock)
+
+- Reported: the app hangs the instant `t` is pressed. Root cause is the **status-bar mode indicator**: its `SetDrawFunc` (`drawModeIndicator` → `interactionMode`) called `a.tv.GetFocus()`, which takes the tview app **read-lock**. But `Application.draw()` holds the **write-lock** for the whole draw, and Go's `sync.RWMutex` isn't reentrant — so reading focus during a draw self-deadlocks. It only triggered in Tasks mode because the `GetFocus()` call sat behind a short-circuited `a.mode == modeTasks && …` (calendar/agenda never evaluated it), and only in the live event loop (a one-shot `primitive.Draw()` in tests doesn't take the app lock — which is why the earlier draw tests missed it). Independent of tree depth/data.
+- **Fix**: track the focused pane in `a.focused`, set in `setFocus` (the single focus path — mouse and modal-restore both route through it), and have `interactionMode` read `a.focused` instead of calling `GetFocus()` during the draw. No lock taken from a draw func.
+- Test: `internal/ui/modedeadlock_test.go` runs the real event loop in Tasks mode against a simulation screen and waits for `SetAfterDrawFunc` to fire; a deadlocked draw never fires it, so a 5s watchdog trips. Verified it fails (times out) with the old `GetFocus()` call and passes with the fix. Full gate + `-race` pass.
+- Files: `internal/ui/app.go` (field + `setFocus`), `internal/ui/render.go` (`interactionMode`), `internal/ui/modedeadlock_test.go`.
+
 ## 2026-07-10 — Fix app-freeze: disable tview tree branch-graphics
 
 - Diagnosed a reported "crash" — actually a **100% CPU hang**, not a panic. Root cause is upstream `github.com/rivo/tview` v0.42.0 `TreeView.Draw`: the ancestor-branch-drawing loop does `if ancestor.graphicsX >= width { continue }` without advancing `ancestor`, so it spins forever whenever a node's ancestor indent reaches the tree pane's width. Triggered by a deep-enough subtask tree in a tree pane narrower than the deepest indent (~12–15 levels at 80 cols; far shallower in a narrow terminal or after widening the overview). Our recent yank/paste makes deep trees easy to build, which is why it surfaced now — but the faulty line is pre-existing library code (still present on tview master), and grab/yank/mode-indicator code is all correctly guarded (confirmed by a fuzzing sweep of the since-audit diff).
