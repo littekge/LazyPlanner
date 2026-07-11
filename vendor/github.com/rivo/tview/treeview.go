@@ -742,6 +742,12 @@ func (t *TreeView) Draw(screen tcell.Screen) {
 			ancestor := node.parent
 			for ancestor != nil && ancestor.parent != nil && ancestor.parent.level >= t.topLevel {
 				if ancestor.graphicsX >= width {
+					// LOCAL PATCH (LazyPlanner): advance before continuing. Upstream
+					// v0.42.0 leaves `ancestor` unchanged here, so drawing a node whose
+					// ancestor indent reaches the pane width spins this loop forever
+					// (100% CPU freeze). Re-apply if tview is ever re-vendored.
+					// See log.md 2026-07-10.
+					ancestor = ancestor.parent
 					continue
 				}
 
