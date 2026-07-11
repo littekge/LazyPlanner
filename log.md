@@ -4,6 +4,14 @@
 
 ---
 
+## 2026-07-10 — Status-bar mode indicator + outlined status bar
+
+- Surfaced the **interaction mode** as a vim-style badge, prompted by grab mode making "modes" concrete. Distinguishes the *interaction* mode (what the movement keys act on now) from the *view* context (Calendar/Tasks/Agenda, already shown as text).
+- **Impl** (`render.go`, `app.go`): new `interactionMode()` derives the mode from existing state — `GRAB` (`a.grabbing`), `DRILL` (calendar day drilled via `gridDrilled`, or dived into the task tree), else `NORMAL` — with no new state machine, so it doubles as the seam for a future dispatch cleanup. The badge is a custom-drawn `*tview.Box` (`drawModeIndicator`, `SetDrawFunc`) rather than a TextView, so it stays live every frame regardless of which transition path fired (drill/undrill and grab enter/exit don't all funnel through `updateStatus`). Filled high-contrast chip for the active modes (DRILL = teal, GRAB = yellow), dim label at rest.
+- Status bar now has **four sections** (mode · general/results · command view · sync) and is **outlined** with a rounded border like the primary panes (3 rows instead of 1); renamed the very-bottom controls line to the "help bar" in the docs.
+- Docs: help overlay row, `main.md` status-bar section, `CLAUDE.md` UI line, `README.md`.
+- Tests (`mode_test.go`): `interactionMode` transitions (NORMAL/GRAB/DRILL) and a render test asserting the `NORMAL`/`GRAB` badge and the border paint to a simulation screen. Full gate passes.
+
 ## 2026-07-10 — Grab mode (`m`): move/resize events, nudge task due dates
 
 - Update 2 of 2: the temporal-manipulation layer, unified across tree/calendar/agenda (the "grab mode" designed earlier). Complements yank/paste (structural) — grab only touches *when*.

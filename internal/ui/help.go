@@ -26,6 +26,7 @@ var helpSections = []struct {
 		{"/ then n / N", "search; next / prev match"},
 		{"Enter", "dive in / open; cycle a day's events"},
 		{"Esc / q", "back out / quit"},
+		{"(mode badge)", "status-bar badge shows the input mode: NORMAL · DRILL (dived into a day/list) · GRAB"},
 	}},
 	{"Create (i prefix)", [][2]string{
 		{"i t / i T", "add task — quick / full form"},

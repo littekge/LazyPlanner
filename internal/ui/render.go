@@ -5,6 +5,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/gdamore/tcell/v2"
 	"github.com/rivo/tview"
 
 	"github.com/littekge/LazyPlanner/internal/model"
@@ -549,6 +550,71 @@ func (a *app) setEventDetail(e *model.Event) {
 }
 
 // --- Status bar ---
+
+// Interaction modes surfaced by the status-bar indicator — the modal input
+// context that decides what the movement keys act on right now (distinct from the
+// view context — Calendar/Tasks/Agenda — shown as text in the left section).
+const (
+	modeNormal = "NORMAL"
+	modeDrill  = "DRILL"
+	modeGrab   = "GRAB"
+)
+
+// interactionMode reports the current modal input context for the mode indicator.
+// It's derived from existing state (no separate state machine): grab mode, a
+// drilled-in calendar day or dived-in task tree, or the resting NORMAL.
+func (a *app) interactionMode() string {
+	switch {
+	case a.grabbing:
+		return modeGrab
+	case a.gridDrilled():
+		return modeDrill
+	case a.mode == modeTasks && a.tv.GetFocus() == a.tree:
+		return modeDrill
+	default:
+		return modeNormal
+	}
+}
+
+// gridDrilled reports whether the active calendar grid is drilled into a day
+// (event-cycling), where the movement keys navigate within the day.
+func (a *app) gridDrilled() bool {
+	if a.mode != modeCalendar {
+		return false
+	}
+	if g, ok := a.calendarPrimitive().(calGrid); ok {
+		_, active, _ := g.drillState()
+		return active
+	}
+	return false
+}
+
+// drawModeIndicator paints the interaction-mode badge: a quiet dim label at rest
+// (NORMAL) and a filled, high-contrast chip for the active modes (DRILL, GRAB) so
+// a mode-sensitive key (hjkl) is never a surprise.
+func (a *app) drawModeIndicator(screen tcell.Screen, x, y, width, height int) (int, int, int, int) {
+	m := a.interactionMode()
+	label := " " + m + " "
+	style := tcell.StyleDefault.Foreground(tcell.ColorGray) // NORMAL: dim, no fill
+	switch m {
+	case modeDrill:
+		style = tcell.StyleDefault.Foreground(tcell.ColorBlack).Background(accentColor).Bold(true)
+	case modeGrab:
+		style = tcell.StyleDefault.Foreground(tcell.ColorBlack).Background(todayColor).Bold(true)
+	}
+	col := x + (width-len(label))/2
+	if col < x {
+		col = x
+	}
+	for _, r := range label {
+		if col >= x+width {
+			break
+		}
+		screen.SetContent(col, y, r, nil, style)
+		col++
+	}
+	return x, y, width, height
+}
 
 // updateStatus refreshes the permanent controls line and the resting content of
 // the 3-section status bar. The left section shows the current context; a flash()

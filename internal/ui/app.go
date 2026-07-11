@@ -85,6 +85,7 @@ type app struct {
 	// Right + bottom. The bottom is two lines: a 3-section status bar
 	// (general/results · command-view · sync) above an always-visible controls line.
 	detail      *tview.TextView
+	statusMode  *tview.Box      // interaction-mode indicator (NORMAL / DRILL / GRAB)
 	statusLeft  *tview.TextView // general status + action results (and flashes)
 	statusMid   *tview.TextView // command view — populated in step 10
 	statusRight *tview.TextView // sync status — wired in step 9
@@ -171,6 +172,10 @@ const (
 	maxLeftWidth     = 50
 	leftWidthStep    = 3
 )
+
+// modeIndicatorWidth is the fixed status-bar cell for the interaction-mode badge;
+// wide enough for the longest label (" NORMAL ") plus breathing room.
+const modeIndicatorWidth = 10
 
 func clampLeftWidth(w int) int {
 	switch {
@@ -324,6 +329,7 @@ func newApp(s *store.Store, title string, now time.Time) *app {
 		tree:            tview.NewTreeView(),
 		agenda:          newAgendaBoard(),
 		detail:          tview.NewTextView(),
+		statusMode:      tview.NewBox(),
 		statusLeft:      tview.NewTextView(),
 		statusMid:       tview.NewTextView(),
 		statusRight:     tview.NewTextView(),
@@ -354,6 +360,10 @@ func (a *app) build() {
 	a.tasklists.SetSelectedStyle(selectionStyle)
 	a.agendaList.SetSelectedStyle(selectionStyle)
 	a.detail.SetDynamicColors(true).SetWrap(true)
+	// The mode indicator is custom-drawn (not a TextView) so it always reflects
+	// the live interaction mode — drill/undrill and grab enter/exit don't all funnel
+	// through updateStatus, but every frame runs this draw func.
+	a.statusMode.SetDrawFunc(a.drawModeIndicator)
 	a.statusLeft.SetDynamicColors(true)
 	a.statusMid.SetDynamicColors(true).SetTextAlign(tview.AlignCenter)
 	a.statusRight.SetDynamicColors(true).SetTextAlign(tview.AlignRight)
@@ -450,14 +460,18 @@ func (a *app) layout() tview.Primitive {
 					AddItem(a.center, 0, 3, true).
 					AddItem(a.detail, 0, 1, false)
 
-	statusBar := tview.NewFlex(). // 3 sections: general | command view | sync
+	statusBar := tview.NewFlex(). // mode | general | command view | sync
+					AddItem(a.statusMode, modeIndicatorWidth, 0, false).
 					AddItem(a.statusLeft, 0, 2, false).
 					AddItem(a.statusMid, 0, 2, false).
 					AddItem(a.statusRight, 24, 0, false)
+	// Outline the status bar like the primary panes; the border adds a top+bottom
+	// row, so it occupies 3 rows instead of 1.
+	statusBar.SetBorder(true).SetBorderColor(borderIdle)
 
 	return tview.NewFlex().SetDirection(tview.FlexRow).
 		AddItem(a.body, 0, 1, true).
-		AddItem(statusBar, 1, 0, false).
+		AddItem(statusBar, 3, 0, false).
 		AddItem(a.hints, 1, 0, false)
 }
 
