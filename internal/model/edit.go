@@ -107,6 +107,19 @@ func SetTodoParent(obj *Parsed, uid, parentUID string, now time.Time, loc *time.
 	})
 }
 
+// CopyTodo returns a duplicate of the todo carrying uid in obj, re-keyed to a
+// fresh newUID and re-parented to newParentUID (empty = top level). Every other
+// iCal property is preserved (property-preservation iron rule), so a copied task
+// keeps its fields, tags, notes, and any unknown props. Used by yank/paste's copy
+// mode; descendants are copied by the caller, remapping each child's parent link.
+func CopyTodo(obj *Parsed, uid, newUID, newParentUID string, now time.Time, loc *time.Location) (*Parsed, error) {
+	return editComponent(obj, uid, loc, func(comp *ical.Component) {
+		comp.Props.SetText(ical.PropUID, newUID)
+		setParent(comp, newParentUID)
+		touch(comp, now)
+	})
+}
+
 // newObject creates a VCALENDAR wrapping one empty component of compName, with
 // the required VERSION/PRODID and the component's required UID/DTSTAMP/CREATED.
 func newObject(compName string, now time.Time) (*ical.Calendar, *ical.Component) {

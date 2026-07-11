@@ -28,12 +28,12 @@ func TestPasteReparentsWithinList(t *testing.T) {
 	}
 
 	a.selectTreeByUID(parent.UID) // paste target
-	a.pasteTask()
+	a.pasteUnderSelection()
 	if got := todoBySummary(a.store, "Mover").ParentUID; got != parent.UID {
 		t.Errorf("Mover parent after paste = %q, want %q", got, parent.UID)
 	}
-	if a.yankUID != "" {
-		t.Error("clipboard should clear after a paste")
+	if a.yankUID != mover.UID {
+		t.Error("clipboard should persist after a paste (multi-paste)")
 	}
 
 	a.undoLast()
@@ -73,8 +73,8 @@ func TestMoveSubtreeAcrossLists(t *testing.T) {
 	if got := todoBySummary(a.store, "Mover").ParentUID; got != "" {
 		t.Errorf("moved root parent = %q, want empty (top level)", got)
 	}
-	if a.yankUID != "" {
-		t.Error("clipboard should clear after a move")
+	if a.yankUID != mover.UID {
+		t.Error("clipboard should persist after a move (multi-paste)")
 	}
 
 	a.undoLast()

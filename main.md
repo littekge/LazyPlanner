@@ -205,7 +205,8 @@ The keyboard interface feels like **vim, not lazygit**: single keys for panel fo
 | `f` / `b` | Forward / back one period (month/week/day) |
 | `g` prefix | Go: `gg` top, `gt` today, `gd` go-to-date (smart-parsed) |
 | `/`, `n` / `N` | Search current view; next / previous match |
-| `y` / `p` | Yank / paste a task (move between lists/parents) |
+| `y` / `Y` | Cut / copy a task (and its subtree) to the clipboard |
+| `p` / `P` | Paste under the selected task / at the list top level (clipboard persists → paste repeatedly) |
 | `:` | Command mode (`:sync`, etc.) |
 | `?` | Help overlay |
 | `q` / `Esc` | Quit / back out (zoom, dialogs) |

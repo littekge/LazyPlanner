@@ -4,6 +4,15 @@
 
 ---
 
+## 2026-07-10 — Yank/paste update: cut vs copy, top-level paste, persistent clipboard (tasks)
+
+- Owner request (Update 1 of 2; grab mode is Update 2). Reworked task yank/paste around a small target-agnostic clipboard: cut vs copy, paste at the top level, and a clipboard that survives paste (multi-paste). Scoped to **tasks** (events get the planned grab mode).
+- **Keys** (`internal/ui/app.go`): `y` = cut (move on paste), `Y` = copy (duplicate), `p` = paste under the selected task, `P` = paste at the list top level. `Y`/`P` were free.
+- **UI** (`internal/ui/yankpaste.go`): `setClip(cut)` records the clipboard (`yankUID` + `yankCut`) from `currentTarget()`; `paste(targetParent)` dispatches to move (existing `reparentTo`/`moveSubtree`) or the new `copySubtree`. The clipboard is **no longer cleared** on paste (was `a.yankUID = ""`), so the same task can be pasted repeatedly. Cycle guards (onto-self / into-own-subtree) apply only to cut; a copy is an independent tree. `copySubtree` duplicates root+descendants with fresh UIDs, remapping each child's parent link to its copy, all-or-nothing with rollback; undo deletes the copies.
+- **Model** (`internal/model/edit.go`): new `CopyTodo(obj, uid, newUID, newParentUID, …)` — re-keys UID + re-parents while preserving every other iCal property (iron rule), via the same clone-through-encode path as `EditTodo`.
+- Docs: help overlay, `main.md` keymap, `CLAUDE.md`, `README.md`. Memory: recorded the grab-mode design for Update 2 ([[grab-mode-plan]]).
+- Tests: `copypaste_test.go` (`Y` copy duplicates with a fresh UID + persists for multi-paste; `P` pastes at top level; subtree copy remaps children to the copied parent); `edit_test.go` `TestCopyTodo` (fresh UID + new parent, preserves summary/categories/X-props/VALARM); migrated the two existing move tests to the persistent-clipboard assertion and the renamed `pasteUnderSelection`. Full gate + `-race` pass.
+
 ## 2026-07-10 — Hidden calendars drop their color bullet
 
 - Owner request: hiding a calendar should remove the `●` color bullet in the Calendars list, so a hidden calendar reads more clearly at a glance (alongside the existing `(hidden)` marker).

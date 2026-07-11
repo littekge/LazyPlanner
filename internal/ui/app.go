@@ -103,7 +103,8 @@ type app struct {
 	searchQuery     string
 	searchIdx       int    // which match n/N is currently on
 	searchRestore   func() // restores the pre-search selection on cancel
-	yankUID         string // task yanked for a move (y); "" when clipboard empty
+	yankUID         string // task on the yank/copy clipboard (y cut / Y copy); "" when empty
+	yankCut         bool   // clipboard mode: true = cut (move), false = copy (duplicate)
 	mode            int
 	viewMode        int
 	anchor          time.Time
@@ -624,8 +625,14 @@ func (a *app) globalKeys(ev *tcell.EventKey) *tcell.EventKey {
 		case 'y':
 			a.yankTask()
 			return nil
+		case 'Y':
+			a.copyTask()
+			return nil
 		case 'p':
-			a.pasteTask()
+			a.pasteUnderSelection()
+			return nil
+		case 'P':
+			a.pasteAtTop()
 			return nil
 		case '/':
 			a.openSearch()

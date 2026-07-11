@@ -232,3 +232,30 @@ func TestEditEventClearsDTEND(t *testing.T) {
 		t.Errorf("DTSTART should remain:\n%s", out)
 	}
 }
+
+// TestCopyTodo: a copy gets a fresh UID + new parent but preserves every other
+// property (summary, categories, unknown X-props, VALARM) — the iron rule.
+func TestCopyTodo(t *testing.T) {
+	obj := decodeForTest(t, todoWithExtras)
+	now := time.Date(2026, 7, 5, 12, 0, 0, 0, time.UTC)
+	copied, err := CopyTodo(obj, "keep-me@example.com", "fresh-uid@test", "parent-9@test", now, time.UTC)
+	if err != nil {
+		t.Fatal(err)
+	}
+	td := copied.Todos[0]
+	if td.UID != "fresh-uid@test" {
+		t.Errorf("UID = %q, want the fresh uid", td.UID)
+	}
+	if td.ParentUID != "parent-9@test" {
+		t.Errorf("ParentUID = %q, want parent-9@test", td.ParentUID)
+	}
+	if td.Summary != "Original summary" {
+		t.Errorf("Summary = %q, want it preserved", td.Summary)
+	}
+	out, _ := copied.Encode()
+	for _, want := range []string{"X-CUSTOM-FLAG:do-not-drop", "CATEGORIES:work", "BEGIN:VALARM"} {
+		if !strings.Contains(string(out), want) {
+			t.Errorf("copy dropped %q:\n%s", want, out)
+		}
+	}
+}
