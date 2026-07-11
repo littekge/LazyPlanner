@@ -4,6 +4,13 @@
 
 ---
 
+## 2026-07-10 — Hidden calendars drop their color bullet
+
+- Owner request: hiding a calendar should remove the `●` color bullet in the Calendars list, so a hidden calendar reads more clearly at a glance (alongside the existing `(hidden)` marker).
+- **Fix** (`internal/ui/render.go` `buildCalendars`): only prepend the color bullet when the calendar isn't hidden (`ok && !a.hidden[cal.ID]`). Name/count/markers unchanged.
+- Docs: `CLAUDE.md`, `README.md` (bullet/color-dot descriptions note it drops when hidden).
+- Tests (`colorrender_test.go`): `TestHiddenCalendarDropsColorBullet` — a colored calendar shows the bullet when visible and drops it (with `(hidden)` shown) when hidden. Full gate pass.
+
 ## 2026-07-10 — Audit items 15 & 16: mouse — wheel-paging dropped, click-to-fold confirmed
 
 - **15 — wheel paging the calendar grid**: owner chose to drop it from the spec rather than implement. Updated `main.md`'s Mouse section (keyboard `f`/`b` pages the grids; the custom widgets take no wheel handler).

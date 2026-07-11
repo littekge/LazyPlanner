@@ -167,3 +167,35 @@ func TestAgendaItemUsesCalendarColor(t *testing.T) {
 		t.Errorf("agenda title fg = %v (found=%v), want the calendar color #3fb950", fg, ok)
 	}
 }
+
+// TestHiddenCalendarDropsColorBullet: hiding a calendar removes its color bullet
+// from the Calendars list (a clearer at-a-glance "hidden" cue).
+func TestHiddenCalendarDropsColorBullet(t *testing.T) {
+	a := newWritableTestApp(t, time.Date(2026, 7, 5, 12, 0, 0, 0, time.UTC))
+	cals := a.store.Calendars()
+	if len(cals) == 0 {
+		t.Skip("fixture has no calendars")
+	}
+	id := cals[0].ID
+	if err := a.store.SyncCalendarColor(context.Background(), id, "#3fb950"); err != nil {
+		t.Fatal(err)
+	}
+
+	// Visible: the bullet is present.
+	a.buildCalendars()
+	cells, cw, ch := drawCells(t, a.calendars, 40, 10)
+	if rowFind(cells, cw, ch, "●") < 0 {
+		t.Fatal("visible calendar should show the color bullet")
+	}
+
+	// Hidden: the bullet is gone (and the (hidden) marker shows).
+	a.hidden[id] = true
+	a.buildCalendars()
+	cells, cw, ch = drawCells(t, a.calendars, 40, 10)
+	if rowFind(cells, cw, ch, "●") >= 0 {
+		t.Error("hidden calendar should not show the color bullet")
+	}
+	if rowFind(cells, cw, ch, "(hidden)") < 0 {
+		t.Error("hidden calendar should show the (hidden) marker")
+	}
+}

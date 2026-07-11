@@ -31,9 +31,10 @@ func (a *app) buildCalendars() {
 		}
 		// Escape so the bracketed markers ([both]/[ro]/…) render literally rather
 		// than being swallowed as tview style tags; prepend a bullet in the
-		// calendar's synced color when it has one.
+		// calendar's synced color when it has one — but drop the bullet for a
+		// hidden calendar, so its items being off the views reads at a glance.
 		label := tview.Escape(desc)
-		if cc, ok := a.calColors[cal.ID]; ok {
+		if cc, ok := a.calColors[cal.ID]; ok && !a.hidden[cal.ID] {
 			label = "[" + cc.name + "]●[-] " + label
 		}
 		a.calendars.AddItem(label, "", 0, nil)
