@@ -4,12 +4,12 @@
 
 ---
 
-## 2026-07-10 — Fix app-freeze: vendored tview tree-draw infinite loop
+## 2026-07-10 — Fix app-freeze: disable tview tree branch-graphics
 
-- Diagnosed a reported "crash" — actually a **100% CPU hang**, not a panic. Root cause is upstream `github.com/rivo/tview` v0.42.0 `TreeView.Draw` (`vendor/.../treeview.go`): the ancestor-branch-drawing loop does `if ancestor.graphicsX >= width { continue }` without advancing `ancestor`, so it spins forever whenever a node's ancestor indent reaches the tree pane's width. Triggered by a deep-enough subtask tree in a tree pane narrower than the deepest indent (~12–15 levels at 80 cols; far shallower in a narrow terminal or after widening the overview). Our recent yank/paste makes deep trees easy to build, which is why it surfaced now — but the faulty line is pre-existing library code, and grab/yank/mode-indicator code is all correctly guarded (confirmed by a fuzzing sweep of the since-audit diff).
-- **Fix**: minimal **local patch to the vendored file** (chosen over disabling tree graphics, to keep the branch-connector lines) — advance `ancestor = ancestor.parent` before `continue`. Marked with a `LOCAL PATCH (LazyPlanner)` comment so a future `go mod vendor` catches it.
-- Test: `internal/ui/treedraw_regress_test.go` draws a 20-deep tree in an 8-col pane inside a goroutine with a 5s watchdog — passes with the patch, times out (verified) without it. Full gate passes.
-- Files: `vendor/github.com/rivo/tview/treeview.go`, `internal/ui/treedraw_regress_test.go`.
+- Diagnosed a reported "crash" — actually a **100% CPU hang**, not a panic. Root cause is upstream `github.com/rivo/tview` v0.42.0 `TreeView.Draw`: the ancestor-branch-drawing loop does `if ancestor.graphicsX >= width { continue }` without advancing `ancestor`, so it spins forever whenever a node's ancestor indent reaches the tree pane's width. Triggered by a deep-enough subtask tree in a tree pane narrower than the deepest indent (~12–15 levels at 80 cols; far shallower in a narrow terminal or after widening the overview). Our recent yank/paste makes deep trees easy to build, which is why it surfaced now — but the faulty line is pre-existing library code (still present on tview master), and grab/yank/mode-indicator code is all correctly guarded (confirmed by a fuzzing sweep of the since-audit diff).
+- **Fix**: `a.tree.SetGraphics(false)` in our own code — the entire buggy loop is gated behind `if t.graphics`, so this sidesteps it with **no edits to vendored/third-party source**. An earlier commit patched the vendored file directly; that was reverted (the vendored tview is now byte-identical to upstream v0.42.0) in favour of this in-code fix, since editing a vendored dep is silently lost on the next `go mod vendor`. Cost: the tree loses tview's `├─ │ └─` connector lines; nesting is still shown by indentation and our own `▸`/`▾` folder carets.
+- Test: `internal/ui/treedraw_regress_test.go` builds a 20-deep subtask chain and draws the app's tree in an 8-col pane under a 5s watchdog — passes now, and (verified) hangs/times out if `SetGraphics(false)` is dropped.
+- Files: `internal/ui/app.go`, `internal/ui/treedraw_regress_test.go`; reverted `vendor/github.com/rivo/tview/treeview.go` to pristine.
 
 ## 2026-07-10 — Status-bar mode indicator + outlined status bar
 

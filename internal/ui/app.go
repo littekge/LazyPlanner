@@ -438,6 +438,11 @@ func (a *app) build() {
 			a.agenda.setSelected(index)
 		}
 	})
+	// Disable tview's branch-connector graphics. Nesting is already conveyed by
+	// indentation and our own ▸/▾ folder carets, and it sidesteps an upstream
+	// TreeView.Draw infinite loop (v0.42.0) that hangs the app when a deep node's
+	// indent exceeds the tree pane's width. See log.md 2026-07-10.
+	a.tree.SetGraphics(false)
 	a.tree.SetChangedFunc(func(node *tview.TreeNode) { a.showTreeNode(node) })
 	a.tree.SetSelectedFunc(func(node *tview.TreeNode) {
 		node.SetExpanded(!node.IsExpanded())
