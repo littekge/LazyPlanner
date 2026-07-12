@@ -99,7 +99,7 @@ func TestEditTodoThisOccurrenceConfirms(t *testing.T) {
 	a.reload()
 
 	loc, _ := a.store.Locate(uid)
-	a.editTodoThisOccurrence(loc, uid, time.Date(2026, 7, 6, 9, 0, 0, 0, time.UTC))
+	a.editTodoThisOccurrence(loc, uid)
 	if !a.root.HasPage(pageConfirm) {
 		t.Error("editing this occurrence of a recurring todo should confirm the detach first")
 	}
@@ -309,59 +309,5 @@ func TestGrabFutureCancelRestores(t *testing.T) {
 	}
 	if n := masterOccurrenceCount(t, a, uid); n != 4 {
 		t.Errorf("after cancel the master has %d occurrences, want 4 (restored)", n)
-	}
-}
-
-// TestRecurringTodoShowsAllOccurrences locks #4: a recurring task appears on every
-// occurrence's due day on the calendar (not just its current one).
-func TestRecurringTodoShowsAllOccurrences(t *testing.T) {
-	when := time.Date(2026, 7, 6, 12, 0, 0, 0, time.UTC)
-	a := newRootedTestApp(t, when)
-	if err := a.store.CreateCalendarLocal(context.Background(), "tl", store.CalendarMeta{DisplayName: "TL"}, []string{"VTODO"}); err != nil {
-		t.Fatal(err)
-	}
-	uid := putRecurringTodo(t, a, "tl", "Water", time.Date(2026, 7, 6, 9, 0, 0, 0, time.UTC), "FREQ=WEEKLY;COUNT=4")
-	a.reload()
-
-	// Count the days in July the task is bucketed onto in the time-grid builder.
-	days := make([]time.Time, 0, 28)
-	for i := 0; i < 28; i++ {
-		days = append(days, model.DayStart(time.Date(2026, 7, 6, 0, 0, 0, 0, time.Local)).AddDate(0, 0, i))
-	}
-	buckets := a.dueTasksByDay(days)
-	count := 0
-	for _, td := range buckets {
-		for _, x := range td {
-			if x.UID == uid {
-				count++
-			}
-		}
-	}
-	if count != 4 {
-		t.Errorf("recurring task appears on %d days, want 4 (one per weekly occurrence)", count)
-	}
-}
-
-// TestCompleteLaterOccurrenceAdvancesPast locks #4's completion: completing a later
-// occurrence advances the series to the one after it (earlier ones are passed).
-func TestCompleteLaterOccurrenceAdvancesPast(t *testing.T) {
-	when := time.Date(2026, 7, 6, 12, 0, 0, 0, time.UTC)
-	a := newRootedTestApp(t, when)
-	if err := a.store.CreateCalendarLocal(context.Background(), "tl", store.CalendarMeta{DisplayName: "TL"}, []string{"VTODO"}); err != nil {
-		t.Fatal(err)
-	}
-	uid := putRecurringTodo(t, a, "tl", "Water", time.Date(2026, 7, 6, 9, 0, 0, 0, time.UTC), "FREQ=WEEKLY;COUNT=4")
-	a.reload()
-
-	// Complete the 3rd occurrence (07-20): the series should jump to the 4th (07-27).
-	loc, _ := a.store.Locate(uid)
-	a.advanceRecurringTodo(loc, uid, time.Date(2026, 7, 20, 9, 0, 0, 0, time.UTC))
-
-	td := todoDue(t, a, uid)
-	if td.Completed() {
-		t.Fatal("completing the 3rd of 4 occurrences should not finish the series")
-	}
-	if !td.Due.UTC().Equal(time.Date(2026, 7, 27, 9, 0, 0, 0, time.UTC)) {
-		t.Errorf("DUE after completing the 3rd occurrence = %s, want 2026-07-27 09:00Z (advanced past)", td.Due.UTC())
 	}
 }

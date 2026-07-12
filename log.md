@@ -4,6 +4,15 @@
 
 ---
 
+## 2026-07-12 — Revert #4: recurring tasks show a single live instance again
+
+- Owner decision after a caveats review: showing every occurrence of a recurring task on the calendar (the earlier #4 change) introduced unneeded complexity, and recurring tasks-with-subtasks ("recurring folders") are a confusing fit for the tasks-as-folders model — so **recurring checklists will not be built**, and #4 is reverted to plain complete-to-advance (a recurring task shows once, at its current due, and advances one occurrence on completion). The current independent handling of a recurring task's subtasks is data-safe (verified: recurrence edits only the parent's own component, stable UID, iron-rule preservation, links never dangle); it just doesn't regenerate subtasks.
+- **Reverted (the #4 parts of commit `c038393`, keeping its unrelated #5/#8):** removed `model.Todo.DuesInRange` (`internal/model/recur_todo.go` deleted); `model.DayAgenda` and `dueTasksByDay` back to the single-due path; `AdvanceRecurringTodo` back to advance-one (dropped the `completedOcc` occurrence-aware param, restored `nextInstantAfter`, COUNT decrements by one); UI callers (`advanceRecurringTodo`, `editTodoThisOccurrence`/`editTodoDetachForm`, `deleteOccurrence`, `toggleComplete`) no longer thread `occStart`.
+- **Kept:** #5 (edit-this-occurrence event form re-seeds from the existing override) and #8 (grab This / This & future / All), which were bundled in the same commit but are independent; and #6 (COUNT-preserving split), a separate commit.
+- Tests: removed `TestRecurringTodoShowsAllOccurrences` and `TestCompleteLaterOccurrenceAdvancesPast`; reverted the `AdvanceRecurringTodo`/`editTodoThisOccurrence` call signatures in the remaining tests. `TestRecurringTodoSpaceAdvances` (advance-one + flash) still passes.
+- Docs: `README.md`, `CLAUDE.md` reverted to "single live instance, advances on complete"; `CLAUDE.md` records the deliberate decision not to reintroduce todo occurrence-expansion.
+- Files: `internal/model/recur_edit.go`, `internal/model/agenda.go`, `internal/model/recur_edit_test.go`, `internal/model/recur_todo.go` (deleted), `internal/ui/recur_edit.go`, `internal/ui/edit.go`, `internal/ui/render.go`, `internal/ui/recur_edit_test.go`, `README.md`, `CLAUDE.md`. Full gate passes.
+
 ## 2026-07-12 — Recurrence UX round 2: all task occurrences shown, override re-seed, grab this-and-future
 
 - Second batch of owner-requested recurrence-UX changes (caveats review, #4/#5/#8).

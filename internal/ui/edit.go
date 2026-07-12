@@ -299,7 +299,7 @@ func (a *app) toggleComplete() {
 	// A recurring todo advances to its next occurrence on completion (NextCloud
 	// style) rather than being marked done, until the series is exhausted.
 	if !td.Completed() && td.Recurring {
-		a.advanceRecurringTodo(loc, t.uid, t.occStart)
+		a.advanceRecurringTodo(loc, t.uid)
 		return
 	}
 	completing := !td.Completed()

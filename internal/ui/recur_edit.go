@@ -75,7 +75,7 @@ func (a *app) editRecurring(loc store.Located, t editTarget) {
 			case scopeAll:
 				a.showTodoForm(loc, t.uid)
 			case scopeThis:
-				a.editTodoThisOccurrence(loc, t.uid, t.occStart)
+				a.editTodoThisOccurrence(loc, t.uid)
 			}
 		})
 		return
@@ -129,7 +129,7 @@ func (a *app) editEventScoped(loc store.Located, t editTarget, scope recurScope)
 // editTodoThisOccurrence detaches the current instance of a recurring todo as a
 // standalone task carrying the edits, and advances the series past it — so "edit
 // this occurrence" needs no override-on-read for todos.
-func (a *app) editTodoThisOccurrence(loc store.Located, uid string, occStart time.Time) {
+func (a *app) editTodoThisOccurrence(loc store.Located, uid string) {
 	td := findTodo(loc.Object, uid)
 	if td == nil {
 		a.flash("Task not found")
@@ -137,21 +137,16 @@ func (a *app) editTodoThisOccurrence(loc store.Located, uid string, occStart tim
 	}
 	// This scope splits the task in two, which isn't obvious — confirm first.
 	a.confirmOK("Edit only this occurrence? It becomes a separate one-off task and the recurring series advances to its next occurrence.", "Detach", func() {
-		a.editTodoDetachForm(loc, uid, td, occStart)
+		a.editTodoDetachForm(loc, uid, td)
 	})
 }
 
-// editTodoDetachForm opens the edit form whose save detaches the selected instance
-// (occStart) as a standalone task and advances the series past it (the confirmed
-// this-occurrence path). The form is seeded at the occurrence's due.
-func (a *app) editTodoDetachForm(loc store.Located, uid string, td *model.Todo, occStart time.Time) {
-	seed := *td
-	if !occStart.IsZero() {
-		seed.Due = occStart
-	}
-	a.presentTodoForm(&seed, " Edit this occurrence ", func(d model.TodoDraft) {
+// editTodoDetachForm opens the edit form whose save detaches the current instance
+// as a standalone task and advances the series (the confirmed this-occurrence path).
+func (a *app) editTodoDetachForm(loc store.Located, uid string, td *model.Todo) {
+	a.presentTodoForm(td, " Edit this occurrence ", func(d model.TodoDraft) {
 		d.ParentUID = td.ParentUID
-		advanced, _, err := model.AdvanceRecurringTodo(loc.Object, uid, occStart, a.now, a.loc)
+		advanced, _, err := model.AdvanceRecurringTodo(loc.Object, uid, a.now, a.loc)
 		if err != nil {
 			a.flash(err.Error())
 			return
@@ -212,7 +207,7 @@ func (a *app) deleteOccurrence(loc store.Located, t editTarget) {
 		a.commitMutation(loc.CalID, loc.Name, newObj, loc.Prev, "delete occurrence", t.uid, "Deleted this occurrence")
 		return
 	}
-	advanced, done, err := model.AdvanceRecurringTodo(loc.Object, t.uid, t.occStart, a.now, a.loc)
+	advanced, done, err := model.AdvanceRecurringTodo(loc.Object, t.uid, a.now, a.loc)
 	if err != nil {
 		a.flash(err.Error())
 		return
@@ -231,11 +226,10 @@ func (a *app) deleteOccurrence(loc store.Located, t editTarget) {
 	a.commitMutation(loc.CalID, loc.Name, advanced, loc.Prev, "skip occurrence", t.uid, "Skipped this occurrence")
 }
 
-// advanceRecurringTodo completes one occurrence of a recurring todo by rolling the
-// series past completedOcc (Space semantics); the last occurrence marks the todo
-// done. completedOcc is the drilled occurrence's due (zero = the current one).
-func (a *app) advanceRecurringTodo(loc store.Located, uid string, completedOcc time.Time) {
-	advanced, done, err := model.AdvanceRecurringTodo(loc.Object, uid, completedOcc, a.now, a.loc)
+// advanceRecurringTodo completes one occurrence of a recurring todo by rolling it
+// to the next (Space semantics); the last occurrence marks the todo done.
+func (a *app) advanceRecurringTodo(loc store.Located, uid string) {
+	advanced, done, err := model.AdvanceRecurringTodo(loc.Object, uid, a.now, a.loc)
 	if err != nil {
 		a.flash(err.Error())
 		return
