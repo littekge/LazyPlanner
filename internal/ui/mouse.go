@@ -18,6 +18,14 @@ func (a *app) mouseCapture(ev *tcell.EventMouse, action tview.MouseAction) (*tce
 	if a.modalOpen() {
 		return ev, action
 	}
+	// Grab and the Ctrl-W resize sub-mode are modal flag-states with no overlay
+	// page, so modalOpen() is false during them. Swallow the mouse entirely (not
+	// just decline to reinterpret it), matching the keyboard gating in globalKeys:
+	// otherwise a click could switch panes or open the edit form mid-grab/resize,
+	// leaving two modal states coexisting and the mode state desynced.
+	if a.grabbing || a.resizing {
+		return nil, action
+	}
 
 	switch action {
 	case tview.MouseLeftClick:

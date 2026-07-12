@@ -4,6 +4,13 @@
 
 ---
 
+## 2026-07-12 — Hardening pass 3 (#5): mouse can't bypass grab/resize modal gating
+
+- **Bug:** `mouseCapture` guarded only on `modalOpen()` (an overlay page). Grab mode (`a.grabbing`) and the `Ctrl-W` resize sub-mode (`a.resizing`) are flag-only modal states with no overlay page, so the mouse was **not** swallowed during them: a click still fired `setMode` (switching the active pane) and a double-click still opened the edit form — two modal states coexisting, and grab reading the wrong `a.mode`. The keyboard path already gated on both flags.
+- **Fix:** `mouseCapture` now swallows the event (`return nil, action`) when `a.grabbing || a.resizing`, matching the keyboard gating.
+- Test (`internal/ui/mouse_test.go`): a click during each flag-state is swallowed and does not switch mode.
+- Files: `internal/ui/mouse.go`, `internal/ui/mouse_test.go`. Full gate passes.
+
 ## 2026-07-12 — Hardening pass 3 (#10): Space on an event always gives feedback
 
 - Key-contract fix (owner's explicit Pass-3 rule: a used key must act or flash, never a silent no-op).
