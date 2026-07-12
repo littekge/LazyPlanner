@@ -26,7 +26,7 @@
 2. **Work in small increments** — one module or feature at a time.
 3. **After every change**, append a dated entry to `log.md` describing what was added, changed, or fixed.
 4. **Run tests and lints** after every code change: `go test ./...`, then `go vet ./...` and `staticcheck ./...`
-5. **Run the program** to verify it still builds and launches: `go build ./...` (and `go run ./cmd/lazyplanner` for manual checks).
+5. **Run the program** to verify it still builds and launches: `go build ./...` (and `go run ./cmd/lazyplanner` for manual checks). A `Makefile` wraps the common tasks — `make build`, `make check` (the full gate), `make cross` (stripped Raspberry Pi arm64/armv7/armv6 binaries into `dist/`, also run in CI). See the README's Raspberry Pi section for kiosk setup.
 6. **Keep `README.md` current** — if the change altered user-visible behavior, usage, or build steps, update the README in the same increment.
 7. **Commit often** with descriptive messages: `git add . && git commit -m "feat: ..."` — on `ai-workspace`, never `main` (see Git Branching Rules).
 

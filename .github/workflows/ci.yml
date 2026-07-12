@@ -32,3 +32,8 @@ jobs:
         with:
           version: latest
           install-go: false
+
+      # Raspberry Pi is a primary target; a cross-build (no emulation, just the
+      # compiler) catches ARM-specific regressions cheaply on every push.
+      - name: Cross-build (Raspberry Pi)
+        run: make cross

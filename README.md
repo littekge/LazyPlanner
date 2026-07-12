@@ -139,6 +139,48 @@ Requires [Go](https://go.dev/dl/) (the stable release current at scaffold time o
 
 On first launch LazyPlanner writes a starter `config.toml` (see [Configuration](#configuration)) and exits; fill in `[server]` and run it again to open the TUI. Press `q` or `Ctrl-C` to quit. Remaining functionality lands over the build steps in [`main.md`](main.md).
 
+A `Makefile` wraps the common tasks: `make build` (native binary), `make check` (test + vet + staticcheck), `make run`, and `make cross` (the Raspberry Pi binaries below).
+
+## Raspberry Pi / dedicated terminal
+
+LazyPlanner is a single static binary with no runtime dependencies, so it's a natural fit for a low-power Raspberry Pi used as an always-on wall calendar. Because it's pure Go (no cgo), you **cross-compile from any machine** — no ARM toolchain needed:
+
+```sh
+make cross      # → dist/lazyplanner-linux-{arm64,armv7,armv6}, stripped (~8.6 MB)
+```
+
+Pick the binary for your Pi and OS: **arm64** for 64-bit Raspberry Pi OS (Pi 3/4/5, Zero 2 W), **armv7** for 32-bit Pi OS (Pi 2/3/4, Zero 2 W), **armv6** for the original Pi / Pi Zero / Zero W. Copy it over and drop it on the `PATH`:
+
+```sh
+scp dist/lazyplanner-linux-arm64 pi@raspberrypi:/tmp/lazyplanner
+ssh pi@raspberrypi 'sudo install -m0755 /tmp/lazyplanner /usr/local/bin/lazyplanner'
+```
+
+Run `lazyplanner` once to write the starter config, fill in `[server]` (see [Configuration](#configuration)), and set `sync_interval_minutes` to how often the display should refresh from the server.
+
+**Kiosk (launch full-screen on boot).** LazyPlanner is a terminal program, so the simplest dedicated-terminal setup is a console **autologin** on `tty1` that execs it — no X server needed. Enable console autologin with `sudo raspi-config` (*System Options → Boot / Auto Login → Console Autologin*), then have the login shell launch LazyPlanner on the main console only:
+
+```sh
+# ~/.bash_profile on the Pi — replace the login shell on tty1 with LazyPlanner,
+# and drop back to a shell when you quit (q). Other ttys/SSH stay normal shells.
+if [ "$(tty)" = "/dev/tty1" ]; then
+  exec lazyplanner
+fi
+```
+
+`raspi-config`'s autologin drops in a systemd getty override equivalent to:
+
+```ini
+# /etc/systemd/system/getty@tty1.service.d/autologin.conf
+[Service]
+ExecStart=
+ExecStart=-/sbin/agetty --autologin pi --noclear %I $TERM
+```
+
+Set `color_mode = "16"` in the config if the Pi console is a bare framebuffer TTY (no truecolor); on a desktop terminal emulator leave it `auto`. The periodic background sync keeps the display current without any interaction.
+
+**Performance.** The binary starts from the local cache instantly and syncs in the background, and the incremental CTag short-circuit keeps routine syncs cheap — both designed for modest hardware. On-hardware timing hasn't been benchmarked yet; measure `time lazyplanner sync` and startup on your Pi and tune `sync_interval_minutes` to taste.
+
 ## Development
 
 - [`main.md`](main.md) — the build specification (single source of truth)

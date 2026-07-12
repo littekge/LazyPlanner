@@ -4,6 +4,15 @@
 
 ---
 
+## 2026-07-12 — Step 13: Raspberry Pi target (cross-build, Makefile, kiosk notes)
+
+- Build step 13. LazyPlanner is pure Go (no cgo) with the tz database embedded, so it cross-compiles to ARM from any machine with no extra toolchain — verified building statically-linked binaries for **arm64** (64-bit Pi OS), **armv7** (32-bit Pi OS), and **armv6** (Pi 1 / Zero). Stripped (`-ldflags "-s -w" -trimpath`) they're ~8.6 MB (vs 13 MB native debug).
+- **Makefile** (new): `build` (native), `check` (test + vet + staticcheck — the gate), `run`, `fmt`, and `cross`/`pi-arm64`/`pi-armv7`/`pi-armv6` (stripped Pi binaries into `dist/`, gitignored), `clean`.
+- **CI** (`.github/workflows/ci.yml`): added a `make cross` step so an ARM-specific build regression is caught on every push (compile-only, no emulation).
+- **Docs** (`README.md`): a "Raspberry Pi / dedicated terminal" section — cross-compile (`make cross`), copy/install to the Pi, and a **kiosk** setup (console autologin on tty1 via `raspi-config`, a `~/.bash_profile` `exec lazyplanner` guarded to tty1, the equivalent getty autologin override) plus the `color_mode = "16"` tip for a bare framebuffer TTY and a note that on-hardware performance isn't benchmarked yet (the one part of step 13 that needs a physical Pi). `CLAUDE.md` build-workflow note about the Makefile.
+- No app code changed; `make check` passes, all three cross-builds succeed.
+- Files: `Makefile` (new), `.github/workflows/ci.yml`, `.gitignore` (`/dist/`), `README.md`, `CLAUDE.md`.
+
 ## 2026-07-12 — Step 12: periodic background sync + incremental CTag short-circuit
 
 - Build step 12 (the CTag half of incremental sync + periodic sync; the full `sync-collection` REPORT is a deliberate follow-up per the owner's scope choice).

@@ -1,6 +1,7 @@
 # Build output — `go build` emits binaries; keep them out of the repo.
 /lazyplanner
 /cmd/lazyplanner/lazyplanner
+/dist/
 
 # Go workspace files (machine-local, never committed)
 go.work
