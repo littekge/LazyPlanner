@@ -4,6 +4,15 @@
 
 ---
 
+## 2026-07-12 — Recurrence UX refinements: obvious advance flash, detach confirm, COUNT-preserving split
+
+- Owner-requested refinements to step 11's recurring-item UX (from a caveats review).
+- **(#1) Obvious advance flash** (`internal/ui/recur_edit.go` `advanceRecurringTodo`): completing a recurring todo advances it rather than checking it off, which is easy to miss. The flash is now accent-colored with a glyph and the new due date — `↻ Recurring task advanced (not completed) → next due <date>` (or `✓ Recurring task done — final occurrence completed`).
+- **(#3) Detach confirmation** (`recur_edit.go` `editTodoThisOccurrence` → new `editTodoDetachForm`; `edit.go` new `confirmOK` generic-affirmative-label confirm): editing "this occurrence" of a recurring todo splits it into a separate one-off task + advances the series, which isn't obvious — now it confirms first ("… becomes a separate one-off task and the recurring series advances …", Detach/Cancel).
+- **(#6) COUNT-preserving split** (`internal/model/recur_edit.go` `NewSeriesFrom` now takes `occ` + new `occurrencesBefore` helper): a this-and-future split of a COUNT-bounded series previously left the future half open-ended. The future half's COUNT is now reduced by the occurrences that stay with the capped master, so the two halves sum to the original count (UNTIL and infinite series were already exact).
+- Tests: model `TestSplitSeries` now asserts the future half keeps 2 of the original 4 (was open-ended); UI `TestRecurringTodoSpaceAdvances` asserts the flash says "advanced"; new `TestEditTodoThisOccurrenceConfirms` asserts the detach confirm appears. Full gate passes.
+- Files: `internal/model/recur_edit.go`, `internal/model/recur_edit_test.go`, `internal/ui/recur_edit.go`, `internal/ui/edit.go`, `internal/ui/recur_edit_test.go`.
+
 ## 2026-07-12 — Step 13: Raspberry Pi target (cross-build, Makefile, kiosk notes)
 
 - Build step 13. LazyPlanner is pure Go (no cgo) with the tz database embedded, so it cross-compiles to ARM from any machine with no extra toolchain — verified building statically-linked binaries for **arm64** (64-bit Pi OS), **armv7** (32-bit Pi OS), and **armv6** (Pi 1 / Zero). Stripped (`-ldflags "-s -w" -trimpath`) they're ~8.6 MB (vs 13 MB native debug).

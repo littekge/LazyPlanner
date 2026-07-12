@@ -120,18 +120,21 @@ func TestSplitSeries(t *testing.T) {
 	}
 
 	// New series from 07-20 at 11:00 with a new name.
-	newObj, err := NewSeriesFrom(obj, "wk@t", func(c *ical.Component) {
+	newObj, err := NewSeriesFrom(obj, "wk@t", occ, func(c *ical.Component) {
 		applyEvent(c, EventDraft{Summary: "Renamed", Start: d(2026, 7, 20, 11), End: d(2026, 7, 20, 12)}, now)
 	}, now, time.UTC)
 	if err != nil {
 		t.Fatal(err)
 	}
-	occs, err := newObj.EventOccurrences(d(2026, 7, 1, 0), d(2026, 8, 20, 0))
+	occs, err := newObj.EventOccurrences(d(2026, 7, 1, 0), d(2026, 12, 1, 0))
 	if err != nil {
 		t.Fatal(err)
 	}
-	if len(occs) == 0 {
-		t.Fatal("new series has no occurrences")
+	// The original COUNT=4 series split at the 3rd instance: the capped master keeps
+	// 2 (07-06, 07-13) and the future half keeps the remaining 2 (07-20, 07-27) — the
+	// COUNT is preserved across the split, not left open-ended.
+	if len(occs) != 2 {
+		t.Fatalf("new series has %d occurrences, want 2 (remaining count preserved)", len(occs))
 	}
 	if !occs[0].Start.UTC().Equal(d(2026, 7, 20, 11)) {
 		t.Errorf("new series first start = %s, want 2026-07-20 11:00Z", occs[0].Start.UTC())

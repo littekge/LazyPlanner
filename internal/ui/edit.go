@@ -1093,12 +1093,18 @@ func (a *app) promptInput(title, label string, onAccept func(text string)) {
 
 // confirm shows a yes/no modal; onYes runs when the user confirms.
 func (a *app) confirm(text string, onYes func()) {
+	a.confirmOK(text, "Delete", onYes)
+}
+
+// confirmOK is a confirm with a custom affirmative button label (e.g. "Detach"),
+// for actions that aren't deletions. Cancel is always the other button.
+func (a *app) confirmOK(text, okLabel string, onYes func()) {
 	modal := tview.NewModal().
 		SetText(text).
-		AddButtons([]string{"Delete", "Cancel"}).
+		AddButtons([]string{okLabel, "Cancel"}).
 		SetDoneFunc(func(_ int, label string) {
 			a.closeModal(pageConfirm)
-			if label == "Delete" {
+			if label == okLabel {
 				onYes()
 			}
 		})

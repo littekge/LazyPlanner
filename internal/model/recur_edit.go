@@ -260,10 +260,12 @@ func CapSeries(obj *Parsed, uid string, until time.Time, now time.Time, loc *tim
 
 // NewSeriesFrom builds a fresh single-component object (a new resource) cloned
 // from the master of uid in obj, re-keyed to a new UID, with mutate applied — the
-// future half of a this-and-future split. It keeps the master's RRULE (minus any
-// UNTIL/COUNT, so the new series is open-ended from its new start unless mutate
-// sets otherwise) so the tail of the series continues with the edited values.
-func NewSeriesFrom(obj *Parsed, uid string, mutate func(*ical.Component), now time.Time, loc *time.Location) (*Parsed, error) {
+// future half of a this-and-future split at occ. It keeps the master's RRULE,
+// preserving both bounds exactly: an absolute UNTIL is unchanged (the series' end
+// date doesn't move when it's split), and a COUNT is reduced by the number of
+// occurrences that stay with the capped master (those before occ), so a
+// COUNT-bounded series splits into two halves that sum to the original count.
+func NewSeriesFrom(obj *Parsed, uid string, occ time.Time, mutate func(*ical.Component), now time.Time, loc *time.Location) (*Parsed, error) {
 	if loc == nil {
 		loc = time.Local
 	}
@@ -275,6 +277,7 @@ func NewSeriesFrom(obj *Parsed, uid string, mutate func(*ical.Component), now ti
 	if master == nil {
 		return nil, fmt.Errorf("model: no recurring master with UID %q", uid)
 	}
+	pastCount := occurrencesBefore(master, occ, loc)
 
 	cal := ical.NewCalendar()
 	cal.Props.SetText(ical.PropVersion, icalVersion)
@@ -299,12 +302,17 @@ func NewSeriesFrom(obj *Parsed, uid string, mutate func(*ical.Component), now ti
 		comp.Props[name] = cp
 	}
 	comp.Props.SetText(ical.PropUID, NewUID())
-	// Keep an absolute UNTIL (the series' end date doesn't move when it's split) but
-	// drop COUNT, which was measured from the old DTSTART; a split of a COUNT-bounded
-	// series thus leaves the tail open-ended (a rare, documented simplification —
-	// UNTIL-bounded and infinite series, the common cases, split exactly).
+	// Preserve the rule's bound: keep an absolute UNTIL as-is, and reduce a COUNT by
+	// the occurrences that remain with the capped master (before occ), so the two
+	// halves together still yield the original number of occurrences.
 	if roption, err := comp.Props.RecurrenceRule(); err == nil && roption != nil {
-		roption.Count = 0
+		if roption.Count > 0 {
+			remaining := roption.Count - pastCount
+			if remaining < 1 {
+				remaining = 1
+			}
+			roption.Count = remaining
+		}
 		comp.Props.SetRecurrenceRule(roption)
 	}
 	setDateTimeUTC(comp, ical.PropCreated, now)
@@ -312,6 +320,27 @@ func NewSeriesFrom(obj *Parsed, uid string, mutate func(*ical.Component), now ti
 
 	mutate(comp)
 	return Parse(cal, loc)
+}
+
+// occurrencesBefore counts the master's occurrences strictly before occ — the
+// ones that stay with the capped past half of a split, used to reduce the future
+// half's COUNT. Returns 0 when the component isn't dated or has no rule.
+func occurrencesBefore(master *ical.Component, occ time.Time, loc *time.Location) int {
+	_, anchor, _, ok := componentAnchor(master, loc)
+	if !ok {
+		return 0
+	}
+	set, err := componentRecurrenceSet(master, anchor)
+	if err != nil {
+		return 0
+	}
+	n := 0
+	for _, t := range set.Between(anchor, occ, true) {
+		if t.Before(occ) {
+			n++
+		}
+	}
+	return n
 }
 
 // EditEventOccurrence is the draft-based "edit this occurrence" for an event: it
@@ -330,7 +359,7 @@ func SplitEvent(obj *Parsed, uid string, occ time.Time, d EventDraft, now time.T
 	if err != nil {
 		return nil, nil, err
 	}
-	future, err = NewSeriesFrom(obj, uid, func(c *ical.Component) {
+	future, err = NewSeriesFrom(obj, uid, occ, func(c *ical.Component) {
 		applyEvent(c, d, now)
 	}, now, loc)
 	if err != nil {

@@ -2,6 +2,7 @@ package ui
 
 import (
 	"context"
+	"strings"
 	"testing"
 	"time"
 
@@ -76,6 +77,29 @@ func TestRecurringTodoSpaceAdvances(t *testing.T) {
 	}
 	if !td.Due.UTC().Equal(time.Date(2026, 7, 13, 9, 0, 0, 0, time.UTC)) {
 		t.Errorf("DUE after advance = %s, want 2026-07-13 09:00Z", td.Due.UTC())
+	}
+	// The flash must make clear the task advanced (not completed) — #1.
+	if got := a.statusLeft.GetText(true); !strings.Contains(strings.ToLower(got), "advanced") {
+		t.Errorf("advance flash = %q, want it to say the task advanced", got)
+	}
+}
+
+// TestEditTodoThisOccurrenceConfirms locks #3: choosing to edit just this
+// occurrence of a recurring todo (which detaches it as a duplicate) first asks
+// for confirmation rather than silently splitting the task.
+func TestEditTodoThisOccurrenceConfirms(t *testing.T) {
+	now := time.Date(2026, 7, 8, 0, 0, 0, 0, time.UTC)
+	a := newRootedTestApp(t, now)
+	if err := a.store.CreateCalendarLocal(context.Background(), "tl", store.CalendarMeta{DisplayName: "TL"}, []string{"VTODO"}); err != nil {
+		t.Fatal(err)
+	}
+	uid := putRecurringTodo(t, a, "tl", "Water", time.Date(2026, 7, 6, 9, 0, 0, 0, time.UTC), "FREQ=WEEKLY;COUNT=3")
+	a.reload()
+
+	loc, _ := a.store.Locate(uid)
+	a.editTodoThisOccurrence(loc, uid)
+	if !a.root.HasPage(pageConfirm) {
+		t.Error("editing this occurrence of a recurring todo should confirm the detach first")
 	}
 }
 

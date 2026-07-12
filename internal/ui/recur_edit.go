@@ -128,6 +128,15 @@ func (a *app) editTodoThisOccurrence(loc store.Located, uid string) {
 		a.flash("Task not found")
 		return
 	}
+	// This scope splits the task in two, which isn't obvious — confirm first.
+	a.confirmOK("Edit only this occurrence? It becomes a separate one-off task and the recurring series advances to its next occurrence.", "Detach", func() {
+		a.editTodoDetachForm(loc, uid, td)
+	})
+}
+
+// editTodoDetachForm opens the edit form whose save detaches the current instance
+// as a standalone task and advances the series (the confirmed this-occurrence path).
+func (a *app) editTodoDetachForm(loc store.Located, uid string, td *model.Todo) {
 	a.presentTodoForm(td, " Edit this occurrence ", func(d model.TodoDraft) {
 		d.ParentUID = td.ParentUID
 		advanced, _, err := model.AdvanceRecurringTodo(loc.Object, uid, a.now, a.loc)
@@ -229,11 +238,18 @@ func (a *app) advanceRecurringTodo(loc store.Located, uid string) {
 	}
 	a.pushUndo("complete occurrence", uid, undoOp{calID: loc.CalID, name: loc.Name, prev: loc.Prev})
 	a.refreshKeepingDrill(uid)
+	// A recurring task advances rather than completing, which is easy to miss — make
+	// the flash stand out (accent color + a glyph + the new due date) so it's clear
+	// the task moved on rather than being checked off.
 	if done {
-		a.flash("Completed (last occurrence)")
-	} else {
-		a.flash("Advanced to next occurrence")
+		a.flash("[yellow]✓ Recurring task done — final occurrence completed[-]")
+		return
 	}
+	next := ""
+	if td := findTodo(advanced, uid); td != nil && td.HasDue {
+		next = " → next due " + a.fmtDate(td.Due, td.DueAllDay)
+	}
+	a.flash("[yellow]↻ Recurring task advanced (not completed)" + next + "[-]")
 }
 
 // commitSplit writes the capped master (same resource) and a new-UID future series
