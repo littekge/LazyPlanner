@@ -290,9 +290,15 @@ func (s *Store) SyncCalendarName(ctx context.Context, calID, serverName string) 
 	return nil
 }
 
-// MarkCalendarPropsSynced clears a calendar's pending-props flag after a
-// successful server PROPPATCH.
-func (s *Store) MarkCalendarPropsSynced(ctx context.Context, id string) error {
+// MarkCalendarPropsSynced clears a calendar's pending-props flags after a
+// successful server PROPPATCH. pushedName/pushedColor are the exact values that
+// were PROPPATCHed (empty = that field was not part of the push). A flag is
+// cleared only if its field still equals the pushed value: a concurrent local
+// rename/recolor during the PROPPATCH round-trip changes the value and re-sets
+// the flag, and clearing it unconditionally would drop that edit — and let the
+// next discovery overwrite it with the older server value (see SyncCalendarName/
+// SyncCalendarColor, which skip only while the flag is set).
+func (s *Store) MarkCalendarPropsSynced(ctx context.Context, id, pushedName, pushedColor string) error {
 	if err := ctx.Err(); err != nil {
 		return err
 	}
@@ -302,8 +308,12 @@ func (s *Store) MarkCalendarPropsSynced(ctx context.Context, id string) error {
 	if cs == nil {
 		return fmt.Errorf("store: unknown calendar %q", id)
 	}
-	cs.pendingName = false
-	cs.pendingColor = false
+	if pushedName != "" && cs.displayName == pushedName {
+		cs.pendingName = false
+	}
+	if pushedColor != "" && cs.color == pushedColor {
+		cs.pendingColor = false
+	}
 	if err := writeSidecar(s.root, cs); err != nil {
 		return fmt.Errorf("updating sidecar for %q: %w", id, err)
 	}

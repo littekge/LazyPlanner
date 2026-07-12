@@ -4,6 +4,13 @@
 
 ---
 
+## 2026-07-12 — Hardening pass 3 (#9): a concurrent calendar rename/recolor survives its PROPPATCH
+
+- **Bug (metadata loss):** `pushCalendarProps` snapshotted the pending name/color, ran the network `SetCalendarProps` PROPPATCH, then `MarkCalendarPropsSynced` cleared `pendingName`/`pendingColor` **unconditionally**. If the user renamed/recolored the same calendar during the round-trip, the flag was cleared even though the value had changed — so the new value never re-pushed, and the next discovery's `SyncCalendarName`/`SyncCalendarColor` (which skip only while pending) then adopted the server's *older* value, overwriting the local edit. Silent metadata loss.
+- **Fix:** `MarkCalendarPropsSynced` now takes the pushed name/color and clears a flag only if the field still equals what was PROPPATCHed; a concurrent change leaves the flag set so it re-pushes and the server value can't clobber it.
+- Test (`internal/store/pendingflags_test.go`): rename B pushed, rename C lands mid-PROPPATCH, mark-synced(B) leaves C pending, and a discovery pull of B doesn't overwrite C.
+- Files: `internal/store/calendar.go`, `internal/sync/sync.go`, `internal/store/pendingflags_test.go`. Full gate passes.
+
 ## 2026-07-12 — Hardening pass 3 (#4): keep-server can't misread an unparseable version as a deletion
 
 - **Bug (silent local-edit loss):** `stashServerConflict` swallowed `model.Parse`/`Encode` errors, so a server version that ical-decodes but fails our stricter model (e.g. a VEVENT missing DTSTART written by another client) stashed with **empty** `ServerData`. `ResolveKeepServer` used `ServerData == ""` as the *sole* signal for "server deleted" → keep-server `Forget`s the local copy. So a present-but-unparseable server version was indistinguishable from a real deletion, and choosing "keep server" silently discarded the local edit with the server version never captured — a keep-both iron-rule violation.

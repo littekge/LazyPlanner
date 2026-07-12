@@ -222,7 +222,7 @@ func pushCalendarProps(ctx context.Context, client Syncer, st *store.Store, res 
 			recordSkip(res, u.ID, u.Href, err)
 			continue
 		}
-		if err := st.MarkCalendarPropsSynced(ctx, u.ID); err != nil {
+		if err := st.MarkCalendarPropsSynced(ctx, u.ID, u.DisplayName, u.Color); err != nil {
 			recordSkip(res, u.ID, "calendar", err)
 			continue
 		}
