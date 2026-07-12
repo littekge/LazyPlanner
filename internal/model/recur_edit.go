@@ -1,0 +1,365 @@
+package model
+
+import (
+	"fmt"
+	"time"
+
+	"github.com/emersion/go-ical"
+	"github.com/teambition/rrule-go"
+)
+
+// Recurrence-editing primitives implementing the three scopes — this occurrence,
+// this-and-future, and all — for VEVENTs and VTODOs. "All" is just the existing
+// EditEvent/EditTodo on the master; the functions here handle the other two.
+//
+// The scopes map to iCalendar as follows:
+//   - this occurrence  → a RECURRENCE-ID override component (events), or a
+//     detached standalone task + advance (todos, orchestrated by the UI)
+//   - this and future  → cap the master's RRULE with UNTIL and spawn a new series
+//   - all              → edit the master component (EditEvent/EditTodo)
+//
+// Every function clones its input object first (never mutating the store snapshot)
+// and re-parses so the typed fields match the edited raw components.
+
+// masterComponent returns the VEVENT/VTODO with uid that is NOT a RECURRENCE-ID
+// override (the series master), or nil.
+func masterComponent(cal *ical.Calendar, uid string) *ical.Component {
+	for _, c := range cal.Children {
+		if c.Name != ical.CompEvent && c.Name != ical.CompToDo {
+			continue
+		}
+		if text(c.Props, ical.PropUID) == uid && c.Props.Get(ical.PropRecurrenceID) == nil {
+			return c
+		}
+	}
+	return nil
+}
+
+// componentAnchor returns the component's recurrence anchor property name and its
+// parsed time: DTSTART when present, else DUE (a VTODO may recur on its due date
+// with no DTSTART). ok is false when neither is present.
+func componentAnchor(comp *ical.Component, loc *time.Location) (name string, t time.Time, allDay, ok bool) {
+	for _, n := range []string{ical.PropDateTimeStart, ical.PropDue} {
+		if prop := comp.Props.Get(n); prop != nil {
+			if v, err := resolveDateTime(prop, loc); err == nil {
+				return n, v, isDateOnly(prop), true
+			}
+		}
+	}
+	return "", time.Time{}, false, false
+}
+
+// componentRecurrenceSet builds the rrule.Set for comp anchored at the given
+// instant — the write-side twin of Event.recurrenceSet, usable for a VTODO too.
+func componentRecurrenceSet(comp *ical.Component, anchor time.Time) (*rrule.Set, error) {
+	set := &rrule.Set{}
+	set.DTStart(anchor)
+
+	roption, err := comp.Props.RecurrenceRule()
+	if err != nil {
+		return nil, fmt.Errorf("parsing RRULE: %w", err)
+	}
+	if roption != nil {
+		roption.Dtstart = anchor
+		rule, err := rrule.NewRRule(*roption)
+		if err != nil {
+			return nil, fmt.Errorf("building recurrence: %w", err)
+		}
+		set.RRule(rule)
+	} else {
+		set.RDate(anchor)
+	}
+	loc := anchor.Location()
+	for _, prop := range comp.Props.Values(ical.PropRecurrenceDates) {
+		if dt, err := resolveDateTime(&prop, loc); err == nil {
+			set.RDate(dt)
+		}
+	}
+	for _, prop := range comp.Props.Values(ical.PropExceptionDates) {
+		if dt, err := resolveDateTime(&prop, loc); err == nil {
+			set.ExDate(dt)
+		}
+	}
+	return set, nil
+}
+
+// nextInstantAfter returns the recurrence instant strictly after `after`, or the
+// zero time when the series has no further occurrence (COUNT/UNTIL exhausted).
+func nextInstantAfter(comp *ical.Component, anchor, after time.Time) (time.Time, error) {
+	set, err := componentRecurrenceSet(comp, anchor)
+	if err != nil {
+		return time.Time{}, err
+	}
+	return set.After(after, false), nil
+}
+
+// sameInstant compares two recurrence instants at second resolution (the
+// granularity iCal stores), so wall-clock/UTC representations of the same slot
+// match regardless of location.
+func sameInstant(a, b time.Time) bool { return a.Unix() == b.Unix() }
+
+// cloneOverrideComponent deep-copies a master component into a new component of the
+// same kind, dropping the series-level recurrence properties (RRULE/RDATE/EXDATE)
+// so the copy describes a single instance. Params maps are copied too, so the
+// override never aliases the master's.
+func cloneOverrideComponent(master *ical.Component) *ical.Component {
+	c := ical.NewComponent(master.Name)
+	for name, props := range master.Props {
+		switch name {
+		case ical.PropRecurrenceRule, ical.PropRecurrenceDates, ical.PropExceptionDates, ical.PropRecurrenceID:
+			continue
+		}
+		cp := make([]ical.Prop, 0, len(props))
+		for _, p := range props {
+			np := p // copy the struct
+			if p.Params != nil {
+				np.Params = make(ical.Params, len(p.Params))
+				for k, v := range p.Params {
+					np.Params[k] = v
+				}
+			}
+			cp = append(cp, np)
+		}
+		c.Props[name] = cp
+	}
+	return c
+}
+
+// AddOccurrenceOverride implements "edit this occurrence" for a recurring event:
+// it adds (or updates, if one already exists) a RECURRENCE-ID override for the
+// instance at occ, applies mutate (the field edits), and leaves the master series
+// intact. The override shares the master's UID and lives in the same object.
+func AddOccurrenceOverride(obj *Parsed, uid string, occ time.Time, allDay bool, mutate func(*ical.Component), now time.Time, loc *time.Location) (*Parsed, error) {
+	if loc == nil {
+		loc = time.Local
+	}
+	clone, err := obj.clone(loc)
+	if err != nil {
+		return nil, err
+	}
+	master := masterComponent(clone.Calendar, uid)
+	if master == nil {
+		return nil, fmt.Errorf("model: no recurring master with UID %q", uid)
+	}
+
+	var override *ical.Component
+	for _, c := range clone.Calendar.Children {
+		if text(c.Props, ical.PropUID) != uid {
+			continue
+		}
+		if rid := c.Props.Get(ical.PropRecurrenceID); rid != nil {
+			if t, err := resolveDateTime(rid, loc); err == nil && sameInstant(t, occ) {
+				override = c
+				break
+			}
+		}
+	}
+	if override == nil {
+		override = cloneOverrideComponent(master)
+		setDateOrTime(override, ical.PropRecurrenceID, occ, allDay)
+		clone.Calendar.Children = append(clone.Calendar.Children, override)
+	}
+	mutate(override)
+	return Parse(clone.Calendar, loc)
+}
+
+// AddException implements "delete this occurrence" for a recurring event: it adds
+// an EXDATE for occ to the master (suppressing that instance) and removes any
+// RECURRENCE-ID override that targeted it.
+func AddException(obj *Parsed, uid string, occ time.Time, allDay bool, now time.Time, loc *time.Location) (*Parsed, error) {
+	if loc == nil {
+		loc = time.Local
+	}
+	clone, err := obj.clone(loc)
+	if err != nil {
+		return nil, err
+	}
+	master := masterComponent(clone.Calendar, uid)
+	if master == nil {
+		return nil, fmt.Errorf("model: no recurring master with UID %q", uid)
+	}
+
+	ex := ical.NewProp(ical.PropExceptionDates)
+	if allDay {
+		ex.SetDate(occ)
+	} else {
+		ex.SetDateTime(occ.UTC())
+	}
+	master.Props[ical.PropExceptionDates] = append(master.Props[ical.PropExceptionDates], *ex)
+	touch(master, now)
+
+	kept := clone.Calendar.Children[:0]
+	for _, c := range clone.Calendar.Children {
+		if text(c.Props, ical.PropUID) == uid {
+			if rid := c.Props.Get(ical.PropRecurrenceID); rid != nil {
+				if t, err := resolveDateTime(rid, loc); err == nil && sameInstant(t, occ) {
+					continue // drop the override for the deleted instance
+				}
+			}
+		}
+		kept = append(kept, c)
+	}
+	clone.Calendar.Children = kept
+	return Parse(clone.Calendar, loc)
+}
+
+// CapSeries caps the master's recurrence at `until` (inclusive), so the series
+// ends there — the master half of a this-and-future split, and the whole of a
+// this-and-future delete. Any COUNT is dropped (UNTIL replaces it) and overrides
+// after `until` are removed.
+func CapSeries(obj *Parsed, uid string, until time.Time, now time.Time, loc *time.Location) (*Parsed, error) {
+	if loc == nil {
+		loc = time.Local
+	}
+	clone, err := obj.clone(loc)
+	if err != nil {
+		return nil, err
+	}
+	master := masterComponent(clone.Calendar, uid)
+	if master == nil {
+		return nil, fmt.Errorf("model: no recurring master with UID %q", uid)
+	}
+	roption, err := master.Props.RecurrenceRule()
+	if err != nil || roption == nil {
+		return nil, fmt.Errorf("model: %q has no RRULE to cap", uid)
+	}
+	roption.Until = until.UTC().Truncate(time.Second)
+	roption.Count = 0 // UNTIL and COUNT are mutually exclusive
+	master.Props.SetRecurrenceRule(roption)
+	touch(master, now)
+
+	kept := clone.Calendar.Children[:0]
+	for _, c := range clone.Calendar.Children {
+		if text(c.Props, ical.PropUID) == uid {
+			if rid := c.Props.Get(ical.PropRecurrenceID); rid != nil {
+				if t, err := resolveDateTime(rid, loc); err == nil && t.After(until) {
+					continue
+				}
+			}
+		}
+		kept = append(kept, c)
+	}
+	clone.Calendar.Children = kept
+	return Parse(clone.Calendar, loc)
+}
+
+// NewSeriesFrom builds a fresh single-component object (a new resource) cloned
+// from the master of uid in obj, re-keyed to a new UID, with mutate applied — the
+// future half of a this-and-future split. It keeps the master's RRULE (minus any
+// UNTIL/COUNT, so the new series is open-ended from its new start unless mutate
+// sets otherwise) so the tail of the series continues with the edited values.
+func NewSeriesFrom(obj *Parsed, uid string, mutate func(*ical.Component), now time.Time, loc *time.Location) (*Parsed, error) {
+	if loc == nil {
+		loc = time.Local
+	}
+	src, err := obj.clone(loc)
+	if err != nil {
+		return nil, err
+	}
+	master := masterComponent(src.Calendar, uid)
+	if master == nil {
+		return nil, fmt.Errorf("model: no recurring master with UID %q", uid)
+	}
+
+	cal := ical.NewCalendar()
+	cal.Props.SetText(ical.PropVersion, icalVersion)
+	cal.Props.SetText(ical.PropProductID, ProductID)
+
+	comp := ical.NewComponent(master.Name)
+	for name, props := range master.Props {
+		if name == ical.PropRecurrenceID {
+			continue
+		}
+		cp := make([]ical.Prop, 0, len(props))
+		for _, p := range props {
+			np := p
+			if p.Params != nil {
+				np.Params = make(ical.Params, len(p.Params))
+				for k, v := range p.Params {
+					np.Params[k] = v
+				}
+			}
+			cp = append(cp, np)
+		}
+		comp.Props[name] = cp
+	}
+	comp.Props.SetText(ical.PropUID, NewUID())
+	// Keep an absolute UNTIL (the series' end date doesn't move when it's split) but
+	// drop COUNT, which was measured from the old DTSTART; a split of a COUNT-bounded
+	// series thus leaves the tail open-ended (a rare, documented simplification —
+	// UNTIL-bounded and infinite series, the common cases, split exactly).
+	if roption, err := comp.Props.RecurrenceRule(); err == nil && roption != nil {
+		roption.Count = 0
+		comp.Props.SetRecurrenceRule(roption)
+	}
+	setDateTimeUTC(comp, ical.PropCreated, now)
+	cal.Children = append(cal.Children, comp)
+
+	mutate(comp)
+	return Parse(cal, loc)
+}
+
+// AdvanceRecurringTodo rolls a recurring todo forward to its next occurrence,
+// implementing "complete one occurrence" the NextCloud/RFC way: DTSTART and DUE
+// move to the next instant (keeping their offset), COUNT decrements, and when the
+// series is exhausted the todo is marked completed instead. done reports whether
+// the whole series was completed (no further occurrence).
+func AdvanceRecurringTodo(obj *Parsed, uid string, now time.Time, loc *time.Location) (result *Parsed, done bool, err error) {
+	if loc == nil {
+		loc = time.Local
+	}
+	clone, err := obj.clone(loc)
+	if err != nil {
+		return nil, false, err
+	}
+	comp := findComponent(clone.Calendar, uid)
+	if comp == nil {
+		return nil, false, fmt.Errorf("model: no todo with UID %q", uid)
+	}
+	anchorName, anchor, allDay, ok := componentAnchor(comp, loc)
+	if !ok {
+		return nil, false, fmt.Errorf("model: todo %q has no DTSTART/DUE to advance", uid)
+	}
+
+	roption, _ := comp.Props.RecurrenceRule()
+	exhausted := roption != nil && roption.Count == 1 // last occurrence of a COUNT series
+	var next time.Time
+	if !exhausted {
+		next, err = nextInstantAfter(comp, anchor, anchor)
+		if err != nil {
+			return nil, false, err
+		}
+		exhausted = next.IsZero()
+	}
+	if exhausted {
+		setCompleted(comp, true, now)
+		touch(comp, now)
+		out, perr := Parse(clone.Calendar, loc)
+		return out, true, perr
+	}
+
+	// Roll the anchor (and the paired DTSTART/DUE, preserving their offset) forward.
+	delta := next.Sub(anchor)
+	rollProp := func(name string) {
+		if prop := comp.Props.Get(name); prop != nil {
+			if t, err := resolveDateTime(prop, loc); err == nil {
+				setDateOrTime(comp, name, t.Add(delta), isDateOnly(prop))
+			}
+		}
+	}
+	rollProp(ical.PropDateTimeStart)
+	rollProp(ical.PropDue)
+	if comp.Props.Get(ical.PropDateTimeStart) == nil && comp.Props.Get(ical.PropDue) == nil {
+		// Neither paired prop existed except the anchor we found; set it directly.
+		setDateOrTime(comp, anchorName, next, allDay)
+	}
+	if roption != nil && roption.Count > 1 {
+		roption.Count--
+		comp.Props.SetRecurrenceRule(roption)
+	}
+	// A rolled-forward instance is freshly not-done.
+	setCompleted(comp, false, now)
+	touch(comp, now)
+	out, perr := Parse(clone.Calendar, loc)
+	return out, false, perr
+}

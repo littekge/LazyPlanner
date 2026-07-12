@@ -4,6 +4,15 @@
 
 ---
 
+## 2026-07-12 — Step 11 (model): recurrence-editing primitives
+
+- Build step 11, part 1 of 2 (model layer). Added the write-side recurrence primitives for the three edit scopes, for VEVENTs and VTODOs (`internal/model/recur_edit.go`). Read-side expansion + RECURRENCE-ID overrides already existed (step 3); this is the editing half.
+- **Events** (all occurrences displayed): `AddOccurrenceOverride` (this-occurrence → a RECURRENCE-ID override component sharing the master's UID, in the same object), `AddException` (delete this-occurrence → EXDATE + drop any override at that slot), `CapSeries` (this-and-future → cap the master's RRULE with UNTIL, drop COUNT and later overrides; also the whole of a future-delete), `NewSeriesFrom` (the future half of a split → a fresh-UID object cloned from the master, keeping an absolute UNTIL but dropping COUNT). "All" is the existing `EditEvent` on the master.
+- **Todos** (shown once, complete = advance, NextCloud-style): `AdvanceRecurringTodo` rolls DTSTART/DUE to the next occurrence (preserving their offset), decrements COUNT, and marks the todo completed when the series is exhausted. The UI orchestrates "edit this occurrence" as a detached standalone task + advance (no override-on-read needed for todos).
+- Helpers: `masterComponent`, `componentAnchor` (DTSTART, else DUE), `componentRecurrenceSet`/`nextInstantAfter` (write-side twins of the read-side set), `cloneOverrideComponent` (deep prop/param copy, drops series-level RRULE/RDATE/EXDATE). Known simplification (documented in code): splitting a COUNT-bounded series leaves the tail open-ended; UNTIL-bounded and infinite series split exactly.
+- Tests (`internal/model/recur_edit_test.go`): override replaces one slot and preserves the rest; exception suppresses one; cap ends the series; split caps the master + spawns a fresh-UID future series; advance rolls a weekly todo forward and completes the last occurrence. Full gate passes.
+- Files: `internal/model/recur_edit.go`, `internal/model/recur_edit_test.go`.
+
 ## 2026-07-12 — Cross-view consistency F6: paste target via currentTarget
 
 - Drift-prevention refactor (no behavior change). `pasteUnderSelection` read `a.tree.GetCurrentNode()` directly to find the paste parent, while every other action resolves the selection via `currentTarget()`. It now uses `currentTarget()` (identical in Tasks mode, where the tree node is what currentTarget returns) so paste can't silently read a stale tree selection if it's ever ungated from Tasks-only. `paste()` still gates to Tasks mode.
