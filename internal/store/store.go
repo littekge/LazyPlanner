@@ -305,9 +305,13 @@ func (s *Store) EventOccurrencesVisible(from, to time.Time, hidden map[string]bo
 
 	var out []model.Occurrence
 	for _, obj := range objs {
+		// Skip an object whose expansion fails rather than blanking events from
+		// every calendar (iron rule: one malformed resource must degrade
+		// gracefully). The model already degrades a bad recurrence rule to its
+		// base instance, so this is defense-in-depth for any future error source.
 		occs, err := obj.EventOccurrences(from, to)
 		if err != nil {
-			return nil, err
+			continue
 		}
 		out = append(out, occs...)
 	}

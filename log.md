@@ -4,6 +4,14 @@
 
 ---
 
+## 2026-07-12 — Hardening pass 3 (#1): malformed recurrence can't blank the calendar
+
+- Deep debugging/hardening audit (multi-agent fan-out, adversarially verified) fix #1 of the confirmed set — the one **high**-severity finding.
+- **Bug:** a cached VEVENT with a syntactically valid but semantically bad recurrence (`RRULE:FREQ=NONSENSE`, unknown key, wrong VALUE type) loads cleanly (RRULE isn't parsed at load) but errors at expansion time. `Event.Occurrences` → `Parsed.EventOccurrences` → `store.EventOccurrencesVisible` all returned on the first error, and the UI discards it (`occs, _ :=`), so a single bad event **blanked every event in every calendar** across month/week/day/agenda until the offending `.ics` was removed — a clear iron-rule (graceful-degradation) violation.
+- **Fix:** degrade at the source — a recurrence that can't be built now falls back to the event's single **base instance** at DTSTART (`Event.baseInstance`), so the event stays visible, just un-expanded, instead of propagating a fatal error. Added defense-in-depth skip-and-continue at both aggregation loops (`Parsed.EventOccurrences` master loop, `store.EventOccurrencesVisible`) so no future expansion error can blank siblings/other calendars.
+- Tests (`internal/model/recurrence_test.go`): a malformed-RRULE event yields its base instance (no error); a file with one bad + one good event surfaces both.
+- Files: `internal/model/recurrence.go`, `internal/store/store.go`, `internal/model/recurrence_test.go`. Full gate passes.
+
 ## 2026-07-12 — Hardening pass 2: consistency across the program
 
 - A deep consistency audit (fan-out over error-handling/messaging, UI cross-view, model/store API, sync/caldav patterns, coding standards) confirmed high consistency; fixed the real divergences (owner decided the forks).

@@ -160,6 +160,55 @@ func TestOccurrencesRDateOnly(t *testing.T) {
 	assertInstants(t, starts(occs), want)
 }
 
+// TestOccurrencesMalformedRRULEDegrades: a syntactically valid .ics whose RRULE
+// is semantically unparseable (FREQ=NONSENSE) must not error or vanish — it
+// degrades to its single base instance so the event stays visible (iron rule).
+func TestOccurrencesMalformedRRULEDegrades(t *testing.T) {
+	loc := testLoc(t)
+	const ics = "BEGIN:VCALENDAR\r\nVERSION:2.0\r\nPRODID:-//LazyPlanner//Test//EN\r\n" +
+		"BEGIN:VEVENT\r\nUID:bad-rrule@lazyplanner.test\r\nDTSTAMP:20260201T120000Z\r\n" +
+		"DTSTART;TZID=America/New_York:20260304T090000\r\nDTEND;TZID=America/New_York:20260304T093000\r\n" +
+		"SUMMARY:Bad recurrence\r\nRRULE:FREQ=NONSENSE\r\nEND:VEVENT\r\nEND:VCALENDAR\r\n"
+	p, err := model.Decode([]byte(ics), loc)
+	if err != nil {
+		t.Fatalf("decode: %v", err)
+	}
+	ev := onlyEvent(t, p)
+	from, to := wide()
+	occs, err := ev.Occurrences(from, to)
+	if err != nil {
+		t.Fatalf("Occurrences errored on a malformed RRULE; want graceful degradation: %v", err)
+	}
+	assertInstants(t, starts(occs), []time.Time{time.Date(2026, 3, 4, 9, 0, 0, 0, loc)})
+}
+
+// TestEventOccurrencesMalformedSiblingKeepsGood: a file holding one bad-RRULE
+// event alongside a good one must still surface both — the malformed one as its
+// base instance — never blanking the good sibling.
+func TestEventOccurrencesMalformedSiblingKeepsGood(t *testing.T) {
+	loc := testLoc(t)
+	const ics = "BEGIN:VCALENDAR\r\nVERSION:2.0\r\nPRODID:-//LazyPlanner//Test//EN\r\n" +
+		"BEGIN:VEVENT\r\nUID:bad@lazyplanner.test\r\nDTSTAMP:20260201T120000Z\r\n" +
+		"DTSTART;TZID=America/New_York:20260304T090000\r\nDTEND;TZID=America/New_York:20260304T093000\r\n" +
+		"SUMMARY:Bad\r\nRRULE:FREQ=NONSENSE\r\nEND:VEVENT\r\n" +
+		"BEGIN:VEVENT\r\nUID:good@lazyplanner.test\r\nDTSTAMP:20260201T120000Z\r\n" +
+		"DTSTART;TZID=America/New_York:20260305T090000\r\nDTEND;TZID=America/New_York:20260305T093000\r\n" +
+		"SUMMARY:Good\r\nEND:VEVENT\r\nEND:VCALENDAR\r\n"
+	p, err := model.Decode([]byte(ics), loc)
+	if err != nil {
+		t.Fatalf("decode: %v", err)
+	}
+	from, to := wide()
+	occs, err := p.EventOccurrences(from, to)
+	if err != nil {
+		t.Fatalf("EventOccurrences errored; want graceful degradation: %v", err)
+	}
+	assertInstants(t, starts(occs), []time.Time{
+		time.Date(2026, 3, 4, 9, 0, 0, 0, loc),
+		time.Date(2026, 3, 5, 9, 0, 0, 0, loc),
+	})
+}
+
 func TestOccurrencesWindowing(t *testing.T) {
 	loc := testLoc(t)
 	ev := onlyEvent(t, decode(t, "recur_weekly_dst.ics", loc))

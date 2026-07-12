@@ -36,15 +36,17 @@ func (e *Event) Occurrences(from, to time.Time) ([]Occurrence, error) {
 	hasRDATE := len(e.Raw.Props.Values(ical.PropRecurrenceDates)) > 0
 
 	if !hasRRULE && !hasRDATE {
-		if overlaps(e.Start, e.Start.Add(dur), from, to) {
-			return []Occurrence{{Start: e.Start, End: e.Start.Add(dur), Event: e}}, nil
-		}
-		return nil, nil
+		return e.baseInstance(from, to), nil
 	}
 
 	set, err := e.recurrenceSet(hasRRULE)
 	if err != nil {
-		return nil, err
+		// Graceful degradation (iron rule): a malformed RRULE/RDATE/EXDATE must
+		// never hide the event or blank the calendar view. Fall back to the
+		// single base instance at DTSTART so the event stays visible, just
+		// un-expanded, instead of propagating an error that a caller might turn
+		// into an empty result for every calendar.
+		return e.baseInstance(from, to), nil
 	}
 
 	// Start the query one duration early so an instance that begins before the
@@ -57,6 +59,17 @@ func (e *Event) Occurrences(from, to time.Time) ([]Occurrence, error) {
 		}
 	}
 	return out, nil
+}
+
+// baseInstance returns the event's single un-recurred instance if it overlaps
+// [from, to). It serves both the non-recurring path and the graceful fallback
+// when a malformed recurrence rule can't be expanded.
+func (e *Event) baseInstance(from, to time.Time) []Occurrence {
+	dur := e.Duration()
+	if overlaps(e.Start, e.Start.Add(dur), from, to) {
+		return []Occurrence{{Start: e.Start, End: e.Start.Add(dur), Event: e}}
+	}
+	return nil
 }
 
 // Duration returns the event's length, or zero when the end is absent or not
@@ -156,9 +169,13 @@ func (p *Parsed) EventOccurrences(from, to time.Time) ([]Occurrence, error) {
 		}
 
 		if master := masters[uid]; master != nil {
+			// Skip a master that fails to expand rather than blanking every
+			// sibling component in the file (iron rule: degrade gracefully).
+			// Occurrences already degrades a bad rule to the base instance, so
+			// an error here is unexpected — but guard anyway.
 			occs, err := master.Occurrences(from, to)
 			if err != nil {
-				return nil, err
+				continue
 			}
 			for _, occ := range occs {
 				if !replaced[occ.Start.Unix()] {
