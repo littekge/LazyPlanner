@@ -4,6 +4,19 @@
 
 ---
 
+## 2026-07-12 — Step 11 (UI): recurrence editing — this / this-and-future / all
+
+- Build step 11, part 2 of 2 (UI). Wired the recurrence-editing scopes into edit (`e`), delete (`d`), grab (`m`), and complete (`Space`), for events and todos.
+- **Scope picker** (`internal/ui/recur_edit.go` `pickRecurrenceScope`): a modal offering *This / This & future / All* (events) or *This / All* (todos — a todo shows one live instance, so future collapses into all). Opened by `editRecurring`/`deleteRecurring` when `currentTarget` reports a recurring item.
+- **editTarget** gained `occStart`/`allDay`/`recurring`, populated by `targetFromItem` (the occurrence's instant = the RECURRENCE-ID target) and the tree branch of `currentTarget`.
+- **Events**: this → `EditEventOccurrence` (override) / `AddException` (delete); future → `SplitEvent` (cap master + new series, one two-op undo step via `commitSplit`) / `CapSeries` (delete); all → the existing master edit / whole-object delete. The event form is reused via the extracted `presentEventForm`, seeded at the occurrence's start.
+- **Todos**: `Space` on a recurring todo advances it (`advanceRecurringTodo` → `AdvanceRecurringTodo`) instead of completing; edit-this-occurrence detaches the instance as a standalone task (`presentTodoForm` + `NewTodoObject`) and advances the master; delete-this skips the occurrence (advancing), deleting the resource outright when it was the last.
+- **Grab** on a recurring event prompts *This / All* (not future — a split spawns a second resource that grab's single-snapshot revert can't undo; the edit form covers this-and-future). `beginGrab` records the scope; `grabNudge` reads/moves the RECURRENCE-ID override for a this-scope grab (synthesizing the occurrence's slot before the first override exists) and `focusGrabbed` anchors on the moved override. New model helper `Parsed.FindOverride`.
+- `recurScope`'s zero value is `scopeAll` deliberately, so any unset path (non-recurring items, tests that set grab state directly) behaves as the pre-step-11 whole-series edit.
+- Docs: help overlay (recurrence rows), `README.md`, `main.md`, `CLAUDE.md`. gofmt'd the grab-field block in `app.go` (my field additions shifted its alignment).
+- Tests (`internal/ui/recur_edit_test.go`): Space advances a recurring todo; delete-occurrence EXDATEs an event instance; a this-occurrence grab creates an override moving only that instance; `e` on a recurring item opens the scope picker. Full gate passes.
+- Files: `internal/ui/recur_edit.go` (new), `internal/ui/edit.go`, `internal/ui/grab.go`, `internal/ui/app.go`, `internal/ui/help.go`, `internal/model/recur_edit.go` (+`EditEventOccurrence`/`SplitEvent`/`FindOverride`), `internal/ui/recur_edit_test.go`, docs.
+
 ## 2026-07-12 — Step 11 (model): recurrence-editing primitives
 
 - Build step 11, part 1 of 2 (model layer). Added the write-side recurrence primitives for the three edit scopes, for VEVENTs and VTODOs (`internal/model/recur_edit.go`). Read-side expansion + RECURRENCE-ID overrides already existed (step 3); this is the editing half.

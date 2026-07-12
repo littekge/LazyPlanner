@@ -125,6 +125,21 @@ func cloneOverrideComponent(master *ical.Component) *ical.Component {
 	return c
 }
 
+// FindOverride returns the RECURRENCE-ID override event for uid at instant rid, or
+// nil when none exists (the instance still comes from the master). Used by grab to
+// read a single occurrence's current position across nudges.
+func (p *Parsed) FindOverride(uid string, rid time.Time) *Event {
+	for _, ev := range p.Events {
+		if ev.UID != uid {
+			continue
+		}
+		if t, ok := recurrenceID(ev); ok && sameInstant(t, rid) {
+			return ev
+		}
+	}
+	return nil
+}
+
 // AddOccurrenceOverride implements "edit this occurrence" for a recurring event:
 // it adds (or updates, if one already exists) a RECURRENCE-ID override for the
 // instance at occ, applies mutate (the field edits), and leaves the master series
@@ -297,6 +312,31 @@ func NewSeriesFrom(obj *Parsed, uid string, mutate func(*ical.Component), now ti
 
 	mutate(comp)
 	return Parse(cal, loc)
+}
+
+// EditEventOccurrence is the draft-based "edit this occurrence" for an event: it
+// overrides just the instance at occ with d (leaving the series intact).
+func EditEventOccurrence(obj *Parsed, uid string, occ time.Time, allDay bool, d EventDraft, now time.Time, loc *time.Location) (*Parsed, error) {
+	return AddOccurrenceOverride(obj, uid, occ, allDay, func(c *ical.Component) {
+		applyEvent(c, d, now)
+	}, now, loc)
+}
+
+// SplitEvent is the draft-based "edit this and future" for an event: it caps the
+// master just before occ and returns both the capped master (same resource) and a
+// new-UID future series carrying d (a new resource). The caller writes both.
+func SplitEvent(obj *Parsed, uid string, occ time.Time, d EventDraft, now time.Time, loc *time.Location) (capped, future *Parsed, err error) {
+	capped, err = CapSeries(obj, uid, occ.Add(-time.Second), now, loc)
+	if err != nil {
+		return nil, nil, err
+	}
+	future, err = NewSeriesFrom(obj, uid, func(c *ical.Component) {
+		applyEvent(c, d, now)
+	}, now, loc)
+	if err != nil {
+		return nil, nil, err
+	}
+	return capped, future, nil
 }
 
 // AdvanceRecurringTodo rolls a recurring todo forward to its next occurrence,

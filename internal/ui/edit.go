@@ -53,9 +53,15 @@ func (a *app) pushUndo(label, selUID string, ops ...undoOp) {
 }
 
 // editTarget is the item the editing shortcuts act on in the current context.
+// For a recurring item, occStart is the specific occurrence's instant (the
+// RECURRENCE-ID target) and recurring is true, so the editing keys can offer the
+// this/future/all scope picker.
 type editTarget struct {
-	isTodo bool
-	uid    string
+	isTodo    bool
+	uid       string
+	occStart  time.Time
+	allDay    bool
+	recurring bool
 }
 
 // --- target resolution ---
@@ -68,7 +74,7 @@ func (a *app) currentTarget() (editTarget, bool) {
 	case modeTasks:
 		if node := a.tree.GetCurrentNode(); node != nil {
 			if t, ok := node.GetReference().(*model.Todo); ok {
-				return editTarget{isTodo: true, uid: t.UID}, true
+				return editTarget{isTodo: true, uid: t.UID, occStart: t.Due, allDay: t.DueAllDay, recurring: t.Recurring}, true
 			}
 		}
 	case modeCalendar:
@@ -90,9 +96,9 @@ func (a *app) currentTarget() (editTarget, bool) {
 
 func targetFromItem(it model.AgendaItem) editTarget {
 	if it.IsTodo() {
-		return editTarget{isTodo: true, uid: it.Todo.UID}
+		return editTarget{isTodo: true, uid: it.Todo.UID, occStart: it.Start, allDay: it.AllDay, recurring: it.Todo.Recurring}
 	}
-	return editTarget{isTodo: false, uid: it.Event.UID}
+	return editTarget{isTodo: false, uid: it.Event.UID, occStart: it.Start, allDay: it.AllDay, recurring: it.Event.Recurring}
 }
 
 // --- quick add (a) ---
@@ -290,6 +296,12 @@ func (a *app) toggleComplete() {
 		a.flash("Finish or remove its subtasks first")
 		return
 	}
+	// A recurring todo advances to its next occurrence on completion (NextCloud
+	// style) rather than being marked done, until the series is exhausted.
+	if !td.Completed() && td.Recurring {
+		a.advanceRecurringTodo(loc, t.uid)
+		return
+	}
 	completing := !td.Completed()
 	newObj, err := model.SetTodoCompleted(loc.Object, t.uid, completing, a.now, a.loc)
 	if err != nil {
@@ -387,10 +399,22 @@ func (a *app) deleteSelected() {
 	if !a.guardWrite(loc.CalID) {
 		return
 	}
-	what := summaryOf(loc.Object, t.uid)
+	// A recurring item offers the this/future/all scope picker before deleting.
+	if t.recurring {
+		a.deleteRecurring(loc, t)
+		return
+	}
+	a.deleteWholeObject(loc, t.uid)
+}
+
+// deleteWholeObject removes the item's resource (and, for a task, its whole
+// subtree) after a confirm — the "delete all occurrences" path for a series and
+// the only path for a non-recurring item.
+func (a *app) deleteWholeObject(loc store.Located, uid string) {
+	what := summaryOf(loc.Object, uid)
 
 	// A task's subtree is deleted with it (deleting a folder is recursive).
-	kids := a.descendants(t.uid)
+	kids := a.descendants(uid)
 	prompt := "Delete \"" + oneLine(what) + "\"?"
 	if n := len(kids); n > 0 {
 		prompt = "Delete \"" + oneLine(what) + "\" and its " + strconv.Itoa(n) + " subtask(s)?"
@@ -398,8 +422,8 @@ func (a *app) deleteSelected() {
 
 	a.confirm(prompt, func() {
 		var ops []undoOp
-		for _, uid := range append([]string{t.uid}, kids...) {
-			l, ok := a.store.Locate(uid)
+		for _, u := range append([]string{uid}, kids...) {
+			l, ok := a.store.Locate(u)
 			if !ok {
 				continue
 			}
@@ -541,6 +565,11 @@ func (a *app) editSelected() {
 	if !a.guardWrite(loc.CalID) {
 		return
 	}
+	// A recurring item offers the this/future/all scope picker before editing.
+	if t.recurring {
+		a.editRecurring(loc, t)
+		return
+	}
 	if t.isTodo {
 		a.showTodoForm(loc, t.uid)
 	} else {
@@ -622,13 +651,7 @@ func (a *app) showTodoForm(loc store.Located, uid string) {
 		a.flash("Task not found")
 		return
 	}
-	f, fields := a.newTodoForm(td)
-	f.AddButton("Save", func() {
-		d, err := a.readTodoDraft(fields)
-		if err != nil {
-			a.flash(err.Error())
-			return
-		}
+	a.presentTodoForm(td, " Edit task ", func(d model.TodoDraft) {
 		// Enforce the folder rule here too: the form's Completed checkbox must not
 		// complete a task that still has incomplete children (Space is guarded in
 		// toggleComplete; EditTodo has no child check).
@@ -644,9 +667,24 @@ func (a *app) showTodoForm(loc store.Located, uid string) {
 		}
 		a.commitMutation(loc.CalID, loc.Name, newObj, loc.Prev, "edit task", uid, "Saved")
 	})
+}
+
+// presentTodoForm opens the task form seeded from td, wiring Save to call onSave
+// with the read draft. Shared by the plain edit and the scope-aware recurrence
+// edits (a detached this-occurrence copy).
+func (a *app) presentTodoForm(td *model.Todo, title string, onSave func(model.TodoDraft)) {
+	f, fields := a.newTodoForm(td)
+	f.AddButton("Save", func() {
+		d, err := a.readTodoDraft(fields)
+		if err != nil {
+			a.flash(err.Error())
+			return
+		}
+		onSave(d)
+	})
 	f.AddButton("Cancel", func() { a.closeModal(pageForm) })
 	f.SetCancelFunc(func() { a.closeModal(pageForm) })
-	f.SetBorder(true).SetTitle(" Edit task ")
+	f.SetBorder(true).SetTitle(title)
 	a.openModal(pageForm, f, 62, 19)
 }
 
@@ -782,13 +820,7 @@ func (a *app) showEventForm(loc store.Located, uid string) {
 		a.flash("Event not found")
 		return
 	}
-	f, fields := a.newEventForm(ev, ev.Start)
-	f.AddButton("Save", func() {
-		d, err := a.readEventDraft(fields)
-		if err != nil {
-			a.flash(err.Error())
-			return
-		}
+	a.presentEventForm(ev, ev.Start, " Edit event ", func(d model.EventDraft) {
 		newObj, err := model.EditEvent(loc.Object, uid, d, a.now, a.loc)
 		if err != nil {
 			a.flash(err.Error())
@@ -796,9 +828,24 @@ func (a *app) showEventForm(loc store.Located, uid string) {
 		}
 		a.commitMutation(loc.CalID, loc.Name, newObj, loc.Prev, "edit event", uid, "Saved")
 	})
+}
+
+// presentEventForm opens the event form seeded from ev at seedStart, wiring Save to
+// call onSave with the read draft. Shared by the plain edit and the scope-aware
+// recurrence edits (which pass a different onSave and seedStart / title).
+func (a *app) presentEventForm(ev *model.Event, seedStart time.Time, title string, onSave func(model.EventDraft)) {
+	f, fields := a.newEventForm(ev, seedStart)
+	f.AddButton("Save", func() {
+		d, err := a.readEventDraft(fields)
+		if err != nil {
+			a.flash(err.Error())
+			return
+		}
+		onSave(d)
+	})
 	f.AddButton("Cancel", func() { a.closeModal(pageForm) })
 	f.SetCancelFunc(func() { a.closeModal(pageForm) })
-	f.SetBorder(true).SetTitle(" Edit event ")
+	f.SetBorder(true).SetTitle(title)
 	a.openModal(pageForm, f, 62, 21)
 }
 

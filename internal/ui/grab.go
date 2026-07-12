@@ -7,6 +7,7 @@ import (
 	"github.com/gdamore/tcell/v2"
 
 	"github.com/littekge/LazyPlanner/internal/model"
+	"github.com/littekge/LazyPlanner/internal/store"
 )
 
 // Grab mode (m) is the temporal-manipulation layer, unified across the tree,
@@ -19,7 +20,8 @@ import (
 const grabHourStep = time.Hour
 
 // startGrab enters grab mode on the current target. Events and dated tasks are
-// grabbable; an undated task or a recurring event is skipped with a hint.
+// grabbable; an undated task is skipped with a hint. A recurring event first
+// prompts for scope (this occurrence / all) via the picker.
 func (a *app) startGrab() {
 	t, ok := a.currentTarget()
 	if !ok {
@@ -39,22 +41,37 @@ func (a *app) startGrab() {
 			a.flash("No due date to move (set one with sd)")
 			return
 		}
-	} else {
-		ev := findEvent(loc.Object, t.uid)
-		if ev == nil {
-			a.flash("Event not found")
-			return
-		}
-		if ev.Recurring {
-			a.flash("Recurring events can't be grabbed yet")
-			return
-		}
+		// A recurring todo's due nudge moves the series anchor (scope all); no picker.
+		a.beginGrab(loc, t, scopeAll)
+		return
 	}
+	ev := findEvent(loc.Object, t.uid)
+	if ev == nil {
+		a.flash("Event not found")
+		return
+	}
+	if ev.Recurring {
+		// This / All only — a this-and-future *move* would split into a second
+		// resource, which grab's single-snapshot revert can't cleanly undo; use the
+		// edit form's "This & future" for that.
+		a.pickRecurrenceScope("event", false, func(s recurScope) {
+			a.beginGrab(loc, t, s)
+		})
+		return
+	}
+	a.beginGrab(loc, t, scopeAll)
+}
+
+// beginGrab enters grab mode on the resolved target at the given recurrence scope.
+func (a *app) beginGrab(loc store.Located, t editTarget, scope recurScope) {
 	a.grabbing = true
 	a.grabUID = t.uid
 	a.grabIsEvent = !t.isTodo
 	a.grabCalID, a.grabName = loc.CalID, loc.Name
 	a.grabPrev = loc.Prev
+	a.grabScope = scope
+	a.grabOccStart = t.occStart
+	a.grabAllDay = t.allDay
 	a.flash(a.grabStatus())
 }
 
@@ -132,13 +149,28 @@ func (a *app) grabNudge(r rune) {
 		newObj, err = model.EditTodo(loc.Object, a.grabUID, d, a.now, a.loc)
 		label = "due " + a.fmtDate(d.Due, d.DueAllDay)
 	} else {
-		ev := findEvent(loc.Object, a.grabUID)
-		if ev == nil {
+		master := findEvent(loc.Object, a.grabUID)
+		if master == nil {
 			a.cancelGrab()
 			return
 		}
-		d := draftFromEvent(ev)
-		timed := a.mode == modeCalendar && a.viewMode != viewMonth && !ev.AllDay
+		// For a this-occurrence grab, read (and move) the override's own position —
+		// or, before the first nudge creates one, the occurrence's own slot rather
+		// than the master's series start.
+		base := master
+		if a.grabScope == scopeThis {
+			if ov := loc.Object.FindOverride(a.grabUID, a.grabOccStart); ov != nil {
+				base = ov
+			} else {
+				occEnd := time.Time{}
+				if dur := master.End.Sub(master.Start); dur > 0 {
+					occEnd = a.grabOccStart.Add(dur)
+				}
+				base = &model.Event{Summary: master.Summary, Description: master.Description, Location: master.Location, AllDay: master.AllDay, Start: a.grabOccStart, End: occEnd}
+			}
+		}
+		d := draftFromEvent(base)
+		timed := a.mode == modeCalendar && a.viewMode != viewMonth && !base.AllDay
 		switch r {
 		case 'l', 'h': // ±1 day
 			n := 1
@@ -183,7 +215,11 @@ func (a *app) grabNudge(r rune) {
 		default:
 			return
 		}
-		newObj, err = model.EditEvent(loc.Object, a.grabUID, d, a.now, a.loc)
+		if a.grabScope == scopeThis {
+			newObj, err = model.EditEventOccurrence(loc.Object, a.grabUID, a.grabOccStart, a.grabAllDay, d, a.now, a.loc)
+		} else {
+			newObj, err = model.EditEvent(loc.Object, a.grabUID, d, a.now, a.loc)
+		}
 		label = a.grabEventLabel(d)
 	}
 	if err != nil {
@@ -217,7 +253,15 @@ func (a *app) focusGrabbed() {
 	if a.grabIsEvent && a.mode == modeCalendar {
 		if loc, ok := a.store.Locate(a.grabUID); ok {
 			if ev := findEvent(loc.Object, a.grabUID); ev != nil {
-				a.anchor = model.DayStart(ev.Start.In(a.loc))
+				start := ev.Start
+				// A this-occurrence grab moves the override, not the master, so anchor
+				// on the override's (moved) start when one exists.
+				if a.grabScope == scopeThis {
+					if ov := loc.Object.FindOverride(a.grabUID, a.grabOccStart); ov != nil {
+						start = ov.Start
+					}
+				}
+				a.anchor = model.DayStart(start.In(a.loc))
 			}
 		}
 		a.buildCenterCalendar()

@@ -110,12 +110,17 @@ type app struct {
 	// Grab mode (m): temporal manipulation of the current item — move an event's
 	// day/hour or resize it, or nudge a task's due date. Modal; hjkl edit, Enter
 	// keeps, Esc reverts to grabPrev (the pre-grab snapshot).
-	grabbing        bool
-	grabUID         string
-	grabIsEvent     bool
-	grabCalID       string
-	grabName        string
-	grabPrev        *store.Resource
+	grabbing    bool
+	grabUID     string
+	grabIsEvent bool
+	grabCalID   string
+	grabName    string
+	grabPrev    *store.Resource
+	// Recurrence scope of the current grab (scopeAll for a non-recurring item or a
+	// whole-series grab; scopeThis edits just grabOccStart's RECURRENCE-ID override).
+	grabScope       recurScope
+	grabOccStart    time.Time
+	grabAllDay      bool
 	mode            int
 	viewMode        int
 	anchor          time.Time

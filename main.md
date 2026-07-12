@@ -207,7 +207,7 @@ The keyboard interface feels like **vim, not lazygit**: single keys for panel fo
 | `/`, `n` / `N` | Search current view; next / previous match |
 | `y` / `Y` | Cut / copy a task (and its subtree) to the clipboard |
 | `p` / `P` | Paste under the selected task / at the list top level (clipboard persists → paste repeatedly) |
-| `m` | Grab mode: temporally manipulate the selected item — move an event (`j`/`k` ±hour in week/day, `h`/`l` ±day, `J`/`K` resize) or nudge a task's due date (`j`/`k` ±day, `h`/`l` ±week). `Enter` keeps, `Esc` reverts. Undated tasks and recurring events are skipped |
+| `m` | Grab mode: temporally manipulate the selected item — move an event (`j`/`k` ±hour in week/day, `h`/`l` ±day, `J`/`K` resize) or nudge a task's due date (`j`/`k` ±day, `h`/`l` ±week). `Enter` keeps, `Esc` reverts. Undated tasks are skipped; a recurring event first prompts scope (this occurrence / all) |
 | `:` | Command mode (`:sync`, etc.) |
 | `?` | Help overlay |
 | `q` / `Esc` | Quit / back out (zoom, dialogs) |
