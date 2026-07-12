@@ -4,6 +4,13 @@
 
 ---
 
+## 2026-07-12 — Session wrap-up: entering continuous hardening/audit phase
+
+- End-of-day checkpoint. All 13 build steps are complete; the project is now explicitly in a **continuous hardening & audit phase** — bug-hunting, resilience, and consistency, not new features. Next session picks up with **continued auditing**.
+- This session's hardening: three audit passes (promised-vs-implemented gaps; consistency; deep debugging — 9 adversarially-verified defects fixed, including sync-core data-loss/TOCTOU races), plus a concurrent `-race` stress test and an opt-in live CalDAV suite verified against the NextCloud test account. All on `ai-workspace`, pushed; nothing merged to `main`.
+- **Next / not yet audited:** large-calendar performance/scale, and the Raspberry Pi target on real hardware.
+- Docs updated to record the phase: `main.md` (Status, Current State, new "Hardening & audit phase" note), `CLAUDE.md` (Project Context phase line + live/`-race` test conventions), this `log.md` entry.
+
 ## 2026-07-12 — Live CalDAV integration tests (opt-in, real server)
 
 - Added `internal/sync/live_test.go` behind a `//go:build live` tag (excluded from the normal build/gate). It reads the configured account via `config.Load` (no secret on the command line) and operates only inside a throwaway calendar it creates and deletes via `t.Cleanup` — never touching a pre-existing calendar.

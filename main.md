@@ -2,7 +2,7 @@
 
 > **Purpose**: This document is the single source of truth for LazyPlanner. It defines the project identity, current state, architecture, and the incremental build plan.
 >
-> **Status**: Spec complete and code-ready (2026-07-04). Implementation has not started — begin at Build Plan step 1. The UI Design section is a v1 draft to refine against real screens during build steps 6–8.
+> **Status**: All 13 Build Plan steps complete (2026-07-12). The project is now in a **continuous hardening & audit phase** — see "Hardening & audit phase" at the end of the Build Plan. Work happens on `ai-workspace`; nothing is merged to `main` without owner review.
 
 ---
 
@@ -46,7 +46,7 @@ LazyPlanner is a terminal-based todo-list and calendar management program. It is
 
 ## Current State
 
-- **Spec complete (2026-07-04); no code exists yet.** The next action is Build Plan step 1 (scaffold). `log.md` records every decision made during spec development.
+- **All 13 Build Plan steps complete (2026-07-12).** The full feature set is implemented and the project is in a continuous **hardening & audit phase** (bug-hunting, resilience, consistency), not new-feature development. `log.md` records every step and every audit fix.
 
 ---
 
@@ -240,6 +240,14 @@ Incremental steps; each ends with passing tests (`go test ./...`, vet, staticche
 11. **Recurrence editing semantics** — "this occurrence / this and future / all" editing flows.
 12. **Background sync + polish** — periodic sync; **incremental sync** via the CalDAV `sync-collection` REPORT and the collection CTag (use the stored sync token / short-circuit on "nothing changed" instead of a full calendar-query re-download every sync — matters for the Pi target and larger calendars; the sidecar already carries a `sync_token` field for this); sync status indicator; error surfacing in the UI.
 13. **Raspberry Pi target** — ARM cross-compile, performance check on hardware, dedicated-terminal (kiosk) setup notes.
+
+### Hardening & audit phase (post-build, ongoing)
+
+All 13 steps are done; work is now **continued auditing and hardening** rather than new features. Approach: deep, multi-angle code audits (gaps vs. spec, cross-program consistency, adversarially-verified bug hunts across concurrency / hostile input / sync data-loss / UI state / the key contract), each finding fixed with a regression test, one commit per fix, full gate every commit.
+
+Landed so far (2026-07-12): three audit passes (promised-vs-implemented gaps; consistency; deep debugging — 9 confirmed defects fixed, several sync-core data-loss/TOCTOU races among them). Test infrastructure added: a concurrent sync-vs-edits **`-race` stress test**, and an **opt-in live CalDAV suite** (`internal/sync/live_test.go`, `//go:build live`) verified against a NextCloud test account (discovery, full round-trip, CTag short-circuit, PROPPATCH, keep-both conflict). See `log.md` for each fix.
+
+**Not yet audited (next):** large-calendar performance/scale, and the Raspberry Pi target on real hardware. The malformed-`.ics` download fallback is covered by unit tests only (a well-behaved server rejects such a resource on PUT, so it can't be planted live).
 
 ---
 

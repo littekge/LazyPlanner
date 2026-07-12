@@ -7,6 +7,7 @@
 
 ## Project Context
 
+- **Phase**: all 13 build steps are done; the project is in a **continuous hardening & audit phase** (2026-07-12) — bug-hunting, resilience, and consistency, not new features. Default to deep audits + adversarially-verified fixes, each with a regression test and its own commit. See the "Hardening & audit phase" note in `main.md`.
 - **Spec**: `main.md` — the single source of truth for what to build.
 - **Change Log**: `log.md` — append an entry every time you make a change.
 - **README**: `README.md` — user-facing docs (what it does, usage, build/install for Linux and Windows). **Update it whenever user-visible behavior, usage, or build steps change.**
@@ -69,7 +70,7 @@ count := 0 // Reset per sync cycle; the running total lives in syncState.TotalSy
 - **Naming**: standard Go style — `MixedCaps`, no underscores; short names for short scopes, descriptive names for wide scopes. Export only what another package actually needs.
 - **Doc comments** on all exported identifiers, godoc style (start with the identifier's name).
 - **Contexts**: all network and other I/O-bound operations (CalDAV sync above all) take a `context.Context` as their first parameter so they can be cancelled — the UI must never block uninterruptibly on the network.
-- **Tests**: standard `testing` package only (no assertion frameworks). Prefer table-driven tests. Core logic (sync, recurrence, parsing) gets tests; thin UI glue may go without.
+- **Tests**: standard `testing` package only (no assertion frameworks). Prefer table-driven tests. Core logic (sync, recurrence, parsing) gets tests; thin UI glue may go without. Concurrency fixes get a real goroutine stress test run under `go test -race` (see `TestConcurrentSyncAndEditsRace`). A separate **opt-in live CalDAV suite** lives behind `//go:build live` (`internal/sync/live_test.go`), excluded from `make check`; run it only against a **test account** with `go test -tags live -run TestLive ./internal/sync/ -v` — it creates and deletes its own throwaway calendars and never touches existing ones.
 - **No magic numbers**: named constants for anything with meaning; user-facing tunables belong in the TOML config file.
 
 ---
