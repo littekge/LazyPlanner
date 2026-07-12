@@ -304,8 +304,11 @@ func (a *app) toggleComplete() {
 		a.flash("Update failed: " + err.Error())
 		return
 	}
-	// Keep a just-completed task visible until the list is left (see refresh).
-	if completing && !a.showCompleted && a.mode == modeTasks {
+	// Keep a just-completed task visible until the view is left, in any view now
+	// that the calendar/agenda also honor the `.` toggle — otherwise completing a
+	// task there while completed are hidden would make it vanish instantly.
+	// stickyDone clears on switching list (buildTree changed-func) or pane (setMode).
+	if completing && !a.showCompleted {
 		a.stickyDone[t.uid] = true
 	}
 	a.pushUndo("toggle done", t.uid, undoOp{calID: loc.CalID, name: loc.Name, prev: loc.Prev})

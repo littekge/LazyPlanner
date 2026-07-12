@@ -4,6 +4,16 @@
 
 ---
 
+## 2026-07-12 — Cross-view consistency H2: `.` hide-completed now applies to calendar + agenda
+
+- Audit fix 2 of N (with its coupled F-sticky). The `.` show/hide-completed toggle was honored only in the task tree; the month grid, week/day time-grid, and agenda always showed completed due tasks (`[■]`) regardless. `showCompleted` was consulted only in the tree build — the calendar/agenda data builders never filtered it (a comment in `dueTasksByDay` even documented the divergence as intentional).
+- **Fix** (`internal/ui/render.go`): added `completedVisible(t)` (the single rule — shown unless completed-hidden and not stickyDone-pinned) and `visibleTodos(todos)`; applied across the tree build, `calItems` (month), `dayItems` (agenda + agenda-left), and `dueTasksByDay` (time-grid). The tree's inline filter now calls the shared helper (removes a duplicated condition). Updated the stale `dueTasksByDay` comment.
+- **F-sticky** (`internal/ui/edit.go`): dropped the `a.mode == modeTasks` gate in `toggleComplete` so a just-completed task is pinned visible (`stickyDone`) in any view — otherwise checking one off in the calendar/agenda while completed are hidden would make it vanish instantly, violating "keeps it visible until you leave the view." stickyDone still clears on switching list or pane (`setMode`), which is the calendar/agenda analog of "leaving the list."
+- `reloadCurrent` (`internal/ui/app.go`): the agenda case now rebuilds the left list too, so `.` updates both halves of the agenda together.
+- No doc change: `main.md`/`README.md` already state completed tasks are "hidden by default; `.` toggles" in week/day — the code now matches the spec.
+- Tests (`internal/ui/hidecompleted_test.go`, new): a completed due task is present in the agenda + time-grid builders when completed are shown, absent when hidden, and kept when sticky-pinned; and completing a task via Space in the agenda while hidden pins it (F-sticky). Full gate (build/vet/staticcheck/`go test ./...`) passes.
+- Files: `internal/ui/render.go`, `internal/ui/edit.go`, `internal/ui/app.go`, `internal/ui/hidecompleted_test.go`.
+
 ## 2026-07-12 — Cross-view consistency H1: agenda board shows task glyphs
 
 - Cross-view consistency audit, fix 1 of N. The full-detail Agenda center board (`agendaBoard`) was the one task renderer that drew neither the `[ ]`/`[■]` checkbox nor the `▸` folder caret — a task showed as `<when>  <summary>` with completion conveyed only by a status word, while the tree, month grid, week/day grid, and even the Agenda *left* list all route through the shared `todoMark`. The board struct was never given an `isFolder` closure (only `itemColor` was wired), so it structurally couldn't draw a caret.

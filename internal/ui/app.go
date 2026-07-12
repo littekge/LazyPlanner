@@ -870,6 +870,9 @@ func (a *app) reloadCurrent() {
 	case modeTasks:
 		a.buildTree()
 	case modeAgenda:
+		// Rebuild both halves so the `.` toggle updates the left list and the center
+		// board together (both list tasks).
+		a.buildAgendaLeft()
 		a.buildAgendaCenter()
 	}
 	a.updateStatus()

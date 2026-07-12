@@ -165,7 +165,7 @@ func (a *app) calItems(weeks [][]time.Time) map[string][]model.AgendaItem {
 	start := weeks[0][0]
 	end := weeks[len(weeks)-1][6].AddDate(0, 0, 1)
 	occs, _ := a.store.EventOccurrencesVisible(start, end, a.hidden)
-	todos := a.store.TodosVisible(a.hidden)
+	todos := a.visibleTodos(a.store.TodosVisible(a.hidden))
 	for _, week := range weeks {
 		for _, day := range week {
 			ds := model.DayStart(day)
@@ -192,7 +192,8 @@ func (a *app) dayItemsForDays(days []time.Time) map[string][]model.AgendaItem {
 
 // dueTasksByDay buckets tasks with a due date onto the day they're due, for the
 // week/day time-grid, keyed like splitOccs. Hidden calendars are excluded (via
-// TodosVisible); completed tasks are included, matching the month grid and agenda.
+// TodosVisible); completed tasks obey the `.` toggle (completedVisible), matching
+// the month grid, agenda, and tree.
 func (a *app) dueTasksByDay(days []time.Time) map[string][]*model.Todo {
 	m := map[string][]*model.Todo{}
 	if len(days) == 0 {
@@ -201,7 +202,7 @@ func (a *app) dueTasksByDay(days []time.Time) map[string][]*model.Todo {
 	start := days[0]
 	end := days[len(days)-1].AddDate(0, 0, 1)
 	for _, t := range a.store.TodosVisible(a.hidden) {
-		if !t.HasDue {
+		if !t.HasDue || !a.completedVisible(t) {
 			continue
 		}
 		day := model.DayStart(t.Due.In(time.Local))
@@ -343,13 +344,7 @@ func (a *app) buildTreeForList(id string) {
 			}
 
 			// Show incomplete tasks, plus completed ones when toggled on or pinned.
-			var visible []*model.Todo
-			for _, td := range all {
-				if a.showCompleted || !td.Completed() || a.stickyDone[td.UID] {
-					visible = append(visible, td)
-				}
-			}
-			forest := model.BuildTree(visible, true)
+			forest := model.BuildTree(a.visibleTodos(all), true)
 
 			// `>`/`<` zoom: re-root the tree at zoomUID (cd-into-a-subtree), showing
 			// its children and a breadcrumb; a stale zoom (task gone) resets.
@@ -384,6 +379,30 @@ func (a *app) rebuildFolders() { a.folders = folderSet(a.store.Todos()) }
 // isFolder reports whether the task with this UID is a folder (has incomplete
 // children). Used by the calendar/agenda renderers via a closure.
 func (a *app) isFolder(uid string) bool { return a.folders[uid] }
+
+// completedVisible reports whether a task should be shown given the `.` toggle: a
+// completed task is hidden unless completed are shown or it's pinned by stickyDone
+// (just completed, kept visible until the view is left). The single rule for every
+// view, so `.` hides/shows completed tasks identically in the tree, calendar, and
+// agenda (it was previously honored only in the tree).
+func (a *app) completedVisible(t *model.Todo) bool {
+	return a.showCompleted || !t.Completed() || a.stickyDone[t.UID]
+}
+
+// visibleTodos applies completedVisible across a slice, for the calendar/agenda
+// data builders that feed model.DayAgenda.
+func (a *app) visibleTodos(todos []*model.Todo) []*model.Todo {
+	if a.showCompleted {
+		return todos
+	}
+	var out []*model.Todo
+	for _, t := range todos {
+		if a.completedVisible(t) {
+			out = append(out, t)
+		}
+	}
+	return out
+}
 
 // todoMark is the leading marker for a task line: a ▸ folder caret (task with
 // incomplete children, matching the tree), else the [ ]/[■] checkbox.
@@ -648,7 +667,7 @@ func (a *app) dayItems(day time.Time) []model.AgendaItem {
 	start := model.DayStart(day)
 	end := start.AddDate(0, 0, 1)
 	occs, _ := a.store.EventOccurrencesVisible(start, end, a.hidden)
-	return model.DayAgenda(occs, a.store.TodosVisible(a.hidden), start, end)
+	return model.DayAgenda(occs, a.visibleTodos(a.store.TodosVisible(a.hidden)), start, end)
 }
 
 // calTypeMarker labels a calendar by what it can hold, from its supported
