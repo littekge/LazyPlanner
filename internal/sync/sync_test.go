@@ -1028,3 +1028,72 @@ func TestSyncCTagPushStillHappens(t *testing.T) {
 		t.Fatalf("pushed=%d unchanged=%d, want 1/0 (local change must not be short-circuited)", res.Pushed, res.CalendarsUnchanged)
 	}
 }
+
+// setupPendingDelete puts a synced resource on both sides, then deletes it locally
+// (leaving a tombstone), and makes the server refuse the DELETE with 403.
+func setupPendingDelete(t *testing.T) (*store.Store, *fakeServer, string) {
+	t.Helper()
+	ctx := context.Background()
+	st := newStore(t)
+	srv := newFakeServer()
+	name := store.ResourceName("d1@test")
+	href := calPath + name
+	if _, err := st.PutRemote(ctx, "personal", name, mkParsed(t, eventICS("d1@test", "X")), "e1", href); err != nil {
+		t.Fatal(err)
+	}
+	srv.data[href] = caldav.Object{Path: href, ETag: "e1", Data: mkICal(t, eventICS("d1@test", "X"))}
+	if err := st.Delete(ctx, "personal", name); err != nil {
+		t.Fatal(err)
+	}
+	srv.failDel[href] = caldav.ErrReadOnly // server refuses the delete with 403
+	return st, srv, name
+}
+
+func tombstoneCount(st *store.Store, calID string) int {
+	n := 0
+	for _, tm := range st.Tombstones() {
+		if tm.CalID == calID {
+			n++
+		}
+	}
+	return n
+}
+
+// TestSyncDeleteTransient403KeepsTombstone: a 403 on delete that the privilege
+// re-check does NOT confirm read-only keeps the pending delete for retry (rather
+// than resurrecting the item and dropping the tombstone).
+func TestSyncDeleteTransient403KeepsTombstone(t *testing.T) {
+	st, srv, name := setupPendingDelete(t)
+	// writable map left empty → CalendarWritable returns true (transient 403).
+	res, err := sync.Sync(context.Background(), srv, st)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if res.Discarded != 0 {
+		t.Errorf("Discarded=%d, want 0 (a transient 403 must not discard the delete)", res.Discarded)
+	}
+	if len(res.Skipped) == 0 {
+		t.Error("expected the refused delete to be recorded as a skip (retry next sync)")
+	}
+	if tombstoneCount(st, "personal") != 1 {
+		t.Errorf("tombstone dropped after a transient 403 (%d), want it kept for retry", tombstoneCount(st, "personal"))
+	}
+	_ = name
+}
+
+// TestSyncDeleteConfirmedReadOnlyDiscards: a 403 the re-check CONFIRMS read-only
+// flags the calendar, resurrects the item, and drops the tombstone.
+func TestSyncDeleteConfirmedReadOnlyDiscards(t *testing.T) {
+	st, srv, _ := setupPendingDelete(t)
+	srv.writable[calPath] = false // re-check confirms read-only
+	res, err := sync.Sync(context.Background(), srv, st)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if res.Discarded != 1 {
+		t.Errorf("Discarded=%d, want 1 (a confirmed read-only calendar discards the stuck delete)", res.Discarded)
+	}
+	if tombstoneCount(st, "personal") != 0 {
+		t.Error("confirmed read-only should drop the tombstone")
+	}
+}

@@ -2,6 +2,7 @@ package config
 
 import (
 	"bytes"
+	"context"
 	"crypto/sha256"
 	"encoding/hex"
 	"errors"
@@ -11,6 +12,7 @@ import (
 	"path/filepath"
 	"runtime"
 	"strings"
+	"time"
 
 	"github.com/BurntSushi/toml"
 )
@@ -22,6 +24,11 @@ const configName = "config.toml"
 // hex chars (48 bits) is ample to keep two personal accounts from colliding
 // while staying short in the on-disk path.
 const accountIDLen = 12
+
+// defaultSyncIntervalMinutes is the periodic background-sync cadence used when
+// the config omits sync_interval_minutes. 15 minutes balances freshness against
+// server load for a personal CalDAV account.
+const defaultSyncIntervalMinutes = 15
 
 // Config is the parsed contents of config.toml. The app reads it once at startup
 // and never writes it (see main.md) — calendar names/colors are server-owned
@@ -84,7 +91,7 @@ func Default() Config {
 			ColorMode:      "auto",
 		},
 		Behavior: Behavior{
-			SyncIntervalMinutes: 15,
+			SyncIntervalMinutes: defaultSyncIntervalMinutes,
 		},
 	}
 }
@@ -159,20 +166,29 @@ func permissionWarning(path string, mode os.FileMode) string {
 	return ""
 }
 
+// passwordCommandTimeout bounds a password_command so a stalled secret fetch
+// (e.g. an unreachable Vaultwarden) can't hang startup indefinitely.
+const passwordCommandTimeout = 10 * time.Second
+
 // ResolvePassword returns the effective app password: the output of
 // PasswordCommand if set, otherwise the inline Password. It is called at connect
 // time (not during Load) so a failing command surfaces only when sync is
 // actually attempted.
-func (s Server) ResolvePassword() (string, error) {
+func (s Server) ResolvePassword(ctx context.Context) (string, error) {
 	cmd := strings.TrimSpace(s.PasswordCommand)
 	if cmd == "" {
 		return s.Password, nil
 	}
+	// Bound the command so a hung password_command (e.g. a stalled Vaultwarden/bw
+	// network call) can't block startup/reload uninterruptibly — the UI must never
+	// hang on the network.
+	ctx, cancel := context.WithTimeout(ctx, passwordCommandTimeout)
+	defer cancel()
 	// Run through the shell so command strings like "bw get password foo" work
 	// as written in the config, matching the owner's Vaultwarden setup. Capture
 	// stderr so a failure (e.g. "bw" not logged in) surfaces the real cause
 	// instead of a bare "exit status 1".
-	c := exec.Command("sh", "-c", cmd)
+	c := exec.CommandContext(ctx, "sh", "-c", cmd)
 	var errBuf bytes.Buffer
 	c.Stderr = &errBuf
 	out, err := c.Output()

@@ -175,7 +175,7 @@ func buildSyncFn(srv config.Server, s *store.Store) (func(context.Context) (sync
 	if !srv.Configured() {
 		return nil, ""
 	}
-	password, err := srv.ResolvePassword()
+	password, err := srv.ResolvePassword(context.Background())
 	if err != nil {
 		return nil, fmt.Sprintf("%v (offline)", err)
 	}

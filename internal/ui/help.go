@@ -61,7 +61,7 @@ var helpSections = []struct {
 	{"Layout", [][2]string{
 		{"+ / - / 0", "week/day: zoom hour height in/out · 0 = auto-fit (remembered) · else: +/- collapse / restore the overview (accordion)"},
 		{"Ctrl-← / Ctrl-→", "narrow / widen the overview column"},
-		{"Ctrl-W", "resize sub-mode: ←/→ overview · H/L Detail · Esc done"},
+		{"Ctrl-W", "resize sub-mode: ←/→ overview · H/L Detail · Enter keep · Esc cancel"},
 	}},
 	{"Sync & commands", [][2]string{
 		{"r", "sync now (= :sync)"},

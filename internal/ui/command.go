@@ -200,11 +200,12 @@ func (a *app) cmdCalendar(args string) {
 			return
 		}
 		if err := a.store.UpdateCalendarMeta(context.Background(), id, rest, ""); err != nil {
-			a.flash(err.Error())
+			a.flashErr("Rename", err)
 			return
 		}
 		a.buildCalendars()
 		a.buildTasklists()
+		a.scheduleSyncDebounced()
 		a.echo(":calendar rename")
 		a.flash("Renamed (pushes on next sync)")
 	case "color":

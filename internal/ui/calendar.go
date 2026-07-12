@@ -153,23 +153,25 @@ func (a *app) showCalendarForm(editID string, defaultType int) {
 		}
 		if editing {
 			if err := a.store.UpdateCalendarMeta(context.Background(), editID, name, color); err != nil {
-				a.flash(err.Error())
+				a.flashErr("Calendar update", err)
 				return
 			}
 			a.buildCalendars()
 			a.buildTasklists()
 			a.reloadCurrent()
 			a.closeModal(pageForm)
+			a.scheduleSyncDebounced()
 			a.flash("Saved — pushes on next sync")
 			return
 		}
 		typeIdx, _ := typeField.GetCurrentOption()
 		if err := a.createCalendarWithColor(name, typeIdx, color); err != nil {
-			a.flash("Create failed: " + err.Error())
+			a.flashErr("Create", err)
 			return
 		}
 		a.refresh("")
 		a.closeModal(pageForm)
+		a.scheduleSyncDebounced()
 		a.flash(fmt.Sprintf("Created %q — syncs on next sync", name))
 	})
 	f.AddButton("Cancel", func() { a.closeModal(pageForm) })
@@ -252,10 +254,11 @@ func (a *app) applyCalendarColor(calID, hex string) {
 		return
 	}
 	if err := a.store.UpdateCalendarMeta(context.Background(), calID, "", hex); err != nil {
-		a.flash(err.Error())
+		a.flashErr("Recolor", err)
 		return
 	}
 	a.buildCalendars()
+	a.scheduleSyncDebounced()
 	a.flash("Color set (pushes on next sync)")
 }
 
@@ -295,10 +298,11 @@ func (a *app) deleteCollection() {
 
 	a.confirm(prompt, func() {
 		if err := a.store.MarkCalendarDeleted(context.Background(), id); err != nil {
-			a.flash("Delete failed: " + err.Error())
+			a.flashErr("Delete", err)
 			return
 		}
 		a.refresh("")
+		a.scheduleSyncDebounced()
 		a.flash(fmt.Sprintf("Deleted %q", cal.DisplayName))
 	})
 }

@@ -109,7 +109,7 @@ func (a *app) editEventScoped(loc store.Located, t editTarget, scope recurScope)
 		a.presentEventForm(seed, seedStart, " Edit this occurrence ", func(d model.EventDraft) {
 			newObj, err := model.EditEventOccurrence(loc.Object, t.uid, t.occStart, t.allDay, d, a.now, a.loc)
 			if err != nil {
-				a.flash(err.Error())
+				a.flashErr("Edit", err)
 				return
 			}
 			a.commitMutation(loc.CalID, loc.Name, newObj, loc.Prev, "edit occurrence", t.uid, "Saved this occurrence")
@@ -118,7 +118,7 @@ func (a *app) editEventScoped(loc store.Located, t editTarget, scope recurScope)
 		a.presentEventForm(ev, t.occStart, " Edit this & future ", func(d model.EventDraft) {
 			capped, future, err := model.SplitEvent(loc.Object, t.uid, t.occStart, d, a.now, a.loc)
 			if err != nil {
-				a.flash(err.Error())
+				a.flashErr("Edit", err)
 				return
 			}
 			a.commitSplit(loc, future.Events[0].UID, capped, future, "edit this & future", "Split series (u to undo)")
@@ -148,7 +148,7 @@ func (a *app) editTodoDetachForm(loc store.Located, uid string, td *model.Todo) 
 		d.ParentUID = td.ParentUID
 		advanced, _, err := model.AdvanceRecurringTodo(loc.Object, uid, a.now, a.loc)
 		if err != nil {
-			a.flash(err.Error())
+			a.flashErr("Edit", err)
 			return
 		}
 		standalone := model.NewTodoObject(d, a.now)
@@ -184,7 +184,7 @@ func (a *app) deleteRecurring(loc store.Located, t editTarget) {
 		case scopeFuture:
 			capped, err := model.CapSeries(loc.Object, t.uid, t.occStart.Add(-time.Second), a.now, a.loc)
 			if err != nil {
-				a.flash(err.Error())
+				a.flashErr("Delete", err)
 				return
 			}
 			a.commitMutation(loc.CalID, loc.Name, capped, loc.Prev, "delete this & future", t.uid, "Deleted this & future")
@@ -201,7 +201,7 @@ func (a *app) deleteOccurrence(loc store.Located, t editTarget) {
 	if !t.isTodo {
 		newObj, err := model.AddException(loc.Object, t.uid, t.occStart, t.allDay, a.now, a.loc)
 		if err != nil {
-			a.flash(err.Error())
+			a.flashErr("Delete", err)
 			return
 		}
 		a.commitMutation(loc.CalID, loc.Name, newObj, loc.Prev, "delete occurrence", t.uid, "Deleted this occurrence")
@@ -209,7 +209,7 @@ func (a *app) deleteOccurrence(loc store.Located, t editTarget) {
 	}
 	advanced, done, err := model.AdvanceRecurringTodo(loc.Object, t.uid, a.now, a.loc)
 	if err != nil {
-		a.flash(err.Error())
+		a.flashErr("Delete", err)
 		return
 	}
 	if done {
@@ -231,7 +231,7 @@ func (a *app) deleteOccurrence(loc store.Located, t editTarget) {
 func (a *app) advanceRecurringTodo(loc store.Located, uid string) {
 	advanced, done, err := model.AdvanceRecurringTodo(loc.Object, uid, a.now, a.loc)
 	if err != nil {
-		a.flash(err.Error())
+		a.flashErr("Complete", err)
 		return
 	}
 	if _, err := a.store.Put(context.Background(), loc.CalID, loc.Name, advanced); err != nil {

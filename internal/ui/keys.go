@@ -108,7 +108,7 @@ func (a *app) resolvePrefix(ev *tcell.EventKey) {
 			return
 		}
 	}
-	a.flash("no action for " + string(p) + string(ev.Rune()))
+	a.flash("No action for " + string(p) + string(ev.Rune()))
 }
 
 // deleteContextual deletes the calendar/list when an overview list is focused,
@@ -335,23 +335,42 @@ func (a *app) enterResizeMode() {
 	if a.accordion {
 		a.setAccordion(false)
 	}
+	a.resizePrevLeft, a.resizePrevDetail = a.leftWidth, a.detailWidth // for Esc-revert
 	a.resizing = true
 	a.updateStatus()
-	a.flash("RESIZE · ←/→ overview · H/L detail · Esc done")
+	a.flash("RESIZE · ←/→ overview · H/L detail · Enter keep · Esc cancel")
 }
 
-func (a *app) exitResizeMode() {
+// exitResizeMode leaves the sub-mode; revert restores the pre-resize widths (Esc)
+// vs keeping the adjustments (Enter), matching grab's keep/cancel semantics.
+func (a *app) exitResizeMode(revert bool) {
+	if revert {
+		a.leftWidth, a.detailWidth = a.resizePrevLeft, a.resizePrevDetail
+		if a.body != nil {
+			a.body.ResizeItem(a.leftCol, a.leftWidth, 0)
+			if a.detailOn {
+				a.body.ResizeItem(a.detail, a.detailWidth, 0)
+			}
+		}
+		a.persistState()
+	}
 	a.resizing = false
 	a.updateStatus()
-	a.flash("Resize done")
+	if revert {
+		a.flash("Resize cancelled")
+	} else {
+		a.flash("Resize kept")
+	}
 }
 
 // handleResizeKey processes a key while the resize sub-mode is active; every key is
-// consumed so nothing leaks to the views.
+// consumed so nothing leaks to the views. Enter keeps the new widths, Esc/q revert.
 func (a *app) handleResizeKey(ev *tcell.EventKey) *tcell.EventKey {
 	switch ev.Key() {
-	case tcell.KeyEscape, tcell.KeyEnter, tcell.KeyCtrlW:
-		a.exitResizeMode()
+	case tcell.KeyEnter, tcell.KeyCtrlW:
+		a.exitResizeMode(false)
+	case tcell.KeyEscape:
+		a.exitResizeMode(true)
 	case tcell.KeyLeft:
 		a.resizeLeft(-leftWidthStep)
 	case tcell.KeyRight:
@@ -367,7 +386,7 @@ func (a *app) handleResizeKey(ev *tcell.EventKey) *tcell.EventKey {
 		case 'L':
 			a.resizeDetail(detailWidthStep)
 		case 'q':
-			a.exitResizeMode()
+			a.exitResizeMode(true)
 		}
 	}
 	return nil

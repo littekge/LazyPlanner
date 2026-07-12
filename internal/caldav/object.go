@@ -98,6 +98,11 @@ func (c *Client) DeleteObject(ctx context.Context, href, ifMatch string) error {
 	}
 	if ifMatch != "" {
 		req.Header.Set("If-Match", httpETag(ifMatch))
+	} else {
+		// No stored ETag: still make the delete conditional (If-Match:*) so it can't
+		// remove a resource the server changed since we last saw it — matching the
+		// missing-ETag policy PutObject uses for updates.
+		req.Header.Set("If-Match", "*")
 	}
 
 	resp, err := c.httpClient.Do(req)

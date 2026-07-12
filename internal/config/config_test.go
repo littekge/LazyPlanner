@@ -1,6 +1,7 @@
 package config
 
 import (
+	"context"
 	"os"
 	"path/filepath"
 	"runtime"
@@ -114,7 +115,7 @@ func TestLoadWarnsOnLoosePermissions(t *testing.T) {
 func TestResolvePassword(t *testing.T) {
 	// PasswordCommand takes precedence and is trimmed.
 	s := Server{Password: "inline", PasswordCommand: "printf 'from-cmd\\n'"}
-	got, err := s.ResolvePassword()
+	got, err := s.ResolvePassword(context.Background())
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -124,7 +125,7 @@ func TestResolvePassword(t *testing.T) {
 
 	// Falls back to inline when no command is set.
 	s2 := Server{Password: "inline"}
-	got2, err := s2.ResolvePassword()
+	got2, err := s2.ResolvePassword(context.Background())
 	if err != nil {
 		t.Fatal(err)
 	}

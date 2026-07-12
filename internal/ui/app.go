@@ -167,8 +167,12 @@ type app struct {
 	leftWidth   int
 	detailWidth int  // right Detail pane width (Ctrl-W resize sub-mode)
 	resizing    bool // in the Ctrl-W pane-resize sub-mode (modal)
-	accordion   bool
-	saveState   func(leftWidth, detailWidth int, hidden []string, rowsPerHour int)
+	// Pre-resize widths, snapshotted on entering the sub-mode so Esc can revert
+	// (Enter keeps) — matching grab's Enter-keep/Esc-cancel semantics.
+	resizePrevLeft   int
+	resizePrevDetail int
+	accordion        bool
+	saveState        func(leftWidth, detailWidth int, hidden []string, rowsPerHour int)
 
 	// hourRows is the week/day time-grid hour-row height set with +/- (0 =
 	// auto-fit the whole day to the pane); mirrored onto the time grid and

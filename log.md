@@ -4,6 +4,20 @@
 
 ---
 
+## 2026-07-12 — Hardening pass 2: consistency across the program
+
+- A deep consistency audit (fan-out over error-handling/messaging, UI cross-view, model/store API, sync/caldav patterns, coding standards) confirmed high consistency; fixed the real divergences (owner decided the forks).
+- **Sync 403 handling (the headline fix)**: `pushDelete` trusted a bare 403 (flag read-only, resurrect the item, drop the tombstone → delete never retried) while create/update re-check privileges. Added `handleDeleteForbidden` (the delete twin of `handleWriteForbidden`): a transient/unconfirmed 403 keeps the tombstone and records a skip to retry; only a *confirmed* read-only calendar discards. `pushDelete` now takes the calendar path for the re-check.
+- **Sync record-and-continue**: per-calendar metadata writes (SetCalendarMeta/ReadOnly/Components/Sync{Color,Name}) in the discovery loop now `recordSkip`+`continue` instead of `return`-aborting the whole run — matching reconcile.
+- **Cancellable password command**: `config.ResolvePassword` now takes a `context.Context` and uses `exec.CommandContext` with a 10s timeout, so a hung `password_command` (Vaultwarden/`bw`, network) can't block startup/reload uninterruptibly; threaded ctx from `buildSyncFn`/main.
+- **Conditional-write symmetry**: `DeleteObject` now sends `If-Match: *` when no ETag is stored (matching `PutObject`); `store.SetSyncToken` gained the family's unchanged-guard + `%w` error wrap.
+- **Message normalization** (owner: full): centralized the `(u to undo)` hint (in `commitMutation` + the create/quick-set/re-parent/toggle paths), added a result flash to toggle-complete (was the one silent mutation), and a `flashErr("<Action>", err)` helper so every mutation failure reads `<Action> failed: <err>` (field-validation errors stay descriptive); unified the quick vs full create flashes; capitalized the two lowercase result/error stragglers. (Skipped the internal `store:` error-prefix — it would double-prefix inside the user-facing flash.)
+- **Resize Esc reverts** (owner): the `Ctrl-W` sub-mode now snapshots widths on entry so `Esc` cancels (restores) and `Enter` keeps — matching grab's semantics. Badge/help/docs updated.
+- **Small consistency**: fixed a stranded doc comment (`SetCalendarReadOnly` godoc had merged into `CalendarCTag`); unified the app-level display helpers (`dueTasksByDay`, `fmtWhen`, `fmtDate`) onto `a.loc` instead of a `time.Local` literal (the remaining `time.Local` uses live in the view structs / free helpers that don't carry `a.loc`; identical today since `a.loc == time.Local`, left as an accepted follow-up); factored the UTC/all-day date-write into `newDateOrTimeProp` (shared by `setDateOrTime` and the EXDATE writer); debounced push now also armed on calendar create/rename/recolor/delete; documented the recurring-todo scope asymmetry (grab/quick-set edit the series; use `e` for per-occurrence) as an accepted, intentional difference; named `defaultSyncIntervalMinutes`; noted the subtask `guardComponent` invariant.
+- Accepted as-is (defensible): over-exported-for-tests identifiers, local-FS helpers without ctx, `Item`/`Task not found` split, yank-anywhere/paste-in-Tasks.
+- Tests: delete-403 transient-keeps-tombstone vs confirmed-discards; resize Esc-reverts / Enter-keeps. Full gate passes.
+- Files: `internal/sync/sync.go`(+test), `internal/caldav/object.go`, `internal/config/config.go`, `cmd/lazyplanner/main.go`, `internal/store/{calendar,remote}.go`, `internal/model/{edit,recur_edit}.go`, `internal/ui/{app,edit,keys,grab,quickfield,yankpaste,calendar,command,recur_edit,help}.go`(+tests), `README.md`, `main.md`.
+
 ## 2026-07-12 — Hardening pass 1: close promised-vs-implemented gaps
 
 - A deep spec-vs-code audit (fan-out across model/sync/views/tasks/keymap/config) found the implementation very faithful — no missing keybindings or `:` commands. Closed the few real gaps and reconciled the docs; owner decided each fork.

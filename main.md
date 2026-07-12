@@ -170,7 +170,7 @@ Quick-add tokens parsed from the text: dates ("fri", "jul 20", "tomorrow", "7/20
 Layout proportions adapt automatically to terminal size (tview reflows the `Flex` tree on every resize). On top of that, two interactive controls are planned for build step 10:
 
 - **Accordion expand** (`+` / `-`): collapse the side panels and Detail so the focused Main view (calendar grid or task tree) fills the screen, then restore them — the lazygit `+`/`_` idiom. (In the week/day time-grid these keys instead zoom the hour-row height; the accordion applies in the other views.)
-- **Keyboard resize**: `Ctrl-←` / `Ctrl-→` quick-resize the overview column in steps. `Ctrl-W` enters a modal **resize sub-mode** (badge: `RESIZE`) where `←`/`→` (or `h`/`l`) size the overview and `H`/`L` size the Detail pane, `Esc`/`Enter` exit — a keyboard- and terminal-robust way to size either side pane (no exotic modifier chords, so it works on a bare Pi console). Both widths are clamped to sane minimums via tview's `Flex.ResizeItem`.
+- **Keyboard resize**: `Ctrl-←` / `Ctrl-→` quick-resize the overview column in steps. `Ctrl-W` enters a modal **resize sub-mode** (badge: `RESIZE`) where `←`/`→` (or `h`/`l`) size the overview and `H`/`L` size the Detail pane, `Enter` keeps and `Esc` cancels (reverting to the pre-resize widths) — a keyboard- and terminal-robust way to size either side pane (no exotic modifier chords, so it works on a bare Pi console). Both widths are clamped to sane minimums via tview's `Flex.ResizeItem`.
 
 Chosen sizes (overview + Detail widths) are remembered across launches in the state file under the data dir (never the config file). Mouse drag-to-resize is intentionally out of scope — LazyPlanner is keyboard-first.
 
@@ -187,7 +187,7 @@ The keyboard interface feels like **vim, not lazygit**: single keys for panel fo
 | `Tab` / `Shift-Tab` | Cycle pane focus |
 | `+` / `-` / `0` | In week/day view: zoom the hour-row height in/out; `0` resets to auto-fit (remembered across launches). Elsewhere: `+`/`-` expand / restore the Main pane (accordion) |
 | `Ctrl-←` / `Ctrl-→` | Widen / narrow the overview column (quick keyboard resize) |
-| `Ctrl-W` | Resize sub-mode: `←`/`→` overview, `H`/`L` Detail, `Esc` done |
+| `Ctrl-W` | Resize sub-mode: `←`/`→` overview, `H`/`L` Detail, `Enter` keep, `Esc` cancel |
 | `Enter` | Select / open in Main (drill into a day and cycle its events) |
 | `i` prefix | Create: `it`/`iT` task, `ie`/`iE` event, `is`/`iS` subtask (Shift = full form), `ic` calendar, `il` list. `i!`… (e.g. `i!e`) forces creation on an unknown-type (`[?]`) calendar — read-only and known-wrong-type are never forced |
 | `e` | Edit selected (full form); with the Calendars **or** Tasks overview panel focused, open the calendar/list **edit form** (name + color) — symmetric with `d` |

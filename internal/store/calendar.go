@@ -118,9 +118,6 @@ func (s *Store) MarkCalendarSynced(ctx context.Context, id, href string) error {
 	return nil
 }
 
-// SetCalendarReadOnly records the server's read-only status for a calendar
-// (whether the user has write privilege). It is a no-op if the value is
-// unchanged, so a routine sync doesn't rewrite the sidecar needlessly.
 // CalendarCTag returns the collection CTag recorded at calID's last successful
 // sync (empty when never synced or unknown) — the incremental-sync short-circuit
 // compares it to the server's current CTag.
@@ -177,6 +174,9 @@ func (s *Store) HasLocalChanges(calID string) bool {
 	return false
 }
 
+// SetCalendarReadOnly records the server's read-only status for a calendar
+// (whether the user has write privilege). It is a no-op if the value is
+// unchanged, so a routine sync doesn't rewrite the sidecar needlessly.
 func (s *Store) SetCalendarReadOnly(ctx context.Context, calID string, readOnly bool) error {
 	if err := ctx.Err(); err != nil {
 		return err

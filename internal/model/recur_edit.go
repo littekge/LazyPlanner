@@ -194,12 +194,7 @@ func AddException(obj *Parsed, uid string, occ time.Time, allDay bool, now time.
 		return nil, fmt.Errorf("model: no recurring master with UID %q", uid)
 	}
 
-	ex := ical.NewProp(ical.PropExceptionDates)
-	if allDay {
-		ex.SetDate(occ)
-	} else {
-		ex.SetDateTime(occ.UTC())
-	}
+	ex := newDateOrTimeProp(ical.PropExceptionDates, occ, allDay)
 	master.Props[ical.PropExceptionDates] = append(master.Props[ical.PropExceptionDates], *ex)
 	touch(master, now)
 

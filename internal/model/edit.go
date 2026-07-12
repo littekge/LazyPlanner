@@ -284,13 +284,21 @@ func setTextOrDel(comp *ical.Component, name, value string) {
 // Timed values are stored in UTC (Z form) so they are unambiguous; display
 // converts back to local. All-day values stay date-only per the spec.
 func setDateOrTime(comp *ical.Component, name string, t time.Time, allDay bool) {
+	comp.Props.Set(newDateOrTimeProp(name, t, allDay))
+}
+
+// newDateOrTimeProp builds a date-or-time property applying the storage rule in
+// one place: all-day → date-only, timed → UTC (Z form). Used by setDateOrTime
+// (which replaces) and by the multi-valued EXDATE writer (which appends), so the
+// rule has a single home.
+func newDateOrTimeProp(name string, t time.Time, allDay bool) *ical.Prop {
 	prop := ical.NewProp(name)
 	if allDay {
 		prop.SetDate(t)
 	} else {
 		prop.SetDateTime(t.UTC())
 	}
-	comp.Props.Set(prop)
+	return prop
 }
 
 func setDateTimeUTC(comp *ical.Component, name string, t time.Time) {

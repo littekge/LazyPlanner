@@ -208,6 +208,9 @@ func (a *app) subtaskContext() (calID, parentUID string, ok bool) {
 	if !a.guardWrite(loc.CalID) {
 		return "", "", false
 	}
+	// No guardComponent here: the parent is itself a VTODO living in loc.CalID, so
+	// the collection provably accepts tasks. The RELATED-TO invariant (child shares
+	// the parent's collection) makes a component re-check redundant.
 	return loc.CalID, t.uid, true
 }
 
@@ -232,12 +235,12 @@ func (a *app) createTask(calID, parentUID, text string) {
 	uid := obj.Todos[0].UID
 	name := store.ResourceName(uid)
 	if _, err := a.store.Put(context.Background(), calID, name, obj); err != nil {
-		a.flash("Add failed: " + err.Error())
+		a.flashErr("Add", err)
 		return
 	}
 	a.pushUndo("add task", uid, undoOp{calID: calID, name: name})
 	a.refresh(uid)
-	a.flash("Added task")
+	a.flash("Added task" + undoHint)
 }
 
 // createEvent parses a quick-add line and writes a new event, defaulting its day
@@ -260,18 +263,18 @@ func (a *app) createEvent(calID string, base time.Time, text string) {
 		AllDay:  allDay,
 	}, a.now)
 	if err != nil {
-		a.flash("Add failed: " + err.Error())
+		a.flashErr("Add", err)
 		return
 	}
 	uid := obj.Events[0].UID
 	name := store.ResourceName(uid)
 	if _, err := a.store.Put(context.Background(), calID, name, obj); err != nil {
-		a.flash("Add failed: " + err.Error())
+		a.flashErr("Add", err)
 		return
 	}
 	a.pushUndo("add event", uid, undoOp{calID: calID, name: name})
 	a.refresh(uid)
-	a.flash("Added event")
+	a.flash("Added event" + undoHint)
 }
 
 // --- complete toggle (Space) ---
@@ -308,11 +311,11 @@ func (a *app) toggleComplete() {
 	completing := !td.Completed()
 	newObj, err := model.SetTodoCompleted(loc.Object, t.uid, completing, a.now, a.loc)
 	if err != nil {
-		a.flash(err.Error())
+		a.flashErr("Complete", err)
 		return
 	}
 	if _, err := a.store.Put(context.Background(), loc.CalID, loc.Name, newObj); err != nil {
-		a.flash("Update failed: " + err.Error())
+		a.flashErr("Complete", err)
 		return
 	}
 	// Keep a just-completed task visible until the view is left, in any view now
@@ -326,6 +329,11 @@ func (a *app) toggleComplete() {
 	// Completing a drilled task in a calendar view must not undrill the day: the
 	// rebuild resets the grid's event-cycling, so re-enter it on the same day/index.
 	a.refreshKeepingDrill(t.uid)
+	if completing {
+		a.flash("Completed" + undoHint)
+	} else {
+		a.flash("Reopened" + undoHint)
+	}
 }
 
 // refreshKeepingDrill rebuilds the views like refresh, but preserves the calendar
@@ -495,7 +503,7 @@ func (a *app) reparentSelected(dir reparentDir) {
 	}
 	newObj, err := model.SetTodoParent(loc.Object, td.UID, newParent, a.now, a.loc)
 	if err != nil {
-		a.flash(err.Error())
+		a.flashErr("Move", err)
 		return
 	}
 	if _, err := a.store.Put(context.Background(), loc.CalID, loc.Name, newObj); err != nil {
@@ -504,7 +512,7 @@ func (a *app) reparentSelected(dir reparentDir) {
 	}
 	a.pushUndo("re-parent", td.UID, undoOp{calID: loc.CalID, name: loc.Name, prev: loc.Prev})
 	a.refresh(td.UID)
-	a.flash("Moved task")
+	a.flash("Moved task" + undoHint)
 }
 
 // treeNodeContext finds target within the tview tree, returning its parent node
@@ -665,7 +673,7 @@ func (a *app) showTodoForm(loc store.Located, uid string) {
 		d.ParentUID = td.ParentUID // preserve the existing parent
 		newObj, err := model.EditTodo(loc.Object, uid, d, a.now, a.loc)
 		if err != nil {
-			a.flash(err.Error())
+			a.flashErr("Save", err)
 			return
 		}
 		a.commitMutation(loc.CalID, loc.Name, newObj, loc.Prev, "edit task", uid, "Saved")
@@ -826,7 +834,7 @@ func (a *app) showEventForm(loc store.Located, uid string) {
 	a.presentEventForm(ev, ev.Start, " Edit event ", func(d model.EventDraft) {
 		newObj, err := model.EditEvent(loc.Object, uid, d, a.now, a.loc)
 		if err != nil {
-			a.flash(err.Error())
+			a.flashErr("Save", err)
 			return
 		}
 		a.commitMutation(loc.CalID, loc.Name, newObj, loc.Prev, "edit event", uid, "Saved")
@@ -866,7 +874,7 @@ func (a *app) showCreateEventForm(calID string, base time.Time) {
 		}
 		obj, err := model.NewEventObject(d, a.now)
 		if err != nil {
-			a.flash("Add failed: " + err.Error())
+			a.flashErr("Add", err)
 			return
 		}
 		uid := obj.Events[0].UID
@@ -882,7 +890,7 @@ func (a *app) showCreateEventForm(calID string, base time.Time) {
 // flashes — the shared tail of every form Save/Create. prev nil marks a creation.
 func (a *app) commitMutation(calID, name string, obj *model.Parsed, prev *store.Resource, label, selUID, done string) {
 	if _, err := a.store.Put(context.Background(), calID, name, obj); err != nil {
-		a.flash("Save failed: " + err.Error())
+		a.flashErr("Save", err)
 		return
 	}
 	a.pushUndo(label, selUID, undoOp{calID: calID, name: name, prev: prev})
@@ -890,7 +898,7 @@ func (a *app) commitMutation(calID, name string, obj *model.Parsed, prev *store.
 	// can re-drill into the day the user was on.
 	a.refresh(selUID)
 	a.closeModal(pageForm)
-	a.flash(done)
+	a.flash(done + undoHint)
 }
 
 // --- undo (u) ---
@@ -1140,6 +1148,16 @@ func modalWrap(prim tview.Primitive, width, height int) tview.Primitive {
 // flash shows a transient result/status message in the left section of the
 // status bar; it persists until the next updateStatus (i.e. the next action).
 func (a *app) flash(msg string) { a.statusLeft.SetText(msg) }
+
+// undoHint is appended to the result flash of every undoable action, so the undo
+// affordance is advertised consistently (all these paths call pushUndo).
+const undoHint = " (u to undo)"
+
+// flashErr shows a failure the one consistent way: "<Action> failed: <err>". Used
+// for store/model mutation failures (field-validation errors stay descriptive).
+func (a *app) flashErr(action string, err error) {
+	a.flash(action + " failed: " + err.Error())
+}
 
 // --- small helpers ---
 

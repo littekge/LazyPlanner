@@ -115,32 +115,41 @@ func Sync(ctx context.Context, client Syncer, st *store.Store) (SyncResult, erro
 		}
 
 		localID, known := localByHref[sc.Path]
+		// Per-calendar metadata bookkeeping (all local sidecar writes): a failure on
+		// one calendar records a skip and moves on, so it can't abort syncing every
+		// other calendar — matching the record-and-continue that reconcileCalendar
+		// uses below. (Only discovery and context-cancellation abort the whole run.)
 		if !known {
 			// A calendar new on the server: record its metadata (creates the
 			// local collection), then pull everything below.
 			localID = collectionID(sc.Path)
 			if err := st.SetCalendarMeta(ctx, localID, store.CalendarMeta{DisplayName: sc.Name, Href: sc.Path}); err != nil {
-				return res, fmt.Errorf("sync: recording calendar %q: %w", localID, err)
+				recordSkip(&res, localID, "(calendar)", err)
+				continue
 			}
 		}
 		// Keep the local read-only status in step with the server so the UI knows.
 		if err := st.SetCalendarReadOnly(ctx, localID, sc.ReadOnly); err != nil {
-			return res, fmt.Errorf("sync: recording read-only status for %q: %w", localID, err)
+			recordSkip(&res, localID, "(calendar)", err)
+			continue
 		}
 		// Record the supported component set so the UI can list an empty task
 		// list (VTODO) even before it holds anything.
 		if err := st.SetCalendarComponents(ctx, localID, sc.SupportedComponentSet); err != nil {
-			return res, fmt.Errorf("sync: recording components for %q: %w", localID, err)
+			recordSkip(&res, localID, "(calendar)", err)
+			continue
 		}
 		// Adopt the server's calendar color (unless a local color edit is pending),
 		// so the in-app palette stays consistent with NextCloud web.
 		if err := st.SyncCalendarColor(ctx, localID, sc.Color); err != nil {
-			return res, fmt.Errorf("sync: recording color for %q: %w", localID, err)
+			recordSkip(&res, localID, "(calendar)", err)
+			continue
 		}
 		// Adopt a server-side rename too (unless a local rename is pending), so
 		// names stay server-authoritative like colors.
 		if err := st.SyncCalendarName(ctx, localID, sc.Name); err != nil {
-			return res, fmt.Errorf("sync: recording name for %q: %w", localID, err)
+			recordSkip(&res, localID, "(calendar)", err)
+			continue
 		}
 
 		// Incremental short-circuit: when the server's CTag matches the one recorded
@@ -341,7 +350,7 @@ func reconcileCalendar(ctx context.Context, client Syncer, st *store.Store, calI
 		if err := ctx.Err(); err != nil {
 			return err
 		}
-		pushDelete(ctx, client, st, calID, t, serverByHref, res)
+		pushDelete(ctx, client, st, calID, sc.Path, t, serverByHref, res)
 	}
 	return nil
 }
@@ -427,6 +436,30 @@ func handleWriteForbidden(ctx context.Context, client Syncer, st *store.Store, c
 	}
 }
 
+// handleDeleteForbidden is the delete-side twin of handleWriteForbidden: a DELETE
+// refused with 403 is not trusted on its own (it can be a transient auth/WAF blip)
+// — the calendar's privileges are re-checked, and only a *confirmed* read-only
+// calendar is flagged, its item resurrected, and its tombstone dropped. On a
+// spurious 403 the tombstone is kept so the delete retries next sync, rather than
+// being silently abandoned.
+func handleDeleteForbidden(ctx context.Context, client Syncer, st *store.Store, calID, calPath string, t store.Tombstone, serverByHref map[string]caldav.Object, res *SyncResult) {
+	writable, err := client.CalendarWritable(ctx, calPath)
+	if err == nil && !writable {
+		_ = st.SetCalendarReadOnly(ctx, calID, true)
+		if serverObj, ok := serverByHref[t.Href]; ok {
+			pullInto(ctx, st, calID, t.Name, serverObj, res)
+		}
+		_ = st.ClearTombstone(ctx, calID, t.Name)
+		res.Discarded++
+		return
+	}
+	if err != nil {
+		recordSkip(res, calID, t.Name, fmt.Errorf("delete refused (403); privilege re-check failed (%w) — kept the pending delete, will retry", err))
+	} else {
+		recordSkip(res, calID, t.Name, fmt.Errorf("delete refused (403) but calendar still grants write — kept the pending delete, will retry"))
+	}
+}
+
 func pushCreate(ctx context.Context, client Syncer, st *store.Store, calID, calPath string, r *store.Resource, res *SyncResult) {
 	data, err := r.Object.Encode()
 	if err != nil {
@@ -488,16 +521,12 @@ func pushUpdate(ctx context.Context, client Syncer, st *store.Store, calID, calP
 	res.Pushed++
 }
 
-func pushDelete(ctx context.Context, client Syncer, st *store.Store, calID string, t store.Tombstone, serverByHref map[string]caldav.Object, res *SyncResult) {
+func pushDelete(ctx context.Context, client Syncer, st *store.Store, calID, calPath string, t store.Tombstone, serverByHref map[string]caldav.Object, res *SyncResult) {
 	err := client.DeleteObject(ctx, t.Href, t.ETag)
 	if errors.Is(err, caldav.ErrReadOnly) {
-		// Can't delete on a read-only calendar; flag it and restore the item.
-		_ = st.SetCalendarReadOnly(ctx, calID, true)
-		if serverObj, ok := serverByHref[t.Href]; ok {
-			pullInto(ctx, st, calID, t.Name, serverObj, res)
-		}
-		_ = st.ClearTombstone(ctx, calID, t.Name)
-		res.Discarded++
+		// A 403 on delete is not trusted outright (see handleWriteForbidden): re-check
+		// privileges so a transient 403 doesn't wrongly abandon the delete.
+		handleDeleteForbidden(ctx, client, st, calID, calPath, t, serverByHref, res)
 		return
 	}
 	if errors.Is(err, caldav.ErrPreconditionFailed) {

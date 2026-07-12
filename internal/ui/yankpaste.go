@@ -118,7 +118,7 @@ func (a *app) reparentTo(src store.Located, targetParent string) {
 	}
 	obj, err := model.SetTodoParent(src.Object, uid, targetParent, a.now, a.loc)
 	if err != nil {
-		a.flash(err.Error())
+		a.flashErr("Move", err)
 		return
 	}
 	if _, err := a.store.Put(context.Background(), src.CalID, src.Name, obj); err != nil {

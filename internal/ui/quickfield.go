@@ -49,7 +49,7 @@ func (a *app) applyTodoField(uid, label string, mut func(*model.TodoDraft)) {
 	mut(&draft)
 	obj, err := model.EditTodo(loc.Object, uid, draft, a.now, a.loc)
 	if err != nil {
-		a.flash(err.Error())
+		a.flashErr("Set", err)
 		return
 	}
 	if _, err := a.store.Put(context.Background(), loc.CalID, loc.Name, obj); err != nil {
@@ -58,11 +58,16 @@ func (a *app) applyTodoField(uid, label string, mut func(*model.TodoDraft)) {
 	}
 	a.pushUndo(label, uid, undoOp{calID: loc.CalID, name: loc.Name, prev: loc.Prev})
 	a.refresh(uid)
-	a.flash(label)
+	a.flash(label + undoHint)
 }
 
 // quickTaskTarget returns the selected task's uid, guarding that a writable task
 // is actually selected. It flashes and returns ok=false otherwise.
+//
+// Note: on a recurring task, sp/sd edit the whole series (its master fields), with
+// no this/future/all picker — like grab's due-nudge. Only e/d offer per-occurrence
+// scope (detach), because changing a single field/due of one occurrence of a task
+// (shown as a single live instance) doesn't map cleanly; use e to detach first.
 func (a *app) quickTaskTarget() (string, bool) {
 	t, ok := a.currentTarget()
 	if !ok || !t.isTodo {

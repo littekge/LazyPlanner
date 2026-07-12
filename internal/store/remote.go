@@ -68,6 +68,12 @@ func (s *Store) SetSyncToken(ctx context.Context, calID, token string) error {
 	if cs == nil {
 		return fmt.Errorf("store: unknown calendar %q", calID)
 	}
+	if cs.syncToken == token {
+		return nil
+	}
 	cs.syncToken = token
-	return writeSidecar(s.root, cs)
+	if err := writeSidecar(s.root, cs); err != nil {
+		return fmt.Errorf("updating sidecar for %q: %w", calID, err)
+	}
+	return nil
 }

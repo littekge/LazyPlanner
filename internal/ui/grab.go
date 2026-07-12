@@ -98,7 +98,7 @@ func (a *app) beginGrabFuture(loc store.Located, t editTarget) {
 	}
 	capped, future, err := model.SplitEvent(loc.Object, t.uid, t.occStart, d, a.now, a.loc)
 	if err != nil {
-		a.flash(err.Error())
+		a.flashErr("Grab", err)
 		return
 	}
 	newUID := future.Events[0].UID
@@ -260,7 +260,7 @@ func (a *app) grabNudge(r rune) {
 			}
 			d.End = base.Add(delta)
 			if !d.End.After(d.Start) {
-				a.flash("event can't be that short")
+				a.flash("Event can't be that short")
 				return
 			}
 		default:
@@ -274,7 +274,7 @@ func (a *app) grabNudge(r rune) {
 		label = a.grabEventLabel(d)
 	}
 	if err != nil {
-		a.flash(err.Error())
+		a.flashErr("Grab", err)
 		return
 	}
 	if _, err := a.store.Put(context.Background(), a.grabCalID, a.grabName, newObj); err != nil {

@@ -78,24 +78,41 @@ func TestResizeSubModeDetail(t *testing.T) {
 		t.Errorf("mode badge = %q, want RESIZE", a.interactionMode())
 	}
 
-	w0 := a.detailWidth
+	w0, l0 := a.detailWidth, a.leftWidth
 	a.globalKeys(runeKey('L')) // grow detail
 	if a.detailWidth <= w0 {
 		t.Errorf("L did not grow the Detail pane (%d → %d)", w0, a.detailWidth)
 	}
-	a.globalKeys(runeKey('H')) // shrink detail
-	if a.detailWidth != w0 {
-		t.Errorf("H did not shrink the Detail pane back (%d, want %d)", a.detailWidth, w0)
-	}
-
-	l0 := a.leftWidth
 	a.globalKeys(runeKey('l')) // grow overview
 	if a.leftWidth <= l0 {
 		t.Errorf("l did not grow the overview (%d → %d)", l0, a.leftWidth)
 	}
 
+	// Esc reverts both to the pre-resize widths (grab-style cancel).
 	a.globalKeys(tcell.NewEventKey(tcell.KeyEscape, 0, tcell.ModNone))
 	if a.resizing {
 		t.Error("Esc did not exit resize mode")
+	}
+	if a.detailWidth != w0 || a.leftWidth != l0 {
+		t.Errorf("Esc did not revert widths: left %d (want %d), detail %d (want %d)", a.leftWidth, l0, a.detailWidth, w0)
+	}
+}
+
+// TestResizeEnterKeeps: Enter keeps the resized widths (vs Esc reverting).
+func TestResizeEnterKeeps(t *testing.T) {
+	a := newRootedTestApp(t, time.Date(2026, 7, 6, 12, 0, 0, 0, time.UTC))
+	a.setMode(modeCalendar)
+	a.saveState = func(int, int, []string, int) {}
+
+	a.globalKeys(tcell.NewEventKey(tcell.KeyCtrlW, 0, tcell.ModNone))
+	l0 := a.leftWidth
+	a.globalKeys(runeKey('l'))
+	grown := a.leftWidth
+	a.globalKeys(tcell.NewEventKey(tcell.KeyEnter, 0, tcell.ModNone))
+	if a.resizing {
+		t.Error("Enter did not exit resize mode")
+	}
+	if a.leftWidth != grown || a.leftWidth == l0 {
+		t.Errorf("Enter did not keep the resized overview width (%d, want %d)", a.leftWidth, grown)
 	}
 }

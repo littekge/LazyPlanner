@@ -207,7 +207,7 @@ func (a *app) dueTasksByDay(days []time.Time) map[string][]*model.Todo {
 		}
 		// A recurring task shows only its current occurrence (it advances on
 		// completion rather than painting future occurrences).
-		day := model.DayStart(t.Due.In(time.Local))
+		day := model.DayStart(t.Due.In(a.loc))
 		if day.Before(start) || !day.Before(end) {
 			continue
 		}
@@ -741,7 +741,7 @@ func whenLabel(it model.AgendaItem, use24 bool) string {
 }
 
 func (a *app) fmtWhen(t time.Time, allDay bool) string {
-	local := t.In(time.Local)
+	local := t.In(a.loc)
 	if allDay {
 		return local.Format("Mon ") + dateStr(local, a.dateISO)
 	}
@@ -749,7 +749,7 @@ func (a *app) fmtWhen(t time.Time, allDay bool) string {
 }
 
 func (a *app) fmtDate(t time.Time, allDay bool) string {
-	local := t.In(time.Local)
+	local := t.In(a.loc)
 	if allDay {
 		return dateShortStr(local, a.dateISO)
 	}
