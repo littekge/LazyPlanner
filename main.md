@@ -182,7 +182,7 @@ The keyboard interface feels like **vim, not lazygit**: single keys for panel fo
 |---|---|
 | `↑↓←→` / `hjkl` | Move the highlight; in a drilled week/day, 2D spatial event nav (`↑↓` time, `←→` concurrent events) |
 | `<count>` + motion | Repeat a motion (`3j`, `5k`) |
-| `gg` / `G` | Go to top / bottom of the list, tree, or calendar grid (`<count>G` → nth list item) |
+| `gg` / `G` | Go to top / bottom of the list, tree, or calendar grid (`<count>G` → nth item of a list, the tree, or a drilled day; an undrilled 2D grid lands on the last day) |
 | `c` `t` `a` | Focus Calendars / Tasks / Agenda panel |
 | `Tab` / `Shift-Tab` | Cycle pane focus |
 | `+` / `-` | In week/day view: zoom the hour-row height (remembered across launches). Elsewhere: expand / restore the Main pane (accordion) |

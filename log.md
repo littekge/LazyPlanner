@@ -4,6 +4,14 @@
 
 ---
 
+## 2026-07-12 — Cross-view consistency M2: `<count>G` honored in the tree and drilled grid
+
+- Audit fix 5 of N. `<count>G` (vim "go to nth item") was handled only for `*tview.List`, so it worked in the overview/agenda lists but was silently discarded in the task tree (`5G` → last node) and calendar grid (→ last day/item).
+- **Fix** (`internal/ui/keys.go` `gotoBottom`): the tree branch now selects the count-th visible node (`clampIndex(count-1, len(nodes))`) instead of always the last; added a branch so a **drilled** calendar day (a list of that day's events) honors the count via `reDrill(day, count-1)`. An undrilled grid is 2D, so a count there still lands on the last day (documented). The `*tview.List` branch was tidied to share the clamp.
+- Docs: `README.md`, `main.md` `gg`/`G` rows (nth item of a list, the tree, or a drilled day).
+- Tests (`internal/ui/countg_test.go`, new): `<count>G` selects the nth visible tree node, `G` the last, and an over-large count clamps. Existing `TestGotoTopAndBottom` (list) still passes. Full gate passes.
+- Files: `internal/ui/keys.go`, `README.md`, `main.md`, `internal/ui/countg_test.go`.
+
 ## 2026-07-12 — Cross-view consistency M1: mode indicator — tree focus is NORMAL, not DRILL
 
 - Audit fix 4 of N. The mode badge showed `DRILL` the instant the task tree was focused (one Enter from the overview), but the parallel calendar state — grid focused, undrilled — showed `NORMAL` (a day-drill needs a second Enter). So "just dived into Main, hjkl moves things" read differently for the tree vs the grid. Owner chose to align by making tree focus read NORMAL: `DRILL` now means uniformly "drilled into a sub-element" — the calendar-day drill — and merely focusing the tree or grid is ordinary Main navigation (NORMAL). The tree has no deeper level, so DRILL never shows in Tasks.

@@ -222,27 +222,40 @@ func (a *app) gotoToday() {
 }
 
 // gotoBottom moves to the last item (G), or — with a count — to the count-th item
-// of a list (vim NG).
+// (vim NG). The count is honored uniformly wherever "nth item" is well-defined: a
+// tview.List, the task tree (nth visible node), and a drilled calendar day (nth of
+// the day's events). An undrilled calendar grid is 2D, so a count there just lands
+// on the last day.
 func (a *app) gotoBottom(count int) {
-	if count > 0 {
-		if lst, ok := a.tv.GetFocus().(*tview.List); ok {
-			idx := count - 1
-			if last := lst.GetItemCount() - 1; idx > last {
-				idx = last
-			}
-			if idx < 0 {
-				idx = 0
-			}
-			lst.SetCurrentItem(idx)
+	if lst, ok := a.tv.GetFocus().(*tview.List); ok {
+		idx := lst.GetItemCount() - 1
+		if count > 0 {
+			idx = clampIndex(count-1, lst.GetItemCount())
+		}
+		lst.SetCurrentItem(idx)
+		return
+	}
+	// The tree treats End as scroll-only; select the last (or count-th) visible node.
+	if tr, ok := a.tv.GetFocus().(*tview.TreeView); ok {
+		nodes := visibleTreeNodes(tr.GetRoot())
+		if len(nodes) == 0 {
 			return
 		}
-	}
-	// The tree treats End as scroll-only; select the last visible node instead.
-	if tr, ok := a.tv.GetFocus().(*tview.TreeView); ok {
-		if nodes := visibleTreeNodes(tr.GetRoot()); len(nodes) > 0 {
-			tr.SetCurrentNode(nodes[len(nodes)-1])
+		idx := len(nodes) - 1
+		if count > 0 {
+			idx = clampIndex(count-1, len(nodes))
 		}
+		tr.SetCurrentNode(nodes[idx])
 		return
+	}
+	// A drilled calendar day is a list of that day's events — honor the count there.
+	if count > 0 {
+		if g, ok := a.tv.GetFocus().(calGrid); ok {
+			if day, active, _ := g.drillState(); active {
+				g.reDrill(day, count-1)
+				return
+			}
+		}
 	}
 	a.repeatKey(tcell.NewEventKey(tcell.KeyEnd, 0, tcell.ModNone), 1)
 }
