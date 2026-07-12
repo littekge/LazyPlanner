@@ -4,6 +4,13 @@
 
 ---
 
+## 2026-07-12 — Hardening pass 3 (#3): sync writeback can't clobber a concurrent edit
+
+- **Bug (silent lost update):** `pushUpdate`/`pushCreate` encode the pre-sync snapshot, run a slow network PUT, then wrote that *same stale snapshot* back as clean (`PutRemote`). Sync runs on a background goroutine while the UI keeps editing on the event loop, so an edit that lands during the in-flight PUT was reverted on disk + in memory **and** marked clean (never pushed) — the edit was irrecoverably lost, no conflict raised. The 3s debounced push (fires while the user is still typing) makes the window reachable. `pullInto` had the same clobber pattern against a concurrent edit during reconcile.
+- **Fix (compare-and-set):** every resource mutation swaps in a fresh `*Resource` (copy-on-write), so pointer identity is the concurrency signal. New store `CommitPush` adopts the server ETag+clean state only if the current resource is still the exact one that was pushed; if a concurrent edit replaced it, that newer content is kept **dirty** with the ETag baseline advanced to the server's value (next push is conditional on it — no revert, no lost update, no duplicate). New `PullRemote` takes an `expectedPrev` and skips the pull if a concurrent edit replaced it (leaving it to reconcile as a conflict next sync); read-only/server-authoritative pulls pass `nil` (unconditional). Refactored `writeResource` to expose a lock-held core (`writeResourceLocked`) shared by all three.
+- Tests (`internal/sync/sync_test.go`): a concurrent edit injected mid-PUT (new `onPut` fake hook) survives, stays dirty, and adopts the new ETag baseline — instead of being reverted to the pushed snapshot. Also verified under `go test -race`.
+- Files: `internal/store/mutate.go`, `internal/store/remote.go`, `internal/sync/sync.go`, `internal/sync/sync_test.go`. Full gate passes.
+
 ## 2026-07-12 — Hardening pass 3 (#8): skip server objects with an empty href
 
 - **Bug:** a CalDAV response carrying an empty `<href/>` decoded to an object with `Path==""`. Reconcile step B didn't match it in `localByHref` and pulled it, storing it with `Href==""`; the **next** sync's step A then saw `r.Href == ""`, classified it as a never-pushed local resource, and `pushCreate`'d it — a spurious server-side duplicate from a malformed/buggy server response.

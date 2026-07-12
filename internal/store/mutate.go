@@ -48,21 +48,20 @@ func (s *Store) writeResource(ctx context.Context, calID, name string, obj *mode
 		return nil, errors.New("store: write requires a decoded object")
 	}
 
-	data, err := obj.Encode()
-	if err != nil {
-		return nil, fmt.Errorf("encoding %s/%s: %w", calID, name, err)
-	}
-
 	s.mu.Lock()
 	defer s.mu.Unlock()
+	return s.writeResourceLocked(calID, name, build)
+}
 
+// writeResourceLocked is the write core shared by writeResource and the
+// compare-and-set sync writers (CommitPush/PullRemote). The caller must hold
+// s.mu. build derives the new resource from the current one (nil if none); the
+// object persisted to disk is build's returned Object, so a build that inspects
+// the current resource can choose which content to keep under the lock.
+func (s *Store) writeResourceLocked(calID, name string, build func(prev *Resource) *Resource) (*Resource, error) {
 	cs, err := s.ensureCalendar(calID)
 	if err != nil {
 		return nil, err
-	}
-
-	if err := writeFileAtomic(filepath.Join(s.root, calID, name), data, filePerm); err != nil {
-		return nil, fmt.Errorf("writing %s/%s: %w", calID, name, err)
 	}
 
 	prevRes := cs.resources[name]
@@ -70,6 +69,18 @@ func (s *Store) writeResource(ctx context.Context, calID, name string, obj *mode
 	prevTomb, hadTomb := cs.tombstones[name]
 
 	res := build(prevRes)
+	if res == nil || res.Object == nil || res.Object.Calendar == nil {
+		return nil, errors.New("store: write requires a decoded object")
+	}
+	data, err := res.Object.Encode()
+	if err != nil {
+		return nil, fmt.Errorf("encoding %s/%s: %w", calID, name, err)
+	}
+
+	if err := writeFileAtomic(filepath.Join(s.root, calID, name), data, filePerm); err != nil {
+		return nil, fmt.Errorf("writing %s/%s: %w", calID, name, err)
+	}
+
 	cs.resources[name] = res
 	// Writing a resource cancels any pending deletion of the same name — this is
 	// how undo (Restore) resurrects a just-deleted resource — and supersedes any

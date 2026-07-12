@@ -331,8 +331,8 @@ func reconcileCalendar(ctx context.Context, client Syncer, st *store.Store, calI
 				// Local edit only → push it (conditional on the server ETag).
 				pushUpdate(ctx, client, st, calID, sc.Path, r, serverObj, res)
 			case serverObj.ETag != r.ETag:
-				// Server edit only → pull it.
-				pullInto(ctx, st, calID, r.Name, serverObj, res)
+				// Server edit only → pull it, but not over a concurrent local edit.
+				pullInto(ctx, st, calID, r.Name, serverObj, r, res)
 			}
 		}
 	}
@@ -351,7 +351,7 @@ func reconcileCalendar(ctx context.Context, client Syncer, st *store.Store, calI
 		if localByHref[o.Path] || tombstonedHref[o.Path] {
 			continue
 		}
-		pullInto(ctx, st, calID, resourceFileName(o.Path), o, res)
+		pullInto(ctx, st, calID, resourceFileName(o.Path), o, nil, res)
 	}
 
 	// (C) Push local deletions (tombstones) to the server.
@@ -400,7 +400,7 @@ func reconcileReadOnly(ctx context.Context, st *store.Store, calID string, serve
 				res.PulledDeletes++
 			}
 		case serverObj.ETag != r.ETag:
-			pullInto(ctx, st, calID, r.Name, serverObj, res)
+			pullInto(ctx, st, calID, r.Name, serverObj, nil, res)
 		}
 	}
 
@@ -417,7 +417,7 @@ func reconcileReadOnly(ctx context.Context, st *store.Store, calID string, serve
 		if localByHref[o.Path] {
 			continue
 		}
-		pullInto(ctx, st, calID, resourceFileName(o.Path), o, res)
+		pullInto(ctx, st, calID, resourceFileName(o.Path), o, nil, res)
 	}
 	return nil
 }
@@ -459,7 +459,7 @@ func handleDeleteForbidden(ctx context.Context, client Syncer, st *store.Store, 
 	if err == nil && !writable {
 		_ = st.SetCalendarReadOnly(ctx, calID, true)
 		if serverObj, ok := serverByHref[t.Href]; ok {
-			pullInto(ctx, st, calID, t.Name, serverObj, res)
+			pullInto(ctx, st, calID, t.Name, serverObj, nil, res)
 		}
 		_ = st.ClearTombstone(ctx, calID, t.Name)
 		res.Discarded++
@@ -493,7 +493,7 @@ func pushCreate(ctx context.Context, client Syncer, st *store.Store, calID, calP
 		recordSkip(res, calID, r.Name, err)
 		return
 	}
-	if _, err := st.PutRemote(ctx, calID, r.Name, r.Object, etag, href); err != nil {
+	if _, err := st.CommitPush(ctx, calID, r.Name, r, etag, href); err != nil {
 		recordSkip(res, calID, r.Name, err)
 		return
 	}
@@ -526,7 +526,7 @@ func pushUpdate(ctx context.Context, client Syncer, st *store.Store, calID, calP
 		recordSkip(res, calID, r.Name, err)
 		return
 	}
-	if _, err := st.PutRemote(ctx, calID, r.Name, r.Object, etag, r.Href); err != nil {
+	if _, err := st.CommitPush(ctx, calID, r.Name, r, etag, r.Href); err != nil {
 		recordSkip(res, calID, r.Name, err)
 		return
 	}
@@ -567,15 +567,23 @@ func pushDelete(ctx context.Context, client Syncer, st *store.Store, calID, calP
 }
 
 // pullInto writes a server object into the cache as a clean resource.
-func pullInto(ctx context.Context, st *store.Store, calID, name string, o caldav.Object, res *SyncResult) {
+// expectedPrev is the local snapshot the reconcile decision was based on (nil
+// for a brand-new remote resource); the write is skipped if a concurrent local
+// edit replaced it, so the edit is preserved and reconciled as a conflict next
+// sync rather than being clobbered by the pulled server version.
+func pullInto(ctx context.Context, st *store.Store, calID, name string, o caldav.Object, expectedPrev *store.Resource, res *SyncResult) {
 	parsed, err := model.Parse(o.Data, time.Local)
 	if err != nil {
 		recordSkip(res, calID, o.Path, err)
 		return
 	}
-	if _, err := st.PutRemote(ctx, calID, name, parsed, o.ETag, o.Path); err != nil {
+	applied, err := st.PullRemote(ctx, calID, name, parsed, o.ETag, o.Path, expectedPrev)
+	if err != nil {
 		recordSkip(res, calID, name, err)
 		return
+	}
+	if !applied {
+		return // a concurrent local edit landed; leave it for the next sync to reconcile
 	}
 	res.Pulled++
 }

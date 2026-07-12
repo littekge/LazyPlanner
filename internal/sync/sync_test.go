@@ -74,6 +74,7 @@ type fakeServer struct {
 	createdPath  []string
 	deletedCals  []string      // DeleteCalendar paths
 	propPatched  []propPatchOp // PROPPATCH calls
+	onPut        func()        // invoked inside PutObject to simulate a concurrent local edit mid-PUT
 }
 
 type propPatchOp struct {
@@ -187,6 +188,11 @@ func (f *fakeServer) PutObject(_ context.Context, href string, data []byte, _ st
 	f.seq++
 	etag := fmt.Sprintf("new-%d", f.seq)
 	f.data[href] = caldav.Object{Path: href, ETag: etag, Data: cal}
+	// Simulate a concurrent local edit landing while this PUT is "in flight",
+	// after the server accepted the pushed content but before the writeback.
+	if f.onPut != nil {
+		f.onPut()
+	}
 	return etag, nil
 }
 
@@ -281,6 +287,56 @@ func TestSyncPushesLocalEdit(t *testing.T) {
 	}
 	if got := srv.data[href].Data.Children[0].Props.Get("SUMMARY").Value; got != "Edited" {
 		t.Errorf("server summary = %q, want Edited", got)
+	}
+}
+
+// TestSyncPushDoesNotClobberConcurrentEdit locks Pass-3 #3: if a local edit
+// lands while a resource's PUT is in flight, the post-PUT writeback must not
+// revert the resource to the pushed (stale) snapshot and mark it clean —
+// silently losing the edit. The newer edit must survive, stay dirty, and adopt
+// the server's new ETag as its baseline so the next push is conditional on it.
+func TestSyncPushDoesNotClobberConcurrentEdit(t *testing.T) {
+	ctx := context.Background()
+	st := newStore(t)
+	srv := newFakeServer()
+
+	name := store.ResourceName("e1@test")
+	href := calPath + name
+	if _, err := st.PutRemote(ctx, "personal", name, mkParsed(t, eventICS("e1@test", "Original")), "srv-1", href); err != nil {
+		t.Fatal(err)
+	}
+	srv.data[href] = caldav.Object{Path: href, ETag: "srv-1", Data: mkICal(t, eventICS("e1@test", "Original"))}
+	// Local edit v1 — the version sync will push.
+	if _, err := st.Put(ctx, "personal", name, mkParsed(t, eventICS("e1@test", "EditV1"))); err != nil {
+		t.Fatal(err)
+	}
+	// While the PUT is in flight, the user makes a second edit (v2).
+	srv.onPut = func() {
+		srv.onPut = nil // once
+		if _, err := st.Put(ctx, "personal", name, mkParsed(t, eventICS("e1@test", "EditV2"))); err != nil {
+			t.Fatal(err)
+		}
+	}
+
+	res, err := sync.Sync(ctx, srv, st)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if res.Pushed != 1 {
+		t.Fatalf("res = %+v, want Pushed 1", res)
+	}
+	r := findRes(t, st, name)
+	if r == nil {
+		t.Fatal("resource gone after sync")
+	}
+	if got := r.Object.Events[0].Summary; got != "EditV2" {
+		t.Errorf("resource summary = %q, want EditV2 (the concurrent edit preserved, not reverted)", got)
+	}
+	if !r.Dirty {
+		t.Error("resource should stay dirty so the concurrent edit is pushed on the next sync")
+	}
+	if r.ETag != "new-1" {
+		t.Errorf("resource ETag = %q, want the server's new-1 baseline for the next conditional push", r.ETag)
 	}
 }
 
