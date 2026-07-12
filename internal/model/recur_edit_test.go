@@ -159,7 +159,7 @@ func TestAdvanceRecurringTodo(t *testing.T) {
 
 	// First advance: 07-06 → 07-13, keeping the 1h DTSTART→DUE offset, not done.
 	obj := decodeForTest(t, weeklyTodo)
-	out, done, err := AdvanceRecurringTodo(obj, "tk@t", now, time.UTC)
+	out, done, err := AdvanceRecurringTodo(obj, "tk@t", time.Time{}, now, time.UTC)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -179,7 +179,7 @@ func TestAdvanceRecurringTodo(t *testing.T) {
 		"BEGIN:VTODO\r\nUID:one@t\r\nSUMMARY:Last\r\nDTSTAMP:20260701T000000Z\r\n"+
 		"DTSTART:20260706T080000Z\r\nDUE:20260706T090000Z\r\nRRULE:FREQ=WEEKLY;COUNT=1\r\n"+
 		"END:VTODO\r\nEND:VCALENDAR\r\n")
-	out2, done2, err := AdvanceRecurringTodo(single, "one@t", now, time.UTC)
+	out2, done2, err := AdvanceRecurringTodo(single, "one@t", time.Time{}, now, time.UTC)
 	if err != nil {
 		t.Fatal(err)
 	}

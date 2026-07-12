@@ -34,9 +34,11 @@ func DayAgenda(occs []Occurrence, todos []*Todo, dayStart, dayEnd time.Time) []A
 		})
 	}
 	for _, t := range todos {
-		if t.HasDue && !t.Due.Before(dayStart) && t.Due.Before(dayEnd) {
+		// A recurring todo contributes one item per occurrence due in the day, so it
+		// shows on every occurrence's date; a non-recurring one, its single due.
+		for _, due := range t.DuesInRange(dayStart, dayEnd) {
 			items = append(items, AgendaItem{
-				Start:  t.Due,
+				Start:  due,
 				AllDay: t.DueAllDay,
 				Title:  t.Summary,
 				Todo:   t,

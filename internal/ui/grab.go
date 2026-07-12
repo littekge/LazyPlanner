@@ -21,7 +21,7 @@ const grabHourStep = time.Hour
 
 // startGrab enters grab mode on the current target. Events and dated tasks are
 // grabbable; an undated task is skipped with a hint. A recurring event first
-// prompts for scope (this occurrence / all) via the picker.
+// prompts for scope (this occurrence / this & future / all) via the picker.
 func (a *app) startGrab() {
 	t, ok := a.currentTarget()
 	if !ok {
@@ -51,10 +51,7 @@ func (a *app) startGrab() {
 		return
 	}
 	if ev.Recurring {
-		// This / All only — a this-and-future *move* would split into a second
-		// resource, which grab's single-snapshot revert can't cleanly undo; use the
-		// edit form's "This & future" for that.
-		a.pickRecurrenceScope("event", false, func(s recurScope) {
+		a.pickRecurrenceScope("event", true, func(s recurScope) {
 			a.beginGrab(loc, t, s)
 		})
 		return
@@ -64,6 +61,10 @@ func (a *app) startGrab() {
 
 // beginGrab enters grab mode on the resolved target at the given recurrence scope.
 func (a *app) beginGrab(loc store.Located, t editTarget, scope recurScope) {
+	if scope == scopeFuture && !t.isTodo {
+		a.beginGrabFuture(loc, t)
+		return
+	}
 	a.grabbing = true
 	a.grabUID = t.uid
 	a.grabIsEvent = !t.isTodo
@@ -72,6 +73,56 @@ func (a *app) beginGrab(loc store.Located, t editTarget, scope recurScope) {
 	a.grabScope = scope
 	a.grabOccStart = t.occStart
 	a.grabAllDay = t.allDay
+	a.flash(a.grabStatus())
+}
+
+// beginGrabFuture starts a this-and-future grab of a recurring event: it splits
+// the series now (cap the master at the occurrence, spawn a new series starting
+// there with the same fields), then grabs the new series so nudges move the whole
+// tail. A cancel deletes the new series and restores the master; a commit keeps
+// both as one undo step (see cancelGrab/commitGrab).
+func (a *app) beginGrabFuture(loc store.Located, t editTarget) {
+	master := findEvent(loc.Object, t.uid)
+	if master == nil {
+		a.flash("Event not found")
+		return
+	}
+	// The new series is the master's content starting at the occurrence (no field
+	// change — the move happens via the nudges that follow).
+	d := draftFromEvent(master)
+	d.Start = t.occStart
+	if dur := master.End.Sub(master.Start); dur > 0 {
+		d.End = t.occStart.Add(dur)
+	} else {
+		d.End = time.Time{}
+	}
+	capped, future, err := model.SplitEvent(loc.Object, t.uid, t.occStart, d, a.now, a.loc)
+	if err != nil {
+		a.flash(err.Error())
+		return
+	}
+	newUID := future.Events[0].UID
+	newName := store.ResourceName(newUID)
+	if _, err := a.store.Put(context.Background(), loc.CalID, loc.Name, capped); err != nil {
+		a.flash("Grab failed: " + err.Error())
+		return
+	}
+	if _, err := a.store.Put(context.Background(), loc.CalID, newName, future); err != nil {
+		a.flash("Grab failed: " + err.Error())
+		return
+	}
+	a.grabbing = true
+	a.grabIsEvent = true
+	a.grabScope = scopeFuture // nudges take the EditEvent (whole-series) path on the new series
+	a.grabOccStart = t.occStart
+	a.grabAllDay = t.allDay
+	a.grabCalID = loc.CalID
+	a.grabUID = newUID
+	a.grabName = newName
+	a.grabPrev = nil // the new series is created here; a cancel deletes it
+	a.grabSplitMaster = loc.Name
+	a.grabSplitMasterPrev = loc.Prev
+	a.focusGrabbed() // rebuild + drill onto the new series (its UID replaced the old slot)
 	a.flash(a.grabStatus())
 }
 
@@ -294,10 +345,15 @@ func (a *app) drillCalendarToUID(day time.Time, uid string) {
 	}
 }
 
-// commitGrab keeps the edits and records the pre-grab snapshot as the single undo
-// step for the whole grab.
+// commitGrab keeps the edits as one undo step. A this-and-future grab bundles two
+// ops — delete the new series (prev nil) and restore the original master — so undo
+// reverses the whole split; a normal grab records just the pre-grab snapshot.
 func (a *app) commitGrab() {
-	if a.grabPrev != nil {
+	if a.grabSplitMaster != "" {
+		a.pushUndo("grab", a.grabUID,
+			undoOp{calID: a.grabCalID, name: a.grabName, prev: nil},
+			undoOp{calID: a.grabCalID, name: a.grabSplitMaster, prev: a.grabSplitMasterPrev})
+	} else if a.grabPrev != nil {
 		a.pushUndo("grab", a.grabUID, undoOp{calID: a.grabCalID, name: a.grabName, prev: a.grabPrev})
 	}
 	a.focusGrabbed()
@@ -305,9 +361,16 @@ func (a *app) commitGrab() {
 	a.flash("Rescheduled (u to undo)")
 }
 
-// cancelGrab reverts to the pre-grab snapshot and ends grab mode.
+// cancelGrab reverts and ends grab mode. A this-and-future grab undoes the split
+// (delete the new series, restore the master); a normal grab restores the single
+// pre-grab snapshot.
 func (a *app) cancelGrab() {
-	if a.grabPrev != nil {
+	if a.grabSplitMaster != "" {
+		_ = a.store.Delete(context.Background(), a.grabCalID, a.grabName)
+		if a.grabSplitMasterPrev != nil {
+			_, _ = a.store.Restore(context.Background(), a.grabCalID, a.grabSplitMaster, a.grabSplitMasterPrev)
+		}
+	} else if a.grabPrev != nil {
 		_, _ = a.store.Restore(context.Background(), a.grabCalID, a.grabName, a.grabPrev)
 	}
 	a.focusGrabbed()
@@ -321,6 +384,9 @@ func (a *app) endGrab() {
 	a.grabPrev = nil
 	a.grabCalID = ""
 	a.grabName = ""
+	a.grabScope = scopeAll
+	a.grabSplitMaster = ""
+	a.grabSplitMasterPrev = nil
 }
 
 // draftFromEvent seeds an EventDraft from an event so a grab edit changes only the

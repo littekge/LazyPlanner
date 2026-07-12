@@ -83,16 +83,6 @@ func componentRecurrenceSet(comp *ical.Component, anchor time.Time) (*rrule.Set,
 	return set, nil
 }
 
-// nextInstantAfter returns the recurrence instant strictly after `after`, or the
-// zero time when the series has no further occurrence (COUNT/UNTIL exhausted).
-func nextInstantAfter(comp *ical.Component, anchor, after time.Time) (time.Time, error) {
-	set, err := componentRecurrenceSet(comp, anchor)
-	if err != nil {
-		return time.Time{}, err
-	}
-	return set.After(after, false), nil
-}
-
 // sameInstant compares two recurrence instants at second resolution (the
 // granularity iCal stores), so wall-clock/UTC representations of the same slot
 // match regardless of location.
@@ -373,7 +363,12 @@ func SplitEvent(obj *Parsed, uid string, occ time.Time, d EventDraft, now time.T
 // move to the next instant (keeping their offset), COUNT decrements, and when the
 // series is exhausted the todo is marked completed instead. done reports whether
 // the whole series was completed (no further occurrence).
-func AdvanceRecurringTodo(obj *Parsed, uid string, now time.Time, loc *time.Location) (result *Parsed, done bool, err error) {
+// completedOcc names the occurrence being completed (its due instant); advancing
+// skips every occurrence up to and including it. The zero time means the current
+// (earliest) occurrence — a plain Space with nothing drilled — advancing one step.
+// This lets completing a later occurrence on the calendar (all occurrences are
+// shown) mark the earlier ones passed and jump the series to the one after it.
+func AdvanceRecurringTodo(obj *Parsed, uid string, completedOcc time.Time, now time.Time, loc *time.Location) (result *Parsed, done bool, err error) {
 	if loc == nil {
 		loc = time.Local
 	}
@@ -385,21 +380,40 @@ func AdvanceRecurringTodo(obj *Parsed, uid string, now time.Time, loc *time.Loca
 	if comp == nil {
 		return nil, false, fmt.Errorf("model: no todo with UID %q", uid)
 	}
-	anchorName, anchor, allDay, ok := componentAnchor(comp, loc)
-	if !ok {
+	// Anchor recurrence on DUE when present (matching the calendar's per-occurrence
+	// display), else DTSTART.
+	anchorName := ical.PropDue
+	if comp.Props.Get(ical.PropDue) == nil {
+		anchorName = ical.PropDateTimeStart
+	}
+	anchorProp := comp.Props.Get(anchorName)
+	if anchorProp == nil {
 		return nil, false, fmt.Errorf("model: todo %q has no DTSTART/DUE to advance", uid)
 	}
+	anchor, aerr := resolveDateTime(anchorProp, loc)
+	if aerr != nil {
+		return nil, false, fmt.Errorf("model: todo %q anchor: %w", uid, aerr)
+	}
+	allDay := isDateOnly(anchorProp)
+
+	// The occurrence to advance past: the completed one, defaulting to (and never
+	// earlier than) the current anchor.
+	target := completedOcc
+	if target.IsZero() || target.Before(anchor) {
+		target = anchor
+	}
+	set, err := componentRecurrenceSet(comp, anchor)
+	if err != nil {
+		return nil, false, err
+	}
+	consumed := len(set.Between(anchor, target, true)) // occurrences [anchor, target]
+	if consumed < 1 {
+		consumed = 1
+	}
+	next := set.After(target, false) // first occurrence strictly after the completed one
 
 	roption, _ := comp.Props.RecurrenceRule()
-	exhausted := roption != nil && roption.Count == 1 // last occurrence of a COUNT series
-	var next time.Time
-	if !exhausted {
-		next, err = nextInstantAfter(comp, anchor, anchor)
-		if err != nil {
-			return nil, false, err
-		}
-		exhausted = next.IsZero()
-	}
+	exhausted := next.IsZero() || (roption != nil && roption.Count > 0 && consumed >= roption.Count)
 	if exhausted {
 		setCompleted(comp, true, now)
 		touch(comp, now)
@@ -422,8 +436,11 @@ func AdvanceRecurringTodo(obj *Parsed, uid string, now time.Time, loc *time.Loca
 		// Neither paired prop existed except the anchor we found; set it directly.
 		setDateOrTime(comp, anchorName, next, allDay)
 	}
-	if roption != nil && roption.Count > 1 {
-		roption.Count--
+	if roption != nil && roption.Count > 0 {
+		roption.Count -= consumed
+		if roption.Count < 1 {
+			roption.Count = 1
+		}
 		comp.Props.SetRecurrenceRule(roption)
 	}
 	// A rolled-forward instance is freshly not-done.

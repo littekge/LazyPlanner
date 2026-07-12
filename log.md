@@ -4,6 +4,16 @@
 
 ---
 
+## 2026-07-12 — Recurrence UX round 2: all task occurrences shown, override re-seed, grab this-and-future
+
+- Second batch of owner-requested recurrence-UX changes (caveats review, #4/#5/#8).
+- **(#4) Recurring tasks show on every occurrence's due day** (was: only the current one). New `model.Todo.DuesInRange` (`internal/model/recur_todo.go`) expands a recurring todo's occurrences anchored on DUE; `model.DayAgenda` and `dueTasksByDay` now emit one entry per occurrence in the window. Completion stays advance-on-complete but is now **occurrence-aware**: `AdvanceRecurringTodo` takes the completed occurrence and skips the series *past* it (completing the 3rd of 4 jumps to the 4th; earlier ones count as passed), decrementing COUNT by the number consumed. Threaded `occStart` through `toggleComplete`/`advanceRecurringTodo`/`deleteOccurrence`/`editTodoThisOccurrence`.
+- **(#5) Re-editing an occurrence pre-fills from its override** (`editEventScoped` scopeThis): seeds the form from the existing `RECURRENCE-ID` override (via `FindOverride`) when one exists — including its moved start — instead of always the master, so a prior per-occurrence edit isn't shown as reverted (and isn't silently overwritten on save).
+- **(#8) Grab supports this-and-future for recurring events** (`beginGrabFuture`): the picker now offers all three scopes for grab. A future grab splits the series on start (cap master + new series via `model.SplitEvent`) and grabs the new series; cancel deletes the new series and restores the master, commit bundles both as one undo step. New grab state `grabSplitMaster`/`grabSplitMasterPrev`; removed the now-unused `nextInstantAfter`.
+- Docs: `README.md`, `CLAUDE.md`, `main.md`, help overlay + grab.go comment (grab this/future/all; recurring tasks show all occurrences).
+- Tests (`internal/ui/recur_edit_test.go`, `internal/model/recur_edit_test.go`): a recurring task lands on 4 weekly days; completing the 3rd occurrence advances to the 4th; re-edit seeds from the override; grab-future splits+moves and cancel restores. Full gate passes.
+- Files: `internal/model/recur_todo.go` (new), `internal/model/recur_edit.go`, `internal/model/agenda.go`, `internal/ui/recur_edit.go`, `internal/ui/edit.go`, `internal/ui/grab.go`, `internal/ui/app.go`, `internal/ui/render.go`, `internal/ui/help.go`, tests, docs.
+
 ## 2026-07-12 — Recurrence UX refinements: obvious advance flash, detach confirm, COUNT-preserving split
 
 - Owner-requested refinements to step 11's recurring-item UX (from a caveats review).

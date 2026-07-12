@@ -118,26 +118,31 @@ type app struct {
 	grabPrev    *store.Resource
 	// Recurrence scope of the current grab (scopeAll for a non-recurring item or a
 	// whole-series grab; scopeThis edits just grabOccStart's RECURRENCE-ID override).
-	grabScope       recurScope
-	grabOccStart    time.Time
-	grabAllDay      bool
-	mode            int
-	viewMode        int
-	anchor          time.Time
-	weekStartMonday bool
-	clock24         bool // time_format: 24h clock when true
-	dateISO         bool // date_format: ISO (2006-01-02) when true, else US
-	showCompleted   bool
-	tasklistIDs     []string            // calendar ids parallel to the tasklists panel
-	calColors       map[string]calColor // calendar id → resolved server color; mappable only
-	itemColors      map[string]calColor // event/todo UID → its calendar's color
-	colorMode       colorMode           // how server colors are rendered (auto/16/off)
-	folders         map[string]bool     // task UIDs that are folders (≥1 incomplete child); global, for tree + calendar + agenda markers
-	treeListID      string              // calendar id the tree currently shows (to detect list changes)
-	zoomUID         string              // task UID the tree is re-rooted at (> zoom-in / < zoom-out); "" = list root
-	suspendTree     bool                // ignore tasklist change events while the panel is rebuilt
-	stickyDone      map[string]bool     // tasks completed while hidden, kept visible until the list is left
-	focusStack      []focusState        // pre-modal focus states, one per open modal (supports nesting, e.g. a color picker over the calendar form)
+	grabScope    recurScope
+	grabOccStart time.Time
+	grabAllDay   bool
+	// A this-and-future grab splits the series on start: grabName/grabUID track the
+	// new future series (the grabbed one) and grabSplitMaster/Prev the capped master,
+	// so a cancel can delete the new series and restore the master.
+	grabSplitMaster     string
+	grabSplitMasterPrev *store.Resource
+	mode                int
+	viewMode            int
+	anchor              time.Time
+	weekStartMonday     bool
+	clock24             bool // time_format: 24h clock when true
+	dateISO             bool // date_format: ISO (2006-01-02) when true, else US
+	showCompleted       bool
+	tasklistIDs         []string            // calendar ids parallel to the tasklists panel
+	calColors           map[string]calColor // calendar id → resolved server color; mappable only
+	itemColors          map[string]calColor // event/todo UID → its calendar's color
+	colorMode           colorMode           // how server colors are rendered (auto/16/off)
+	folders             map[string]bool     // task UIDs that are folders (≥1 incomplete child); global, for tree + calendar + agenda markers
+	treeListID          string              // calendar id the tree currently shows (to detect list changes)
+	zoomUID             string              // task UID the tree is re-rooted at (> zoom-in / < zoom-out); "" = list root
+	suspendTree         bool                // ignore tasklist change events while the panel is rebuilt
+	stickyDone          map[string]bool     // tasks completed while hidden, kept visible until the list is left
+	focusStack          []focusState        // pre-modal focus states, one per open modal (supports nesting, e.g. a color picker over the calendar form)
 
 	// ctx is cancelled on shutdown so an in-flight background sync unwinds cleanly
 	// at its next ctx checkpoint (the sync/caldav stack honors it) rather than

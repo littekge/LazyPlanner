@@ -6,6 +6,8 @@ import (
 	"testing"
 	"time"
 
+	"github.com/rivo/tview"
+
 	"github.com/littekge/LazyPlanner/internal/model"
 	"github.com/littekge/LazyPlanner/internal/store"
 )
@@ -97,7 +99,7 @@ func TestEditTodoThisOccurrenceConfirms(t *testing.T) {
 	a.reload()
 
 	loc, _ := a.store.Locate(uid)
-	a.editTodoThisOccurrence(loc, uid)
+	a.editTodoThisOccurrence(loc, uid, time.Date(2026, 7, 6, 9, 0, 0, 0, time.UTC))
 	if !a.root.HasPage(pageConfirm) {
 		t.Error("editing this occurrence of a recurring todo should confirm the detach first")
 	}
@@ -181,5 +183,185 @@ func TestEditRecurringShowsScopePicker(t *testing.T) {
 	a.editRecurring(loc, editTarget{uid: uid, occStart: time.Date(2026, 7, 6, 9, 0, 0, 0, time.UTC), recurring: true})
 	if !a.root.HasPage(pageConfirm) {
 		t.Error("editing a recurring event should open the scope picker")
+	}
+}
+
+// TestEditOccurrenceReseedsFromOverride locks #5: re-editing an occurrence that
+// already has an override pre-fills the form from the override, not the master.
+func TestEditOccurrenceReseedsFromOverride(t *testing.T) {
+	when := time.Date(2026, 7, 6, 12, 0, 0, 0, time.UTC)
+	a := newRootedTestApp(t, when)
+	if err := a.store.CreateCalendarLocal(context.Background(), "ev", store.CalendarMeta{DisplayName: "EV"}, []string{"VEVENT"}); err != nil {
+		t.Fatal(err)
+	}
+	uid := putRecurringEvent(t, a, "ev", "Standup", time.Date(2026, 7, 6, 9, 0, 0, 0, time.UTC), "FREQ=WEEKLY;COUNT=4")
+	a.reload()
+	occ := time.Date(2026, 7, 13, 9, 0, 0, 0, time.UTC)
+
+	// Create an override renaming this occurrence to "Overridden".
+	loc, _ := a.store.Locate(uid)
+	obj, err := model.EditEventOccurrence(loc.Object, uid, occ, false,
+		model.EventDraft{Summary: "Overridden", Start: occ, End: occ.Add(time.Hour)}, a.now, a.loc)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := a.store.Put(context.Background(), loc.CalID, loc.Name, obj); err != nil {
+		t.Fatal(err)
+	}
+
+	// Re-edit this occurrence: the form's summary field must show the override's value.
+	loc2, _ := a.store.Locate(uid)
+	a.mode = modeCalendar
+	a.editEventScoped(loc2, editTarget{uid: uid, occStart: occ, recurring: true}, scopeThis)
+	in, ok := a.tv.GetFocus().(*tview.InputField)
+	if !ok {
+		t.Fatalf("focused primitive is %T, want the form's summary field", a.tv.GetFocus())
+	}
+	if in.GetText() != "Overridden" {
+		t.Errorf("re-edit form seeded summary %q, want %q (from the existing override)", in.GetText(), "Overridden")
+	}
+}
+
+// masterOccurrenceCount expands the series carrying uid and returns how many
+// instances it yields in a wide window.
+func masterOccurrenceCount(t *testing.T, a *app, uid string) int {
+	t.Helper()
+	loc, ok := a.store.Locate(uid)
+	if !ok {
+		return 0
+	}
+	occs, err := loc.Object.EventOccurrences(time.Date(2026, 1, 1, 0, 0, 0, 0, time.UTC), time.Date(2027, 1, 1, 0, 0, 0, 0, time.UTC))
+	if err != nil {
+		t.Fatal(err)
+	}
+	return len(occs)
+}
+
+// grabFutureSetup puts a 4-week series, drills into the 3rd instance, and returns
+// the app, the original UID, and the occurrence instant.
+func grabFutureSetup(t *testing.T) (*app, string, time.Time) {
+	t.Helper()
+	when := time.Date(2026, 7, 6, 12, 0, 0, 0, time.UTC)
+	a := newRootedTestApp(t, when)
+	if err := a.store.CreateCalendarLocal(context.Background(), "ev", store.CalendarMeta{DisplayName: "EV"}, []string{"VEVENT"}); err != nil {
+		t.Fatal(err)
+	}
+	uid := putRecurringEvent(t, a, "ev", "Standup", time.Date(2026, 7, 6, 9, 0, 0, 0, time.UTC), "FREQ=WEEKLY;COUNT=4")
+	a.reload()
+	a.mode = modeCalendar
+	a.viewMode = viewWeek
+	occ := time.Date(2026, 7, 20, 9, 0, 0, 0, time.UTC) // 3rd instance
+	a.anchor = model.DayStart(occ)
+	return a, uid, occ
+}
+
+// TestGrabFutureSplitsAndMoves locks #8: a this-and-future grab splits the series
+// (capped master keeps the past instances, a new series holds the future ones) and
+// commits both as one undo step.
+func TestGrabFutureSplitsAndMoves(t *testing.T) {
+	a, uid, occ := grabFutureSetup(t)
+	loc, _ := a.store.Locate(uid)
+
+	a.beginGrab(loc, editTarget{uid: uid, occStart: occ, recurring: true}, scopeFuture)
+
+	// The original master is capped to the 2 past instances (07-06, 07-13).
+	if n := masterOccurrenceCount(t, a, uid); n != 2 {
+		t.Fatalf("capped master has %d occurrences, want 2", n)
+	}
+	// A new series was grabbed, starting at the occurrence.
+	newUID := a.grabUID
+	if newUID == uid || newUID == "" {
+		t.Fatalf("grab target UID = %q, want a fresh series UID", newUID)
+	}
+	newLoc, ok := a.store.Locate(newUID)
+	if !ok {
+		t.Fatal("new future series not found in the store")
+	}
+	newOccs, _ := newLoc.Object.EventOccurrences(time.Date(2026, 1, 1, 0, 0, 0, 0, time.UTC), time.Date(2027, 1, 1, 0, 0, 0, 0, time.UTC))
+	if len(newOccs) != 2 || !newOccs[0].Start.UTC().Equal(occ) {
+		t.Fatalf("new series occurrences = %d starting %v, want 2 starting %v", len(newOccs), newOccs[0].Start.UTC(), occ)
+	}
+
+	// Move the new series +1 day and keep it.
+	a.grabNudge('l')
+	a.commitGrab()
+	moved, _ := a.store.Locate(newUID)
+	mo, _ := moved.Object.EventOccurrences(time.Date(2026, 1, 1, 0, 0, 0, 0, time.UTC), time.Date(2027, 1, 1, 0, 0, 0, 0, time.UTC))
+	if !mo[0].Start.UTC().Equal(occ.AddDate(0, 0, 1)) {
+		t.Errorf("moved new series first start = %v, want %v (+1 day)", mo[0].Start.UTC(), occ.AddDate(0, 0, 1))
+	}
+}
+
+// TestGrabFutureCancelRestores locks #8's revert: cancelling a this-and-future
+// grab deletes the new series and restores the original (uncapped) master.
+func TestGrabFutureCancelRestores(t *testing.T) {
+	a, uid, occ := grabFutureSetup(t)
+	loc, _ := a.store.Locate(uid)
+
+	a.beginGrab(loc, editTarget{uid: uid, occStart: occ, recurring: true}, scopeFuture)
+	newUID := a.grabUID
+	a.grabNudge('l')
+	a.cancelGrab()
+
+	// The new series is gone and the original master is back to all 4 occurrences.
+	if _, ok := a.store.Locate(newUID); ok {
+		t.Error("cancel should have deleted the new future series")
+	}
+	if n := masterOccurrenceCount(t, a, uid); n != 4 {
+		t.Errorf("after cancel the master has %d occurrences, want 4 (restored)", n)
+	}
+}
+
+// TestRecurringTodoShowsAllOccurrences locks #4: a recurring task appears on every
+// occurrence's due day on the calendar (not just its current one).
+func TestRecurringTodoShowsAllOccurrences(t *testing.T) {
+	when := time.Date(2026, 7, 6, 12, 0, 0, 0, time.UTC)
+	a := newRootedTestApp(t, when)
+	if err := a.store.CreateCalendarLocal(context.Background(), "tl", store.CalendarMeta{DisplayName: "TL"}, []string{"VTODO"}); err != nil {
+		t.Fatal(err)
+	}
+	uid := putRecurringTodo(t, a, "tl", "Water", time.Date(2026, 7, 6, 9, 0, 0, 0, time.UTC), "FREQ=WEEKLY;COUNT=4")
+	a.reload()
+
+	// Count the days in July the task is bucketed onto in the time-grid builder.
+	days := make([]time.Time, 0, 28)
+	for i := 0; i < 28; i++ {
+		days = append(days, model.DayStart(time.Date(2026, 7, 6, 0, 0, 0, 0, time.Local)).AddDate(0, 0, i))
+	}
+	buckets := a.dueTasksByDay(days)
+	count := 0
+	for _, td := range buckets {
+		for _, x := range td {
+			if x.UID == uid {
+				count++
+			}
+		}
+	}
+	if count != 4 {
+		t.Errorf("recurring task appears on %d days, want 4 (one per weekly occurrence)", count)
+	}
+}
+
+// TestCompleteLaterOccurrenceAdvancesPast locks #4's completion: completing a later
+// occurrence advances the series to the one after it (earlier ones are passed).
+func TestCompleteLaterOccurrenceAdvancesPast(t *testing.T) {
+	when := time.Date(2026, 7, 6, 12, 0, 0, 0, time.UTC)
+	a := newRootedTestApp(t, when)
+	if err := a.store.CreateCalendarLocal(context.Background(), "tl", store.CalendarMeta{DisplayName: "TL"}, []string{"VTODO"}); err != nil {
+		t.Fatal(err)
+	}
+	uid := putRecurringTodo(t, a, "tl", "Water", time.Date(2026, 7, 6, 9, 0, 0, 0, time.UTC), "FREQ=WEEKLY;COUNT=4")
+	a.reload()
+
+	// Complete the 3rd occurrence (07-20): the series should jump to the 4th (07-27).
+	loc, _ := a.store.Locate(uid)
+	a.advanceRecurringTodo(loc, uid, time.Date(2026, 7, 20, 9, 0, 0, 0, time.UTC))
+
+	td := todoDue(t, a, uid)
+	if td.Completed() {
+		t.Fatal("completing the 3rd of 4 occurrences should not finish the series")
+	}
+	if !td.Due.UTC().Equal(time.Date(2026, 7, 27, 9, 0, 0, 0, time.UTC)) {
+		t.Errorf("DUE after completing the 3rd occurrence = %s, want 2026-07-27 09:00Z (advanced past)", td.Due.UTC())
 	}
 }

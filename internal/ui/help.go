@@ -45,7 +45,7 @@ var helpSections = []struct {
 		{"> / <", "zoom into / out of the selected task's subtree"},
 		{"y / Y", "cut / copy a task (with its subtree) to the clipboard"},
 		{"p / P", "paste under the selected task / at the list top level (clipboard persists)"},
-		{"m", "grab: move an event (hjkl day/hour, J/K resize) or nudge a task's due date — Enter keep, Esc cancel; a recurring event prompts this/all"},
+		{"m", "grab: move an event (hjkl day/hour, J/K resize) or nudge a task's due date — Enter keep, Esc cancel; a recurring event prompts this / this & future / all"},
 		{"Space on recurring task", "advances to its next occurrence (completes the last one)"},
 		{"z R / z M / z a", "fold — expand all / collapse all / toggle"},
 		{"u", "undo last local change"},

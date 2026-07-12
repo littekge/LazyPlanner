@@ -202,14 +202,15 @@ func (a *app) dueTasksByDay(days []time.Time) map[string][]*model.Todo {
 	start := days[0]
 	end := days[len(days)-1].AddDate(0, 0, 1)
 	for _, t := range a.store.TodosVisible(a.hidden) {
-		if !t.HasDue || !a.completedVisible(t) {
+		if !a.completedVisible(t) {
 			continue
 		}
-		day := model.DayStart(t.Due.In(time.Local))
-		if day.Before(start) || !day.Before(end) {
-			continue
+		// A recurring task lands on every occurrence's due day in the window (each
+		// occurrence shares the same time-of-day, so the time-grid row is correct).
+		for _, due := range t.DuesInRange(start, end) {
+			day := model.DayStart(due.In(time.Local))
+			m[dayKey(day)] = append(m[dayKey(day)], t)
 		}
-		m[dayKey(day)] = append(m[dayKey(day)], t)
 	}
 	return m
 }
