@@ -97,25 +97,25 @@ type app struct {
 	detailOn bool
 	undo     []undoStep // session undo stack (most recent last)
 
-	pendingPrefix   rune // active chord prefix (e.g. 'i'); 0 when none
-	pendingForce    bool // '!' armed after the create prefix (i!… force)
-	forceCreate     bool // set for the duration of a forced create action
-	pendingCount    int  // accumulated vim count (e.g. 3 in "3j"); 0 when none
-	searchQuery     string
-	searchIdx       int    // which match n/N is currently on
-	searchRestore   func() // restores the pre-search selection on cancel
-	yankUID         string // task on the yank/copy clipboard (y cut / Y copy); "" when empty
-	yankCut         bool   // clipboard mode: true = cut (move), false = copy (duplicate)
+	pendingPrefix rune // active chord prefix (e.g. 'i'); 0 when none
+	pendingForce  bool // '!' armed after the create prefix (i!… force)
+	forceCreate   bool // set for the duration of a forced create action
+	pendingCount  int  // accumulated vim count (e.g. 3 in "3j"); 0 when none
+	searchQuery   string
+	searchIdx     int    // which match n/N is currently on
+	searchRestore func() // restores the pre-search selection on cancel
+	yankUID       string // task on the yank/copy clipboard (y cut / Y copy); "" when empty
+	yankCut       bool   // clipboard mode: true = cut (move), false = copy (duplicate)
 
 	// Grab mode (m): temporal manipulation of the current item — move an event's
 	// day/hour or resize it, or nudge a task's due date. Modal; hjkl edit, Enter
 	// keeps, Esc reverts to grabPrev (the pre-grab snapshot).
-	grabbing    bool
-	grabUID     string
-	grabIsEvent bool
-	grabCalID   string
-	grabName    string
-	grabPrev    *store.Resource
+	grabbing        bool
+	grabUID         string
+	grabIsEvent     bool
+	grabCalID       string
+	grabName        string
+	grabPrev        *store.Resource
 	mode            int
 	viewMode        int
 	anchor          time.Time
