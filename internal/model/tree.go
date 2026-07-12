@@ -30,16 +30,32 @@ func BuildTree(todos []*Todo, includeCompleted bool) []*TodoNode {
 		}
 	}
 
+	// Key nodes by UID for parent resolution; first occurrence of a UID wins.
+	// UID-less todos (malformed — RFC 5545 requires UID) are not keyed here: they
+	// can't be a parent or child and must not collide on a shared "" slot.
 	nodes := make(map[string]*TodoNode, len(filtered))
 	for _, t := range filtered {
-		// First occurrence of a UID wins; duplicates are ignored.
-		if _, ok := nodes[t.UID]; !ok || t.UID == "" {
+		if t.UID == "" {
+			continue
+		}
+		if _, ok := nodes[t.UID]; !ok {
 			nodes[t.UID] = &TodoNode{Todo: t}
 		}
 	}
 
+	placed := make(map[string]bool, len(nodes))
 	var roots []*TodoNode
 	for _, t := range filtered {
+		if t.UID == "" {
+			// Each UID-less todo stands alone as its own root, so all of them
+			// surface exactly once instead of aliasing (and overwriting) one node.
+			roots = append(roots, &TodoNode{Todo: t})
+			continue
+		}
+		if placed[t.UID] {
+			continue // a duplicate UID: its node was already placed by the first occurrence
+		}
+		placed[t.UID] = true
 		n := nodes[t.UID]
 		parent, ok := nodes[t.ParentUID]
 		if ok && t.ParentUID != "" && t.ParentUID != t.UID && !descends(parent, n) {

@@ -80,6 +80,44 @@ func TestBuildTreeCycleWithExtraChild(t *testing.T) {
 	}
 }
 
+// TestBuildTreeEmptyUIDsDontCollapse guards Pass-3 #7: multiple UID-less todos
+// (malformed data) must each surface once, not alias a single "" map slot where
+// only the last survives and gets duplicated.
+func TestBuildTreeEmptyUIDsDontCollapse(t *testing.T) {
+	todos := []*model.Todo{
+		{UID: "", Summary: "No-UID A"},
+		{UID: "", Summary: "No-UID B"},
+		{UID: "keyed", Summary: "Keyed"},
+	}
+	roots := model.BuildTree(todos, true)
+	if len(roots) != 3 {
+		t.Fatalf("roots = %d, want 3 (both UID-less todos + the keyed one)", len(roots))
+	}
+	got := map[string]int{}
+	for _, r := range roots {
+		got[r.Todo.Summary]++
+	}
+	for _, want := range []string{"No-UID A", "No-UID B", "Keyed"} {
+		if got[want] != 1 {
+			t.Errorf("summary %q appeared %d times, want exactly 1", want, got[want])
+		}
+	}
+}
+
+// TestBuildTreeDuplicateUIDPlacedOnce guards that a duplicate non-empty UID
+// (same UID in two resources) places its node exactly once instead of appending
+// the first occurrence's node twice.
+func TestBuildTreeDuplicateUIDPlacedOnce(t *testing.T) {
+	todos := []*model.Todo{
+		{UID: "dup", Summary: "First"},
+		{UID: "dup", Summary: "Second (ignored)"},
+	}
+	roots := model.BuildTree(todos, true)
+	if len(roots) != 1 {
+		t.Fatalf("roots = %d, want 1 (duplicate UID placed once)", len(roots))
+	}
+}
+
 func TestSortTodos(t *testing.T) {
 	day1 := time.Date(2026, 7, 4, 9, 0, 0, 0, time.UTC)
 	day2 := time.Date(2026, 7, 5, 9, 0, 0, 0, time.UTC)

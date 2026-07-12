@@ -4,6 +4,13 @@
 
 ---
 
+## 2026-07-12 — Hardening pass 3 (#7): UID-less todos no longer collapse in the tree
+
+- **Bug:** `BuildTree` keyed nodes by `Todo.UID`. A VTODO with no UID (malformed — UID is RFC 5545-required but nothing enforces it on read) hashed to the shared `""` slot: every UID-less todo overwrote `nodes[""]`, so only the **last** survived the map, and the roots loop then resolved each UID-less todo to that same node and appended it repeatedly — some tasks vanished, one duplicated. (A duplicate *non-empty* UID had a milder version of the same double-append.)
+- **Fix:** UID-less todos are no longer keyed in the map; each gets its own standalone root node so all surface exactly once. A `placed` set ensures a duplicate non-empty UID places its node once.
+- Tests (`internal/model/tree_test.go`): two UID-less todos + a keyed one produce three distinct roots (each once); a duplicate UID places one node.
+- Files: `internal/model/tree.go`, `internal/model/tree_test.go`. Full gate passes.
+
 ## 2026-07-12 — Hardening pass 3 (#6): beginGrabFuture rolls back a half-completed split
 
 - **Bug:** a this-and-future grab writes the split as two `store.Put`s — cap the master, then write the new future series. If the **first** succeeded and the **second** failed, `beginGrabFuture` flashed an error and returned with the master already capped (tail occurrences dropped), the future series never written, `grabbing` still false (so `cancelGrab`'s two-resource revert could never run), and no undo step pushed — the later occurrences were lost with no in-session recovery.
