@@ -4,6 +4,17 @@
 
 ---
 
+## 2026-07-12 — Live CalDAV integration tests (opt-in, real server)
+
+- Added `internal/sync/live_test.go` behind a `//go:build live` tag (excluded from the normal build/gate). It reads the configured account via `config.Load` (no secret on the command line) and operates only inside a throwaway calendar it creates and deletes via `t.Cleanup` — never touching a pre-existing calendar.
+- Verified **live against the owner's NextCloud test account** (`test_user@cloud.litteken-server.com`), all passing, throwaway calendars cleaned up:
+  - `TestLiveDiscover` — discovery walk + the three side-channel PROPFINDs: colors (truecolor hex), CTags (all present), and privileges (the `contact_birthdays` calendar correctly detected read-only); component-set parsing (VEVENT vs VTODO).
+  - `TestLiveRoundTrip` — full two-way sync: local create → push → confirmed on server; edit → push → confirmed; the **CTag incremental short-circuit** engaging on an idle repeat sync; delete → push → confirmed gone.
+  - `TestLiveCalendarProps` — a calendar rename + recolor `PROPPATCH` round-trip, confirmed by re-discovery (server-authoritative name/color).
+  - `TestLiveConflict` — a resource edited both locally and directly on the server syncs to a recorded keep-both conflict (server version stashed, not flagged deleted, no silent overwrite).
+- Documented the opt-in suite in the README Development section. The normal `make check` gate is unaffected (build-tag excluded; staticcheck/vet clean).
+- Files: `internal/sync/live_test.go` (new), `README.md`.
+
 ## 2026-07-12 — Hardening pass 3: concurrent sync-vs-edits stress test (-race)
 
 - Added `TestConcurrentSyncAndEditsRace` (`internal/sync/sync_test.go`): the real scenario the compare-and-set writeback (#3) guards — a background goroutine looping `sync.Sync` while 4 goroutines hammer `store.Put` on the same resources (1000 edits/run). Previous #3 test only *simulated* the interleaving synchronously; this drives genuine goroutine concurrency so `-race` has something to inspect.

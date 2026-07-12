@@ -187,6 +187,16 @@ Set `color_mode = "16"` in the config if the Pi console is a bare framebuffer TT
 - [`CLAUDE.md`](CLAUDE.md) — project rules and coding standards
 - [`log.md`](log.md) — the change log; every change gets an entry
 
+`make check` runs the offline suite. A separate **opt-in live suite** exercises
+the full CalDAV round-trip against a real server and is excluded from the normal
+build behind a `live` build tag. It reads the configured account from
+`~/.config/lazyplanner/config.toml` and operates only inside a throwaway
+calendar it creates and deletes — **point it at a test account**:
+
+```sh
+go test -tags live -run TestLive ./internal/sync/ -v
+```
+
 ## License
 
 [MIT](LICENSE)
