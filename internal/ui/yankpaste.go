@@ -46,11 +46,12 @@ func (a *app) copyTask() { a.setClip(false) } // Y: copy (duplicate)
 // pasteUnderSelection (p) pastes under the highlighted task; pasteAtTop (P)
 // pastes at the list's top level.
 func (a *app) pasteUnderSelection() {
+	// Resolve the parent via currentTarget (the same "selected task" every other
+	// action uses) rather than reading the tree node directly, so this stays correct
+	// if paste is ever allowed outside the tree. paste() still gates to Tasks mode.
 	targetParent := ""
-	if node := a.tree.GetCurrentNode(); node != nil {
-		if tt, ok := node.GetReference().(*model.Todo); ok {
-			targetParent = tt.UID
-		}
+	if t, ok := a.currentTarget(); ok && t.isTodo {
+		targetParent = t.uid
 	}
 	a.paste(targetParent)
 }

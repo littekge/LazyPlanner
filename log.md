@@ -4,6 +4,13 @@
 
 ---
 
+## 2026-07-12 — Cross-view consistency F6: paste target via currentTarget
+
+- Drift-prevention refactor (no behavior change). `pasteUnderSelection` read `a.tree.GetCurrentNode()` directly to find the paste parent, while every other action resolves the selection via `currentTarget()`. It now uses `currentTarget()` (identical in Tasks mode, where the tree node is what currentTarget returns) so paste can't silently read a stale tree selection if it's ever ungated from Tasks-only. `paste()` still gates to Tasks mode.
+- (F5 was effectively resolved by M3: `editSelected` and `deleteContextual` now both lead with `GetFocus()` for the overview panes. The one remaining divergence — `e` edits the highlighted calendar from a focused-but-undrilled grid, with no `d` equivalent — is an intentional convenience, documented in `editSelected`.)
+- Existing yank/paste tests cover the unchanged tree behavior. Full gate passes.
+- Files: `internal/ui/yankpaste.go`.
+
 ## 2026-07-12 — Cross-view consistency F4: unify the drilled-item read via calGrid
 
 - Drift-prevention refactor (no behavior change). `currentTarget` read the month drill inline (`a.month.selectedItems()` + `eventIndex`) but the week/day drill via `a.timegrid.selectedItem()` — two hand-synced shapes for "the drilled item," despite the `calGrid` interface already unifying `drillState`/`reDrill`. Added `selectedItem() *model.AgendaItem` to `calGrid`, implemented it on `calendarView` (mirroring the existing `timeGridView` method), and collapsed `currentTarget`'s calendar branch to `a.calendarPrimitive().(calGrid).selectedItem()`.
