@@ -4,6 +4,14 @@
 
 ---
 
+## 2026-07-12 — Cross-view consistency H3: quick-set (sp/sd) works in any view
+
+- Audit fix 3 of N. The `s` quick-set chord (`sp` priority, `sd` due) was hard-gated to the Tasks view (`app.go` `case 's'` flashed "set: Tasks view only" everywhere else), even though a task drilled into in the calendar or selected in the agenda can already be completed (`Space`), edited (`e`), deleted (`d`), and grab-nudged (`m`) — all via `currentTarget()`, the same resolver `setPriorityPrompt`/`setDuePrompt` use through `quickTaskTarget()`. Only the one-line dispatch gate made it tree-only; the handlers were already view-agnostic. Especially odd: `sd` (set due) was blocked while `m` (grab, which also changes due) was allowed.
+- **Fix** (`internal/ui/app.go`): `case 's'` now unconditionally enters the set prefix. `quickTaskTarget` already flashes "Select a task first" when no task is selected, so no mode gate is needed. `z`/fold stays Tasks-only (folds are genuinely tree-specific) — deliberately not changed.
+- Docs (`README.md`): noted `sp`/`sd` act on the selected task in any view, parallel to the existing `Space` note.
+- Tests (`internal/ui/quickset_crossview_test.go`, new): pressing `s` in calendar mode now enters the set prefix (was refused), and `quickTaskTarget` resolves a task drilled into in the month grid. Full gate passes.
+- Files: `internal/ui/app.go`, `README.md`, `internal/ui/quickset_crossview_test.go`.
+
 ## 2026-07-12 — Cross-view consistency H2: `.` hide-completed now applies to calendar + agenda
 
 - Audit fix 2 of N (with its coupled F-sticky). The `.` show/hide-completed toggle was honored only in the task tree; the month grid, week/day time-grid, and agenda always showed completed due tasks (`[■]`) regardless. `showCompleted` was consulted only in the tree build — the calendar/agenda data builders never filtered it (a comment in `dueTasksByDay` even documented the divergence as intentional).

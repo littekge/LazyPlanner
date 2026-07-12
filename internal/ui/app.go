@@ -657,11 +657,11 @@ func (a *app) globalKeys(ev *tcell.EventKey) *tcell.EventKey {
 			}
 			return nil
 		case 's':
-			if a.mode == modeTasks {
-				a.startPrefix('s')
-			} else {
-				a.flash("set: Tasks view only")
-			}
+			// Quick-set works wherever a task is selected — the tree, the agenda, or a
+			// task drilled into in the calendar — matching Space/e/d/m, which all resolve
+			// the target via currentTarget(). setPriorityPrompt/setDuePrompt flash
+			// "Select a task first" when no task is selected, so no mode gate is needed.
+			a.startPrefix('s')
 			return nil
 		case 'y':
 			a.yankTask()
