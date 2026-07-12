@@ -114,17 +114,18 @@ func runTUI() error {
 
 	title := fmt.Sprintf("%s %s", appName, appVersion)
 	return ui.Run(ui.Options{
-		Store:          s,
-		Title:          title,
-		Sync:           syncFn,
-		LeftWidth:      uiState.LeftWidth,
-		Hidden:         uiState.HiddenCalendars,
-		RowsPerHour:    uiState.RowsPerHour,
-		ColorMode:      cfg.Appearance.ColorMode,
-		FirstDayOfWeek: cfg.Appearance.FirstDayOfWeek,
-		DefaultView:    cfg.Appearance.DefaultView,
-		TimeFormat:     cfg.Appearance.TimeFormat,
-		DateFormat:     cfg.Appearance.DateFormat,
+		Store:               s,
+		Title:               title,
+		Sync:                syncFn,
+		SyncIntervalMinutes: cfg.Behavior.SyncIntervalMinutes,
+		LeftWidth:           uiState.LeftWidth,
+		Hidden:              uiState.HiddenCalendars,
+		RowsPerHour:         uiState.RowsPerHour,
+		ColorMode:           cfg.Appearance.ColorMode,
+		FirstDayOfWeek:      cfg.Appearance.FirstDayOfWeek,
+		DefaultView:         cfg.Appearance.DefaultView,
+		TimeFormat:          cfg.Appearance.TimeFormat,
+		DateFormat:          cfg.Appearance.DateFormat,
 		SaveState: func(leftWidth int, hidden []string, rowsPerHour int) {
 			_ = state.Save(statePath, state.State{LeftWidth: leftWidth, HiddenCalendars: hidden, RowsPerHour: rowsPerHour})
 		},

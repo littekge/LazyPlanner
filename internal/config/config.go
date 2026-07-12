@@ -67,8 +67,7 @@ type Appearance struct {
 // Behavior controls non-visual behavior.
 type Behavior struct {
 	// SyncIntervalMinutes is the periodic background-sync interval; 0 disables
-	// it. Default 15. (Periodic sync itself is wired in a later build step; the
-	// value is read now so the config schema is stable.)
+	// it. Default 15.
 	SyncIntervalMinutes int `toml:"sync_interval_minutes"`
 }
 

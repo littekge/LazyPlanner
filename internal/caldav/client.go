@@ -58,6 +58,11 @@ type Calendar struct {
 	// collection (e.g. NextCloud's generated "Contact Birthdays" calendar, or a
 	// share mounted read-only). LazyPlanner never writes to such calendars.
 	ReadOnly bool
+	// CTag is the collection's getctag (CalendarServer extension): an opaque token
+	// that changes whenever the collection's contents change. "" when the server
+	// doesn't support it. Sync compares it to the last-synced CTag to skip a full
+	// download of an unchanged calendar.
+	CTag string
 }
 
 // Object is a downloaded calendar resource with its server identity. Data is
@@ -129,6 +134,10 @@ func (c *Client) DiscoverCalendars(ctx context.Context) ([]Calendar, error) {
 	// Best-effort color discovery: go-webdav doesn't surface calendar-color, and a
 	// failed query must not break discovery — color is cosmetic.
 	colors, _ := c.discoverColors(ctx, homeSet)
+	// Best-effort CTag discovery for the incremental-sync short-circuit; a failed
+	// or unsupported query just leaves CTags empty, so sync falls back to a full
+	// download (correct, just not optimized).
+	ctags, _ := c.discoverCTags(ctx, homeSet)
 
 	cals := make([]Calendar, 0, len(davCals))
 	for _, dc := range davCals {
@@ -146,6 +155,7 @@ func (c *Client) DiscoverCalendars(ctx context.Context) ([]Calendar, error) {
 			SupportedComponentSet: dc.SupportedComponentSet,
 			ReadOnly:              readOnly,
 			Color:                 colors[key],
+			CTag:                  ctags[key],
 		})
 	}
 	return cals, nil

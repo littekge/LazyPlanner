@@ -121,6 +121,62 @@ func (s *Store) MarkCalendarSynced(ctx context.Context, id, href string) error {
 // SetCalendarReadOnly records the server's read-only status for a calendar
 // (whether the user has write privilege). It is a no-op if the value is
 // unchanged, so a routine sync doesn't rewrite the sidecar needlessly.
+// CalendarCTag returns the collection CTag recorded at calID's last successful
+// sync (empty when never synced or unknown) — the incremental-sync short-circuit
+// compares it to the server's current CTag.
+func (s *Store) CalendarCTag(calID string) string {
+	s.mu.RLock()
+	defer s.mu.RUnlock()
+	if cs := s.cals[calID]; cs != nil {
+		return cs.ctag
+	}
+	return ""
+}
+
+// SetCalendarCTag records the collection CTag observed at a successful sync, so a
+// later sync can skip the full download when the CTag is unchanged.
+func (s *Store) SetCalendarCTag(ctx context.Context, calID, ctag string) error {
+	if err := ctx.Err(); err != nil {
+		return err
+	}
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	cs := s.cals[calID]
+	if cs == nil {
+		return fmt.Errorf("store: unknown calendar %q", calID)
+	}
+	if cs.ctag == ctag {
+		return nil
+	}
+	cs.ctag = ctag
+	if err := writeSidecar(s.root, cs); err != nil {
+		return fmt.Errorf("updating sidecar for %q: %w", calID, err)
+	}
+	return nil
+}
+
+// HasLocalChanges reports whether calID has any unsynced local change — a new or
+// locally-edited resource, or a pending deletion. Paired with the CTag
+// short-circuit: an unchanged server CTag lets sync skip a calendar only when
+// there is also nothing local to push.
+func (s *Store) HasLocalChanges(calID string) bool {
+	s.mu.RLock()
+	defer s.mu.RUnlock()
+	cs := s.cals[calID]
+	if cs == nil {
+		return false
+	}
+	if len(cs.tombstones) > 0 {
+		return true
+	}
+	for _, r := range cs.resources {
+		if r.Dirty || r.Href == "" {
+			return true
+		}
+	}
+	return false
+}
+
 func (s *Store) SetCalendarReadOnly(ctx context.Context, calID string, readOnly bool) error {
 	if err := ctx.Err(); err != nil {
 		return err

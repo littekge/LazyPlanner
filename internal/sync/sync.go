@@ -53,17 +53,18 @@ func (e SyncError) Unwrap() error { return e.Err }
 
 // SyncResult summarizes one two-way sync.
 type SyncResult struct {
-	Calendars        int         // calendars reconciled
-	CalendarsCreated int         // local calendars created on the server (MKCALENDAR)
-	CalendarsDeleted int         // local calendar deletions applied on the server
-	CalendarsUpdated int         // local calendar metadata changes pushed (PROPPATCH)
-	Pushed           int         // local creates/edits sent to the server
-	Pulled           int         // remote creates/edits fetched into the cache
-	PushedDeletes    int         // local deletions applied on the server
-	PulledDeletes    int         // server deletions applied locally
-	Conflicts        int         // conflicts detected this run
-	Discarded        int         // local changes dropped because the calendar is read-only
-	Skipped          []SyncError // per-resource failures (sync still completed)
+	Calendars          int         // calendars reconciled
+	CalendarsUnchanged int         // calendars skipped via the CTag short-circuit (unchanged both ways)
+	CalendarsCreated   int         // local calendars created on the server (MKCALENDAR)
+	CalendarsDeleted   int         // local calendar deletions applied on the server
+	CalendarsUpdated   int         // local calendar metadata changes pushed (PROPPATCH)
+	Pushed             int         // local creates/edits sent to the server
+	Pulled             int         // remote creates/edits fetched into the cache
+	PushedDeletes      int         // local deletions applied on the server
+	PulledDeletes      int         // server deletions applied locally
+	Conflicts          int         // conflicts detected this run
+	Discarded          int         // local changes dropped because the calendar is read-only
+	Skipped            []SyncError // per-resource failures (sync still completed)
 }
 
 // Sync reconciles the local cache with the server in both directions, resource
@@ -142,6 +143,15 @@ func Sync(ctx context.Context, client Syncer, st *store.Store) (SyncResult, erro
 			return res, fmt.Errorf("sync: recording name for %q: %w", localID, err)
 		}
 
+		// Incremental short-circuit: when the server's CTag matches the one recorded
+		// at the last successful sync and there is nothing local to push, the
+		// calendar is unchanged on both sides — skip its full download entirely.
+		if sc.CTag != "" && sc.CTag == st.CalendarCTag(localID) && !st.HasLocalChanges(localID) {
+			res.CalendarsUnchanged++
+			continue
+		}
+
+		skipsBefore := len(res.Skipped)
 		if err := reconcileCalendar(ctx, client, st, localID, sc, &res); err != nil {
 			// One calendar's failure (e.g. its download/REPORT) shouldn't block the
 			// rest — record it and move on, so healthy calendars still sync. A
@@ -151,6 +161,15 @@ func Sync(ctx context.Context, client Syncer, st *store.Store) (SyncResult, erro
 			}
 			recordSkip(&res, localID, "(calendar)", err)
 			continue
+		}
+		// Cache the CTag only after a fully clean reconcile, so a calendar with any
+		// per-resource failure re-syncs fully next time rather than being skipped.
+		// (After a local push the server's CTag has already advanced past this one,
+		// so the next sync re-downloads once — correct, if slightly less optimal.)
+		if sc.CTag != "" && len(res.Skipped) == skipsBefore {
+			if err := st.SetCalendarCTag(ctx, localID, sc.CTag); err != nil {
+				recordSkip(&res, localID, "(ctag)", err)
+			}
 		}
 		res.Calendars++
 	}

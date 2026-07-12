@@ -16,6 +16,7 @@ type sidecar struct {
 	DisplayName string                  `json:"display_name,omitempty"`
 	Color       string                  `json:"color,omitempty"`
 	SyncToken   string                  `json:"sync_token,omitempty"`
+	CTag        string                  `json:"ctag,omitempty"`
 	Href        string                  `json:"href,omitempty"`
 	Resources   map[string]resourceMeta `json:"resources,omitempty"`
 	// Calendar-level pending state for offline-first in-app management: a
@@ -90,6 +91,7 @@ func writeSidecar(root string, cs *calState) error {
 		DisplayName:   cs.displayName,
 		Color:         cs.color,
 		SyncToken:     cs.syncToken,
+		CTag:          cs.ctag,
 		Href:          cs.href,
 		Resources:     make(map[string]resourceMeta, len(cs.resources)),
 		PendingCreate: cs.pendingCreate,

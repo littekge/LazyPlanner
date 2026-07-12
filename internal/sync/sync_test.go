@@ -63,6 +63,7 @@ type fakeServer struct {
 	failPut      map[string]error
 	failDel      map[string]error
 	failDownload map[string]error         // calendar path -> DownloadAll error
+	downloads    int                      // count of DownloadAll calls (CTag short-circuit test)
 	getData      map[string]caldav.Object // href -> version GetObject returns (else f.data)
 	gets         int
 	writable     map[string]bool  // path -> writable (missing = writable); the 403 re-check
@@ -161,6 +162,7 @@ func (f *fakeServer) GetObject(_ context.Context, href string) (caldav.Object, e
 }
 
 func (f *fakeServer) DownloadAll(_ context.Context, p string) ([]caldav.Object, error) {
+	f.downloads++
 	if err := f.failDownload[p]; err != nil {
 		return nil, err
 	}
@@ -962,5 +964,67 @@ func TestSyncRefetchesOn412(t *testing.T) {
 	}
 	if cons[0].ServerETag != "srv-2" {
 		t.Errorf("stashed conflict ETag = %q, want the fresh srv-2 (not the stale srv-1)", cons[0].ServerETag)
+	}
+}
+
+// TestSyncCTagShortCircuit: an unchanged CTag with nothing local to push lets a
+// second sync skip the full download; a changed CTag forces a re-download.
+func TestSyncCTagShortCircuit(t *testing.T) {
+	ctx := context.Background()
+	st := newStore(t)
+	srv := newFakeServer()
+	srv.cals = []caldav.Calendar{{Path: calPath, Name: "Personal", CTag: "ctag-1"}}
+
+	// First sync downloads and records the CTag.
+	res1, err := sync.Sync(ctx, srv, st)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if srv.downloads != 1 || res1.CalendarsUnchanged != 0 {
+		t.Fatalf("first sync: downloads=%d unchanged=%d, want 1/0", srv.downloads, res1.CalendarsUnchanged)
+	}
+
+	// Second sync: same CTag, nothing local → skip the download.
+	res2, err := sync.Sync(ctx, srv, st)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if srv.downloads != 1 || res2.CalendarsUnchanged != 1 {
+		t.Fatalf("second sync: downloads=%d unchanged=%d, want 1/1 (short-circuit)", srv.downloads, res2.CalendarsUnchanged)
+	}
+
+	// A changed CTag forces a fresh download.
+	srv.cals[0].CTag = "ctag-2"
+	res3, err := sync.Sync(ctx, srv, st)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if srv.downloads != 2 || res3.CalendarsUnchanged != 0 {
+		t.Fatalf("third sync: downloads=%d unchanged=%d, want 2/0 (CTag changed)", srv.downloads, res3.CalendarsUnchanged)
+	}
+}
+
+// TestSyncCTagPushStillHappens: a pending local change is pushed even when the
+// server CTag is unchanged (the short-circuit only applies when nothing is local).
+func TestSyncCTagPushStillHappens(t *testing.T) {
+	ctx := context.Background()
+	st := newStore(t)
+	srv := newFakeServer()
+	srv.cals = []caldav.Calendar{{Path: calPath, Name: "Personal", CTag: "ctag-1"}}
+	if _, err := sync.Sync(ctx, srv, st); err != nil { // record CTag
+		t.Fatal(err)
+	}
+
+	// Create a local resource; the CTag is still "ctag-1" but we must push.
+	name := store.ResourceName("e9@test")
+	if _, err := st.Put(ctx, "personal", name, mkParsed(t, eventICS("e9@test", "Local"))); err != nil {
+		t.Fatal(err)
+	}
+	res, err := sync.Sync(ctx, srv, st)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if res.Pushed != 1 || res.CalendarsUnchanged != 0 {
+		t.Fatalf("pushed=%d unchanged=%d, want 1/0 (local change must not be short-circuited)", res.Pushed, res.CalendarsUnchanged)
 	}
 }

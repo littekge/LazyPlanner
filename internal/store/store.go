@@ -79,6 +79,7 @@ type calState struct {
 	displayName string
 	color       string
 	syncToken   string
+	ctag        string // last-synced collection CTag (getctag); "" forces a full sync
 	href        string
 	resources   map[string]*Resource
 	tombstones  map[string]tombstoneMeta // resource name -> pending server-side deletion
@@ -148,6 +149,7 @@ func (s *Store) loadCalendar(ctx context.Context, id string) (*calState, []LoadE
 	cs.displayName = sc.DisplayName
 	cs.color = sc.Color
 	cs.syncToken = sc.SyncToken
+	cs.ctag = sc.CTag
 	cs.href = sc.Href
 	cs.tombstones = sc.Tombstones
 	cs.conflicts = map[string]conflictMeta{}

@@ -42,6 +42,25 @@ func (a *app) triggerSync() {
 	}()
 }
 
+// startPeriodicSync fires a background sync every interval until the app's context
+// is cancelled (quit). The tick queues triggerSync onto the event-loop goroutine —
+// triggerSync touches UI state (a.syncing) and must not run off it — and
+// triggerSync itself coalesces, so a slow sync spanning a tick is not stacked.
+func (a *app) startPeriodicSync(interval time.Duration) {
+	go func() {
+		t := time.NewTicker(interval)
+		defer t.Stop()
+		for {
+			select {
+			case <-a.ctx.Done():
+				return
+			case <-t.C:
+				a.tv.QueueUpdateDraw(func() { a.triggerSync() })
+			}
+		}
+	}()
+}
+
 // renderSyncStatus paints the right section of the status bar from the current
 // sync state. Words + color (not glyphs) keep it legible on a bare TTY.
 func (a *app) renderSyncStatus() {

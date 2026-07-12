@@ -4,6 +4,15 @@
 
 ---
 
+## 2026-07-12 — Step 12: periodic background sync + incremental CTag short-circuit
+
+- Build step 12 (the CTag half of incremental sync + periodic sync; the full `sync-collection` REPORT is a deliberate follow-up per the owner's scope choice).
+- **Periodic background sync**: `Options.SyncIntervalMinutes` (from `config.Behavior.SyncIntervalMinutes`, default 15, 0 = off) now drives `startPeriodicSync` (`internal/ui/sync.go`) — a ticker goroutine that queues `triggerSync` onto the event-loop goroutine each interval (triggerSync touches `a.syncing`, so it must not run off it) and stops on `a.ctx.Done()` (quit). The config field was previously read but unwired.
+- **Incremental CTag short-circuit**: `caldav` now fetches each collection's CalendarServer `getctag` during discovery (`internal/caldav/ctag.go`, a Depth-1 PROPFIND mirroring the color/privilege queries; best-effort — absent CTag falls back to a full sync) into `caldav.Calendar.CTag`. The store persists the last-synced CTag in the sidecar (`ctag` field) with `CalendarCTag`/`SetCalendarCTag`, plus `HasLocalChanges`. `sync.Sync` skips a calendar's full `DownloadAll` when the server CTag matches the stored one **and** there's nothing local to push, counting it in the new `SyncResult.CalendarsUnchanged`; the CTag is cached only after a fully clean reconcile (a per-resource failure re-syncs next time).
+- Docs: `README.md` (syncing section + `r`/status + status line), `CLAUDE.md`, config comment de-staled.
+- Tests: `internal/sync/sync_test.go` — an unchanged CTag skips the second sync's download, a changed CTag forces a re-download, and a pending local change still pushes despite an unchanged CTag (fake gained a `downloads` counter). Full gate passes. (Network paths are exercised against the fake Syncer, as the existing sync tests are; the live NextCloud path is unverified in this environment.)
+- Files: `internal/caldav/ctag.go` (new), `internal/caldav/client.go`, `internal/store/store.go`, `internal/store/sidecar.go`, `internal/store/calendar.go`, `internal/sync/sync.go`, `internal/ui/sync.go`, `internal/ui/app.go`, `cmd/lazyplanner/main.go`, `internal/config/config.go`, `internal/sync/sync_test.go`, docs.
+
 ## 2026-07-12 — Step 11 (UI): recurrence editing — this / this-and-future / all
 
 - Build step 11, part 2 of 2 (UI). Wired the recurrence-editing scopes into edit (`e`), delete (`d`), grab (`m`), and complete (`Space`), for events and todos.

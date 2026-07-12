@@ -238,13 +238,15 @@ func useTerminalTheme() {
 // store, a sync closure (nil = offline), and the persisted UI state plus a
 // callback to save it — so the UI never touches disk itself.
 type Options struct {
-	Store       *store.Store
-	Title       string
-	Sync        func(context.Context) (sync.SyncResult, error)
-	LeftWidth   int      // remembered left-column width (0 = default)
-	Hidden      []string // calendar ids hidden from the calendar/agenda views
-	RowsPerHour int      // remembered week/day hour-row height (0 = auto-fit)
-	ColorMode   string   // how server calendar colors render: "auto"/"truecolor", "16", or "off"
+	Store *store.Store
+	Title string
+	Sync  func(context.Context) (sync.SyncResult, error)
+	// SyncIntervalMinutes runs a periodic background sync at this cadence; 0 = off.
+	SyncIntervalMinutes int
+	LeftWidth           int      // remembered left-column width (0 = default)
+	Hidden              []string // calendar ids hidden from the calendar/agenda views
+	RowsPerHour         int      // remembered week/day hour-row height (0 = auto-fit)
+	ColorMode           string   // how server calendar colors render: "auto"/"truecolor", "16", or "off"
 	// Appearance ([appearance] config): empty = the built-in default.
 	FirstDayOfWeek string // "monday" (default) or "sunday"
 	DefaultView    string // "month" (default), "week", or "day"
@@ -308,6 +310,12 @@ func Run(opts Options) error {
 	// refreshes when the sync lands (offline-first). QueueUpdateDraw inside
 	// triggerSync waits for the event loop, so starting it now is safe.
 	a.triggerSync()
+
+	// Periodic background sync while open (default 15 min, 0 = off), so other
+	// devices' changes land without a manual `r`.
+	if opts.SyncIntervalMinutes > 0 {
+		a.startPeriodicSync(time.Duration(opts.SyncIntervalMinutes) * time.Minute)
+	}
 
 	a.tv.SetMouseCapture(a.mouseCapture)
 
