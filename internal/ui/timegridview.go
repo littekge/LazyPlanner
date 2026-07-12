@@ -575,9 +575,14 @@ func (tg *timeGridView) Draw(screen tcell.Screen) {
 			label = fmt.Sprintf("%s +%d", label, total-1)
 		}
 		// While cycling, if the selected item is an all-day item on this day, show
-		// it highlighted so it can be picked like a timed one.
+		// it highlighted so it can be picked like a timed one — keeping the task
+		// checkbox/folder caret (a selected all-day-due task must still read as a task).
 		if sel != nil && model.SameDay(day, tg.selected) && isAllDayItem(*sel) {
-			label = nonEmpty(sel.Title, "(untitled)")
+			if sel.IsTodo() {
+				label = taskMarkerLabel(sel.Todo, tg.folderTask(sel.Todo))
+			} else {
+				label = nonEmpty(sel.Title, "(untitled)")
+			}
 			style = selectionStyle
 		}
 		printStyled(screen, colStart+di*colW+1, y+1, colW-1, label, style)
@@ -714,6 +719,10 @@ func (tg *timeGridView) drawBlock(screen tcell.Screen, p model.Placement, colX, 
 		}
 	}
 	if selected {
+		// A drilled event block gets a filled accent chip rather than the reverse-video
+		// selection used elsewhere (month cells, the all-day band, task-marker rows):
+		// reverse-video is illegible painted over an already-filled color block, so a
+		// solid high-contrast chip is the deliberate exception for filled blocks.
 		style = tcell.StyleDefault.Background(accentColor).Foreground(tcell.ColorBlack).Bold(true)
 		spanStyle = style
 	}

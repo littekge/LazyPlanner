@@ -70,6 +70,17 @@ func (a *app) grabStatus() string {
 	}
 }
 
+// grabTimeHint explains how to reach the week/day time-grid to do action (change
+// the time / resize), which only works on a timed event there. In calendar mode
+// `v` cycles to week/day; in agenda mode `v` is a no-op, so name the destination
+// rather than a dead key.
+func (a *app) grabTimeHint(action string) string {
+	if a.mode == modeCalendar {
+		return "switch to week/day view (v) to " + action
+	}
+	return "open the week/day calendar view to " + action
+}
+
 // handleGrabKey processes a key while grab mode is active; every key is consumed
 // so nothing leaks to the views.
 func (a *app) handleGrabKey(ev *tcell.EventKey) *tcell.EventKey {
@@ -140,7 +151,7 @@ func (a *app) grabNudge(r rune) {
 			}
 		case 'j', 'k': // ±1 hour (timed events, in week/day view)
 			if !timed {
-				a.flash("switch to week/day view (v) to change the time")
+				a.flash(a.grabTimeHint("change the time"))
 				return
 			}
 			delta := grabHourStep
@@ -153,7 +164,7 @@ func (a *app) grabNudge(r rune) {
 			}
 		case 'J', 'K': // resize the end ±1 hour
 			if !timed {
-				a.flash("switch to week/day view (v) to resize")
+				a.flash(a.grabTimeHint("resize"))
 				return
 			}
 			base := d.End

@@ -411,6 +411,7 @@ func (a *app) build() {
 	a.month.isFolder = a.isFolder
 	a.timegrid.isFolder = a.isFolder
 	a.agenda.isFolder = a.isFolder
+	a.agenda.active = a.agendaList.HasFocus
 	a.calendars.SetSelectedFunc(func(int, string, string, rune) { a.setFocus(a.calendarPrimitive()) })
 	a.tasklists.SetChangedFunc(func(index int, _, _ string, _ rune) {
 		// Rebuilding the panel briefly parks the selection at index 0; ignore
@@ -689,12 +690,17 @@ func (a *app) globalKeys(ev *tcell.EventKey) *tcell.EventKey {
 			return nil
 		case ' ':
 			// In Calendar mode Space checks off the drilled task if one is selected;
-			// otherwise (navigating days, or on an event) it toggles the highlighted
-			// calendar's visibility. Elsewhere it toggles the selected task.
+			// on a drilled event it flashes (events can't be completed) rather than
+			// silently flipping a calendar's visibility; with nothing drilled (day
+			// navigation) it toggles the highlighted calendar's visibility. Elsewhere
+			// it toggles the selected task.
 			if a.mode == modeCalendar {
-				if t, ok := a.currentTarget(); ok && t.isTodo {
+				switch t, ok := a.currentTarget(); {
+				case ok && t.isTodo:
 					a.toggleComplete()
-				} else {
+				case ok: // a drilled event
+					a.flash("Can't complete an event")
+				default: // nothing drilled — day navigation
 					a.toggleCalendarVisibility()
 				}
 			} else {

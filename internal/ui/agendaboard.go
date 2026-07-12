@@ -30,6 +30,11 @@ type agendaBoard struct {
 	// isFolder reports whether a task UID is a folder (▸ marker instead of a box),
 	// so the agenda board marks tasks the same way as the tree/calendar views.
 	isFolder func(uid string) bool
+
+	// active reports whether the agenda is the focused pane (its driving left list
+	// holds focus). The selection box uses it to match the calendar day box: the
+	// focused border color when active, the idle color otherwise.
+	active func() bool
 }
 
 // folderItem reports whether an agenda item is a task that is a folder.
@@ -179,7 +184,14 @@ func (b *agendaBoard) Draw(screen tcell.Screen) {
 // drawSelBox draws a rounded outline around the selected item's block, clipped to
 // the visible content rows. The top/bottom borders sit in the inter-item gaps.
 func (b *agendaBoard) drawSelBox(screen tcell.Screen, x, contentTop, w, availH, start, height int) {
-	style := tcell.StyleDefault.Foreground(borderFocused)
+	// Match the calendar day box: focused color only when the agenda is the active
+	// pane, the idle color otherwise. HasFocus (read via the active closure) is a
+	// plain field read — safe in a draw path, unlike Application.GetFocus.
+	border := borderIdle
+	if b.active != nil && b.active() {
+		border = borderFocused
+	}
+	style := tcell.StyleDefault.Foreground(border)
 	top := contentTop + (start - 1) - b.scroll
 	bottom := contentTop + (start + height) - b.scroll
 	left, right := x, x+w-1

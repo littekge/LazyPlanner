@@ -4,6 +4,32 @@
 
 ---
 
+## 2026-07-12 — Cross-view consistency L1: agenda selection box follows focus
+
+- The agenda selection box was hardwired to the focused border color, while the calendar selected-day box uses the idle color until its grid is focused. Gave `agendaBoard` an `active func() bool` closure (wired to `a.agendaList.HasFocus` — a plain field read, safe in a draw path unlike `Application.GetFocus`); `drawSelBox` now uses the focused color only when active, matching the calendar day box.
+- Files: `internal/ui/agendaboard.go`, `internal/ui/app.go`, `internal/ui/lowfixes_test.go`. Committed together as the Low-tier polish batch.
+
+## 2026-07-12 — Cross-view consistency L2: document the drilled-block highlight exception
+
+- Doc-only: the drilled item is reverse-video in month cells / the all-day band / task-marker rows, but a filled accent chip on time-grid event blocks. Added a comment explaining the exception is deliberate (reverse-video is illegible over an already-filled color block), so it doesn't read as accidental drift. No behavior change.
+- Files: `internal/ui/timegridview.go`. Low-tier batch.
+
+## 2026-07-12 — Cross-view consistency L3: drilled all-day due task keeps its marker
+
+- A selected (drilled) all-day due task in the time-grid's top band had its label overwritten with a bare title, dropping the `[ ]`/`[■]`/`▸` marker it shows when un-selected. Now the band keeps `taskMarkerLabel` for a selected todo (bare title only for a selected all-day event, which has no marker).
+- Files: `internal/ui/timegridview.go`, `internal/ui/lowfixes_test.go`. Low-tier batch.
+
+## 2026-07-12 — Cross-view consistency L4: grab time-hint no longer names a dead key
+
+- Grabbing an event in the agenda and pressing `j`/`k`/`J`/`K` flashed "switch to week/day view (v)…", but `v` is a no-op in agenda mode. New `grabTimeHint` helper names `(v)` only in calendar mode and points to "the week/day calendar view" in agenda mode (no dead key). `grabStatus` already omitted `v` for this case; the transient nudge hint now agrees.
+- Files: `internal/ui/grab.go`, `internal/ui/lowfixes_test.go`. Low-tier batch.
+
+## 2026-07-12 — Cross-view consistency L5: Space on a drilled event flashes instead of hiding
+
+- With no task drilled, `Space` in a calendar view toggles the highlighted calendar's visibility (by design). But when drilled into an *event*, `Space` also flipped visibility — a surprise. The Space handler now three-ways: drilled todo → complete, drilled event → flash "Can't complete an event", nothing drilled → toggle visibility.
+- Docs: `README.md`, `CLAUDE.md` (Space description).
+- Files: `internal/ui/app.go`, `README.md`, `CLAUDE.md`, `internal/ui/lowfixes_test.go`. Low-tier batch.
+
 ## 2026-07-12 — Cross-view consistency M3: `e` edits the task list from the Tasks pane
 
 - Audit fix 6 of N. The Calendars and Tasks overview panes were asymmetric for edit vs delete: `d` (`deleteContextual`) branches on `GetFocus()` and deletes the focused pane's collection (calendar or list), but `e` (`editSelected`) never opened a list's edit form — in `modeTasks`, `currentTarget()` returns the current tree node regardless of which pane holds focus, so `e` always edited the highlighted *task*. There was no keyboard path to a task list's name/color form (only `:calendar rename`/`color`).
