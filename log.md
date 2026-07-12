@@ -4,6 +4,13 @@
 
 ---
 
+## 2026-07-12 — Hardening pass 3: concurrent sync-vs-edits stress test (-race)
+
+- Added `TestConcurrentSyncAndEditsRace` (`internal/sync/sync_test.go`): the real scenario the compare-and-set writeback (#3) guards — a background goroutine looping `sync.Sync` while 4 goroutines hammer `store.Put` on the same resources (1000 edits/run). Previous #3 test only *simulated* the interleaving synchronously; this drives genuine goroutine concurrency so `-race` has something to inspect.
+- Asserts: no data race (detector), no panic/deadlock (completes), and post-quiesce integrity — every seeded resource still present, parseable, carrying its own UID (no torn/mixed body), and a fresh `store.Open` of the same dir reloads the identical consistent set with zero load errors (proves concurrent sync + edits never leave the `.ics`/sidecar inconsistent or drop a resource).
+- Each editor Puts pre-built per-goroutine `*model.Parsed` copies so no object is shared across goroutines — isolating the store's own locking as the thing under test. Passes under `go test -race -count=5`.
+- Files: `internal/sync/sync_test.go` (test-only; added a `stdsync "sync"` alias). Full gate + race pass.
+
 ## 2026-07-12 — Hardening pass 3 (#2): one bad resource no longer stalls a whole calendar's download
 
 - **Bug:** `DownloadAll` runs go-webdav's bulk calendar-query, whose `decodeCalendarObjectList` returns on the **first** resource whose iCalendar won't decode. So a single corrupt/truncated `.ics` made the whole calendar's download fail; `reconcileCalendar` recorded the entire calendar as one skip and none of its other (healthy) resources synced — every sync, until the bad item was fixed server-side. This contradicted the documented per-resource resilience (the decode happens in the transport before the app sees individual objects, so the per-item skip in `pullInto`/`model.Parse` never got a chance).

@@ -6,6 +6,7 @@ import (
 	"errors"
 	"fmt"
 	"strings"
+	stdsync "sync"
 	"testing"
 
 	"github.com/emersion/go-ical"
@@ -67,7 +68,7 @@ type fakeServer struct {
 	getData      map[string]caldav.Object // href -> version GetObject returns (else f.data)
 	getErr       map[string]error         // href -> error GetObject returns (a resource that won't fetch/decode)
 	gets         int
-	listHrefs    int // count of ListObjectHrefs calls (fallback-path assertion)
+	listHrefs    int              // count of ListObjectHrefs calls (fallback-path assertion)
 	writable     map[string]bool  // path -> writable (missing = writable); the 403 re-check
 	writableErr  map[string]error // path -> error from the writability re-check
 	seq          int
@@ -354,6 +355,146 @@ func TestSyncPushDoesNotClobberConcurrentEdit(t *testing.T) {
 	}
 	if r.ETag != "new-1" {
 		t.Errorf("resource ETag = %q, want the server's new-1 baseline for the next conditional push", r.ETag)
+	}
+}
+
+// TestConcurrentSyncAndEditsRace stresses the real scenario the compare-and-set
+// writeback (#3) guards: a background sync goroutine looping sync.Sync while
+// several goroutines hammer store.Put on the same resources. Run under `go test
+// -race` it must report no data race, no panic, and no deadlock; afterwards the
+// on-disk store must stay internally consistent (every seeded resource still
+// present and parseable, and a fresh Open reloads the same set) — i.e. concurrent
+// sync + edits never corrupt or drop a resource.
+func TestConcurrentSyncAndEditsRace(t *testing.T) {
+	ctx := context.Background()
+	dir := t.TempDir()
+	st, err := store.Open(ctx, dir)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := st.SetCalendarMeta(ctx, "personal", store.CalendarMeta{DisplayName: "Personal", Href: calPath}); err != nil {
+		t.Fatal(err)
+	}
+	srv := newFakeServer()
+
+	const (
+		nRes      = 6
+		nEditors  = 4
+		nVers     = 4
+		perEditor = 250
+	)
+	names := make([]string, nRes)
+	uids := make([]string, nRes)
+	for i := 0; i < nRes; i++ {
+		uids[i] = fmt.Sprintf("e%d@test", i)
+		names[i] = store.ResourceName(uids[i])
+		href := calPath + names[i]
+		if _, err := st.PutRemote(ctx, "personal", names[i], mkParsed(t, eventICS(uids[i], "seed")), "srv-0", href); err != nil {
+			t.Fatal(err)
+		}
+		srv.data[href] = caldav.Object{Path: href, ETag: "srv-0", Data: mkICal(t, eventICS(uids[i], "seed"))}
+	}
+
+	// Pre-build every edit each editor will Put, so no *model.Parsed is shared
+	// across goroutines (isolating the store's locking as the thing under test).
+	// versions[editor][resource][version]; each keeps the resource's own UID.
+	versions := make([][][]*model.Parsed, nEditors)
+	for e := 0; e < nEditors; e++ {
+		versions[e] = make([][]*model.Parsed, nRes)
+		for i := 0; i < nRes; i++ {
+			versions[e][i] = make([]*model.Parsed, nVers)
+			for v := 0; v < nVers; v++ {
+				versions[e][i][v] = mkParsed(t, eventICS(uids[i], fmt.Sprintf("e%d-v%d", e, v)))
+			}
+		}
+	}
+
+	// Editors: hammer Put with changing content across the resources.
+	var editors stdsync.WaitGroup
+	for e := 0; e < nEditors; e++ {
+		editors.Add(1)
+		go func(e int) {
+			defer editors.Done()
+			for k := 0; k < perEditor; k++ {
+				i := (e + k) % nRes
+				_, _ = st.Put(ctx, "personal", names[i], versions[e][i][k%nVers])
+			}
+		}(e)
+	}
+	editorsDone := make(chan struct{})
+	go func() { editors.Wait(); close(editorsDone) }()
+
+	// Background sync: loop until the editors finish, then one final pass.
+	var syncer stdsync.WaitGroup
+	syncer.Add(1)
+	go func() {
+		defer syncer.Done()
+		for {
+			if _, err := sync.Sync(ctx, srv, st); err != nil {
+				t.Errorf("sync errored during the race: %v", err)
+			}
+			select {
+			case <-editorsDone:
+				_, _ = sync.Sync(ctx, srv, st) // quiesce
+				return
+			default:
+			}
+		}
+	}()
+	syncer.Wait()
+
+	// In-memory integrity: every seeded resource is still present, parseable, and
+	// carries its own UID (never a torn/mixed body).
+	cal, ok := st.Calendar("personal")
+	if !ok {
+		t.Fatal("calendar gone after the race")
+	}
+	assertResourceSet(t, cal, names, uids)
+
+	// On-disk integrity: a fresh Open reloads exactly the same consistent set,
+	// proving concurrent sync + edits never left the .ics/sidecar inconsistent.
+	st2, err := store.Open(ctx, dir)
+	if err != nil {
+		t.Fatalf("reopening the store after the race failed: %v", err)
+	}
+	if errs := st2.LoadErrors(); len(errs) != 0 {
+		t.Errorf("reopened store reported %d load errors: %v", len(errs), errs)
+	}
+	cal2, ok := st2.Calendar("personal")
+	if !ok {
+		t.Fatal("calendar missing after reopen")
+	}
+	assertResourceSet(t, cal2, names, uids)
+}
+
+// assertResourceSet checks the calendar holds exactly the expected resources,
+// each with a single event carrying its own UID and a non-empty summary.
+func assertResourceSet(t *testing.T, cal store.Calendar, names, uids []string) {
+	t.Helper()
+	byName := map[string]*store.Resource{}
+	for _, r := range cal.Resources {
+		byName[r.Name] = r
+	}
+	if len(cal.Resources) != len(names) {
+		t.Errorf("resource count = %d, want %d", len(cal.Resources), len(names))
+	}
+	for i, name := range names {
+		r := byName[name]
+		if r == nil {
+			t.Errorf("resource %q missing (dropped during the race)", name)
+			continue
+		}
+		if r.Object == nil || len(r.Object.Events) != 1 {
+			t.Errorf("resource %q has malformed content: %+v", name, r.Object)
+			continue
+		}
+		ev := r.Object.Events[0]
+		if ev.UID != uids[i] {
+			t.Errorf("resource %q holds UID %q, want %q (torn/mixed content)", name, ev.UID, uids[i])
+		}
+		if strings.TrimSpace(ev.Summary) == "" {
+			t.Errorf("resource %q has an empty summary (torn write)", name)
+		}
 	}
 }
 
