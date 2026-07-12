@@ -4,6 +4,12 @@
 
 ---
 
+## 2026-07-12 — Cross-view consistency F1+F2: single source for folder + checkbox
+
+- Drift-prevention refactors (no behavior change). (F1) `hasIncompleteChildren` (the "can't complete a folder" guard) reimplemented the same "has an incomplete child" predicate as `folderSet` (which drives the ▸ folder caret) — independent copies that could silently desync the caret from the guard. `hasIncompleteChildren` now delegates to `folderSet(a.store.Todos())` so both share one definition (computed fresh; it's a completion-time call, not a draw). (F2) `nodeLabel` reimplemented the `[ ]`/`[■]` checkbox literals inline; it now delegates the non-folder case to the shared `todoMark`, so the checkbox glyph has one source across tree/month/time-grid/agenda (the tree keeps its expand-aware ▾/▸ folder caret). Fixed the stale `[ ] / [x]` doc comment.
+- Existing tests (folder-completion guard, glyph renders) cover the unchanged behavior. Full gate passes.
+- Files: `internal/ui/edit.go`, `internal/ui/render.go`.
+
 ## 2026-07-12 — Cross-view consistency L1: agenda selection box follows focus
 
 - The agenda selection box was hardwired to the focused border color, while the calendar selected-day box uses the idle color until its grid is focused. Gave `agendaBoard` an `active func() bool` closure (wired to `a.agendaList.HasFocus` — a plain field read, safe in a draw path unlike `Application.GetFocus`); `drawSelBox` now uses the focused color only when active, matching the calendar day box.

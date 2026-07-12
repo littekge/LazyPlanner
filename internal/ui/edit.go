@@ -341,15 +341,12 @@ func (a *app) refreshKeepingDrill(selUID string) {
 	}
 }
 
-// hasIncompleteChildren reports whether any todo anywhere is an incomplete child
-// of uid — the definition of a "folder".
+// hasIncompleteChildren reports whether uid is a "folder" — has any incomplete
+// child. It shares folderSet's definition (one source of truth) so the folder
+// caret shown in the views can never disagree with the completion guard that uses
+// this. Computed fresh from the store since it's called on completion, not a draw.
 func (a *app) hasIncompleteChildren(uid string) bool {
-	for _, t := range a.store.Todos() {
-		if t.ParentUID == uid && !t.Completed() {
-			return true
-		}
-	}
-	return false
+	return folderSet(a.store.Todos())[uid]
 }
 
 // descendants returns every UID beneath uid in the subtask tree (all depths),

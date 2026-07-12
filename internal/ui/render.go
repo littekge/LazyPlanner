@@ -442,21 +442,21 @@ func (a *app) treeNode(n *model.TodoNode) *tview.TreeNode {
 
 // nodeLabel renders a task's tree line. Folders show a ▸/▾ disclosure marker in
 // place of the checkbox (doubling as the expand indicator); regular tasks show
-// [ ] / [x].
+// [ ] / [■] via the shared todoMark.
 func (a *app) nodeLabel(t *model.Todo, expanded bool) string {
 	var mark string
-	switch {
-	case a.folders[t.UID]:
-		// Tree adds the expand direction to the folder caret; ▸ collapsed, ▾ open.
+	if a.folders[t.UID] {
+		// The tree adds the expand direction to the folder caret; ▸ collapsed, ▾ open
+		// (the other views have no expansion, so they use the plain ▸ from todoMark).
 		if expanded {
 			mark = "▾ "
 		} else {
 			mark = "▸ "
 		}
-	case t.Completed():
-		mark = "[■] "
-	default:
-		mark = "[ ] "
+	} else {
+		// Non-folder: the shared checkbox, so the [ ]/[■] glyph has one source across
+		// the tree, month grid, time-grid, and agenda.
+		mark = todoMark(t, false)
 	}
 	label := mark + tview.Escape(nonEmpty(t.Summary, "(untitled)"))
 	if t.Priority != model.PriorityUndefined {
