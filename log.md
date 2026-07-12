@@ -4,6 +4,14 @@
 
 ---
 
+## 2026-07-12 — Cross-view consistency H1: agenda board shows task glyphs
+
+- Cross-view consistency audit, fix 1 of N. The full-detail Agenda center board (`agendaBoard`) was the one task renderer that drew neither the `[ ]`/`[■]` checkbox nor the `▸` folder caret — a task showed as `<when>  <summary>` with completion conveyed only by a status word, while the tree, month grid, week/day grid, and even the Agenda *left* list all route through the shared `todoMark`. The board struct was never given an `isFolder` closure (only `itemColor` was wired), so it structurally couldn't draw a caret.
+- **Fix** (`internal/ui/agendaboard.go`): added an `isFolder func(uid string) bool` field + a `folderItem` helper on `agendaBoard`; `agendaItemLines` now takes a `folder bool` and prepends `todoMark(t, folder)` to the task title line (placed after the time label so the time column stays aligned between tasks and events). Events are unchanged (no marker). Wired `a.agenda.isFolder = a.isFolder` in `app.go` next to the existing `month`/`timegrid` wiring.
+- No doc change: `README.md`/`main.md` already state the caret/checkbox appear in the agenda — this was the code failing to match the spec, not a behavior change to document.
+- Tests (`internal/ui/agendaboard_test.go`, new): `agendaItemLines` renders `[ ]` incomplete / `[■]` completed / `▸` folder for tasks, and no marker for events. Full gate (build/vet/staticcheck/`go test ./...`) passes.
+- Files: `internal/ui/agendaboard.go`, `internal/ui/app.go`, `internal/ui/agendaboard_test.go`.
+
 ## 2026-07-10 — Wrap-up: docs + freeze guardrails for the next agent
 
 - End-of-session housekeeping. Added a CLAUDE.md Architecture Rules block documenting the two tview freeze traps fixed today (no app-lock calls from a draw func; keep the task tree on `SetGraphics(false)`) plus the "never hand-edit `vendor/`" rule, so they aren't reintroduced.

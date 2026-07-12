@@ -26,6 +26,15 @@ type agendaBoard struct {
 	// itemColor resolves an item to its calendar's color for the title line; ok is
 	// false when the calendar has none, so the default event/task color is used.
 	itemColor func(model.AgendaItem) (calColor, bool)
+
+	// isFolder reports whether a task UID is a folder (▸ marker instead of a box),
+	// so the agenda board marks tasks the same way as the tree/calendar views.
+	isFolder func(uid string) bool
+}
+
+// folderItem reports whether an agenda item is a task that is a folder.
+func (b *agendaBoard) folderItem(it model.AgendaItem) bool {
+	return it.IsTodo() && b.isFolder != nil && b.isFolder(it.Todo.UID)
 }
 
 func newAgendaBoard() *agendaBoard {
@@ -59,14 +68,15 @@ type styledLine struct {
 
 // agendaItemLines renders one item as its stacked detail lines (title, meta, and
 // an optional description). titleColor tints the title line (the item's calendar
-// color, or the default event/task color).
-func agendaItemLines(it model.AgendaItem, titleColor tcell.Color, use24 bool) []styledLine {
+// color, or the default event/task color). folder marks a task with incomplete
+// children so its title carries the ▸ caret instead of a checkbox.
+func agendaItemLines(it model.AgendaItem, titleColor tcell.Color, use24, folder bool) []styledLine {
 	gray := tcell.StyleDefault.Foreground(adjacentColor)
 	plain := tcell.StyleDefault
 	if it.Todo != nil {
 		t := it.Todo
 		lines := []styledLine{
-			{whenLabel(it, use24) + "  " + nonEmpty(t.Summary, "(untitled)"), tcell.StyleDefault.Foreground(titleColor)},
+			{whenLabel(it, use24) + "  " + todoMark(t, folder) + nonEmpty(t.Summary, "(untitled)"), tcell.StyleDefault.Foreground(titleColor)},
 			{"task · " + statusText(t.Status) + " · priority " + priorityText(t.Priority), gray},
 		}
 		if t.Description != "" {
@@ -129,7 +139,7 @@ func (b *agendaBoard) Draw(screen tcell.Screen) {
 				tc = cc.fg
 			}
 		}
-		blocks[i] = agendaItemLines(it, tc, b.clock24)
+		blocks[i] = agendaItemLines(it, tc, b.clock24, b.folderItem(it))
 		starts[i] = line
 		line += len(blocks[i]) + 1 // block plus a one-row gap
 	}

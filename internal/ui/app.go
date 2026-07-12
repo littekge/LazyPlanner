@@ -411,6 +411,7 @@ func (a *app) build() {
 	// Folder markers (▸) for tasks with incomplete children, consistent with the tree.
 	a.month.isFolder = a.isFolder
 	a.timegrid.isFolder = a.isFolder
+	a.agenda.isFolder = a.isFolder
 	a.calendars.SetSelectedFunc(func(int, string, string, rune) { a.setFocus(a.calendarPrimitive()) })
 	a.tasklists.SetChangedFunc(func(index int, _, _ string, _ rune) {
 		// Rebuilding the panel briefly parks the selection at index 0; ignore
