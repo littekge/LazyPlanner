@@ -4,6 +4,14 @@
 
 ---
 
+## 2026-07-12 — Cross-view consistency M3: `e` edits the task list from the Tasks pane
+
+- Audit fix 6 of N. The Calendars and Tasks overview panes were asymmetric for edit vs delete: `d` (`deleteContextual`) branches on `GetFocus()` and deletes the focused pane's collection (calendar or list), but `e` (`editSelected`) never opened a list's edit form — in `modeTasks`, `currentTarget()` returns the current tree node regardless of which pane holds focus, so `e` always edited the highlighted *task*. There was no keyboard path to a task list's name/color form (only `:calendar rename`/`color`).
+- **Fix** (`internal/ui/edit.go` `editSelected`): check `GetFocus()` first (mirroring `deleteContextual`) — the Calendars pane opens the calendar edit form, the Tasks pane the highlighted list's (both are calendars → same `showCalendarForm`). The existing `mode == modeCalendar` fallback stays, preserving the convenience of `e` editing the highlighted calendar from the focused-but-undrilled grid.
+- Docs: `README.md`, `main.md` (`e` row + calendar-form prose now note the Tasks pane edits the list, symmetric with `d`).
+- Tests (`internal/ui/editlist_test.go`, new): `e` with the Tasks pane focused opens the list form (first field "Name"); `e` with the tree focused still opens the task form (first field "Summary"). Full gate passes.
+- Files: `internal/ui/edit.go`, `README.md`, `main.md`, `internal/ui/editlist_test.go`.
+
 ## 2026-07-12 — Cross-view consistency M2: `<count>G` honored in the tree and drilled grid
 
 - Audit fix 5 of N. `<count>G` (vim "go to nth item") was handled only for `*tview.List`, so it worked in the overview/agenda lists but was silently discarded in the task tree (`5G` → last node) and calendar grid (→ last day/item).

@@ -509,10 +509,28 @@ func treeNodeContext(root, target *tview.TreeNode) (parent *tview.TreeNode, idx 
 // --- edit (e) ---
 
 func (a *app) editSelected() {
+	// When an overview list is focused, `e` edits that collection's name + color —
+	// symmetric with delete (deleteContextual): the Calendars pane edits the
+	// highlighted calendar, the Tasks pane the highlighted list (both are calendars,
+	// so both open showCalendarForm). Checked before currentTarget because in
+	// modeTasks currentTarget always returns the tree node, even when the Tasks
+	// panel (not the tree) holds focus.
+	switch a.tv.GetFocus() {
+	case a.calendars:
+		if id := a.currentCalendarID(); id != "" {
+			a.showCalendarForm(id, 0)
+			return
+		}
+	case a.tasklists:
+		if id := a.selectedTasklistID(); id != "" {
+			a.showCalendarForm(id, 0)
+			return
+		}
+	}
 	t, ok := a.currentTarget()
 	if !ok {
-		// In Calendar mode with no item drilled, `e` edits the highlighted
-		// calendar (its name + color) in the calendar form.
+		// In Calendar mode with the grid focused but no item drilled, `e` still edits
+		// the highlighted calendar (a convenience shortcut from the grid).
 		if a.mode == modeCalendar {
 			if id := a.currentCalendarID(); id != "" {
 				a.showCalendarForm(id, 0)
