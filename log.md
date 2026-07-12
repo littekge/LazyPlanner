@@ -4,6 +4,13 @@
 
 ---
 
+## 2026-07-12 — Hardening pass 3 (#6): beginGrabFuture rolls back a half-completed split
+
+- **Bug:** a this-and-future grab writes the split as two `store.Put`s — cap the master, then write the new future series. If the **first** succeeded and the **second** failed, `beginGrabFuture` flashed an error and returned with the master already capped (tail occurrences dropped), the future series never written, `grabbing` still false (so `cancelGrab`'s two-resource revert could never run), and no undo step pushed — the later occurrences were lost with no in-session recovery.
+- **Fix:** on the second `Put` failing, `Restore` the master from `loc.Prev` before returning, so the split can't half-complete. Both error paths now use `flashErr("Grab", err)`.
+- Test (`internal/ui/recur_edit_test.go`): after capping the master, `Restore(loc.Prev)` (the exact rollback the fix performs) brings the master back to its full 4 occurrences. (A real mid-operation write failure can't be induced deterministically — the new series' resource name uses a random UID — so the test exercises the recovery call directly; the live two-resource revert stays covered by `TestGrabFutureCancelRestores`.)
+- Files: `internal/ui/grab.go`, `internal/ui/recur_edit_test.go`. Full gate passes.
+
 ## 2026-07-12 — Hardening pass 3 (#5): mouse can't bypass grab/resize modal gating
 
 - **Bug:** `mouseCapture` guarded only on `modalOpen()` (an overlay page). Grab mode (`a.grabbing`) and the `Ctrl-W` resize sub-mode (`a.resizing`) are flag-only modal states with no overlay page, so the mouse was **not** swallowed during them: a click still fired `setMode` (switching the active pane) and a double-click still opened the edit form — two modal states coexisting, and grab reading the wrong `a.mode`. The keyboard path already gated on both flags.

@@ -292,6 +292,43 @@ func TestGrabFutureSplitsAndMoves(t *testing.T) {
 	}
 }
 
+// TestGrabFutureRollbackRestoresMaster locks Pass-3 #6: if beginGrabFuture's
+// second write (the new future series) fails after the first (capping the
+// master) succeeded, the master must be rolled back — not left permanently
+// capped with its tail occurrences silently lost and no grab state to cancel.
+// The new-series resource name uses a random UID, so a real mid-operation write
+// failure can't be induced deterministically; this exercises the exact recovery
+// the fix performs (Restore the master from loc.Prev) after simulating the
+// successful first write.
+func TestGrabFutureRollbackRestoresMaster(t *testing.T) {
+	a, uid, occ := grabFutureSetup(t)
+	loc, _ := a.store.Locate(uid)
+	prev := loc.Prev // snapshot beginGrabFuture would roll back to
+
+	// First write succeeds: cap the master to its past instances, exactly as
+	// beginGrabFuture does before writing the future series.
+	d := draftFromEvent(findEvent(loc.Object, uid))
+	d.Start = occ
+	capped, _, err := model.SplitEvent(loc.Object, uid, occ, d, a.now, a.loc)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := a.store.Put(context.Background(), loc.CalID, loc.Name, capped); err != nil {
+		t.Fatal(err)
+	}
+	if n := masterOccurrenceCount(t, a, uid); n != 2 {
+		t.Fatalf("master after cap has %d occurrences, want 2", n)
+	}
+
+	// Second write fails → the fix rolls the master back from loc.Prev.
+	if _, err := a.store.Restore(context.Background(), loc.CalID, loc.Name, prev); err != nil {
+		t.Fatal(err)
+	}
+	if n := masterOccurrenceCount(t, a, uid); n != 4 {
+		t.Errorf("after rollback the master has %d occurrences, want 4 (restored)", n)
+	}
+}
+
 // TestGrabFutureCancelRestores locks #8's revert: cancelling a this-and-future
 // grab deletes the new series and restores the original (uncapped) master.
 func TestGrabFutureCancelRestores(t *testing.T) {

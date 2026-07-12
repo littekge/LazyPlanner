@@ -104,11 +104,15 @@ func (a *app) beginGrabFuture(loc store.Located, t editTarget) {
 	newUID := future.Events[0].UID
 	newName := store.ResourceName(newUID)
 	if _, err := a.store.Put(context.Background(), loc.CalID, loc.Name, capped); err != nil {
-		a.flash("Grab failed: " + err.Error())
+		a.flashErr("Grab", err)
 		return
 	}
 	if _, err := a.store.Put(context.Background(), loc.CalID, newName, future); err != nil {
-		a.flash("Grab failed: " + err.Error())
+		// The master was already capped above. Roll it back so a failed second
+		// write can't half-complete the split — silently dropping the series'
+		// tail occurrences with no grab state to cancel and no undo step.
+		_, _ = a.store.Restore(context.Background(), loc.CalID, loc.Name, loc.Prev)
+		a.flashErr("Grab", err)
 		return
 	}
 	a.grabbing = true
