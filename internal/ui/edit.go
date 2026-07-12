@@ -72,14 +72,10 @@ func (a *app) currentTarget() (editTarget, bool) {
 			}
 		}
 	case modeCalendar:
-		if a.viewMode == viewMonth && a.month.eventMode {
-			items := a.month.selectedItems()
-			if i := a.month.eventIndex; i >= 0 && i < len(items) {
-				return targetFromItem(items[i]), true
-			}
-		}
-		if a.viewMode != viewMonth {
-			if it := a.timegrid.selectedItem(); it != nil {
+		// Both grids expose the drilled item via calGrid.selectedItem, so month and
+		// week/day are read the same way (no per-view drill shape here).
+		if g, ok := a.calendarPrimitive().(calGrid); ok {
+			if it := g.selectedItem(); it != nil {
 				return targetFromItem(*it), true
 			}
 		}

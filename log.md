@@ -4,6 +4,12 @@
 
 ---
 
+## 2026-07-12 — Cross-view consistency F4: unify the drilled-item read via calGrid
+
+- Drift-prevention refactor (no behavior change). `currentTarget` read the month drill inline (`a.month.selectedItems()` + `eventIndex`) but the week/day drill via `a.timegrid.selectedItem()` — two hand-synced shapes for "the drilled item," despite the `calGrid` interface already unifying `drillState`/`reDrill`. Added `selectedItem() *model.AgendaItem` to `calGrid`, implemented it on `calendarView` (mirroring the existing `timeGridView` method), and collapsed `currentTarget`'s calendar branch to `a.calendarPrimitive().(calGrid).selectedItem()`.
+- Existing drilled-target tests (month + week grid Space) cover the unified path. Full gate passes.
+- Files: `internal/ui/calendarview.go`, `internal/ui/app.go` (interface), `internal/ui/edit.go` (`currentTarget`).
+
 ## 2026-07-12 — Cross-view consistency F1+F2: single source for folder + checkbox
 
 - Drift-prevention refactors (no behavior change). (F1) `hasIncompleteChildren` (the "can't complete a folder" guard) reimplemented the same "has an incomplete child" predicate as `folderSet` (which drives the ▸ folder caret) — independent copies that could silently desync the caret from the guard. `hasIncompleteChildren` now delegates to `folderSet(a.store.Todos())` so both share one definition (computed fresh; it's a completion-time call, not a draw). (F2) `nodeLabel` reimplemented the `[ ]`/`[■]` checkbox literals inline; it now delegates the non-folder case to the shared `todoMark`, so the checkbox glyph has one source across tree/month/time-grid/agenda (the tree keeps its expand-aware ▾/▸ folder caret). Fixed the stale `[ ] / [x]` doc comment.

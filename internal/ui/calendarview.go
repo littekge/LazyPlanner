@@ -60,6 +60,20 @@ func (cv *calendarView) selectedItems() []model.AgendaItem {
 	return cv.items[dayKey(cv.selected)]
 }
 
+// selectedItem returns the drilled item (the one event-cycling is on), or nil when
+// not drilled — the calGrid method currentTarget uses so both grids report their
+// drilled selection the same way.
+func (cv *calendarView) selectedItem() *model.AgendaItem {
+	if !cv.eventMode {
+		return nil
+	}
+	items := cv.selectedItems()
+	if cv.eventIndex >= 0 && cv.eventIndex < len(items) {
+		return &items[cv.eventIndex]
+	}
+	return nil
+}
+
 func (cv *calendarView) InputHandler() func(*tcell.EventKey, func(tview.Primitive)) {
 	return cv.WrapInputHandler(func(ev *tcell.EventKey, _ func(tview.Primitive)) {
 		if cv.eventMode {

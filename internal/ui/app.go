@@ -202,6 +202,9 @@ type focusState struct {
 type calGrid interface {
 	drillState() (day time.Time, active bool, index int)
 	reDrill(day time.Time, index int)
+	// selectedItem is the drilled item (nil when not drilled), so currentTarget
+	// reads either grid's drilled selection the same way.
+	selectedItem() *model.AgendaItem
 }
 
 // useTerminalTheme configures tview's globals once at startup: inherit the
