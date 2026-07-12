@@ -280,9 +280,17 @@ func (a *app) createEvent(calID string, base time.Time, text string) {
 // --- complete toggle (Space) ---
 
 func (a *app) toggleComplete() {
+	// Every path that presses Space must get feedback, not a silent no-op: in
+	// Agenda/Tasks views Space routes straight here (Calendar mode pre-empts the
+	// event and no-selection cases in its own switch before calling in).
 	t, ok := a.currentTarget()
-	if !ok || !t.isTodo {
-		return // nothing toggleable here; stay silent
+	if !ok {
+		a.flash("Select a task first")
+		return
+	}
+	if !t.isTodo {
+		a.flash("Can't complete an event")
+		return
 	}
 	loc, ok := a.store.Locate(t.uid)
 	if !ok {

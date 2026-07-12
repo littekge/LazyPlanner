@@ -111,6 +111,39 @@ func TestSpaceOnDrilledEventFlashes(t *testing.T) {
 	}
 }
 
+// TestSpaceOnAgendaEventFlashes locks the key-contract rule: Space on an event
+// in Agenda mode must flash "Can't complete an event", not silently no-op the
+// way toggleComplete used to for a non-task target.
+func TestSpaceOnAgendaEventFlashes(t *testing.T) {
+	when := time.Date(2026, 7, 20, 12, 0, 0, 0, time.UTC)
+	a := newRootedTestApp(t, when)
+	if err := a.store.CreateCalendarLocal(context.Background(), "ev", store.CalendarMeta{DisplayName: "EV"}, []string{"VEVENT"}); err != nil {
+		t.Fatal(err)
+	}
+	putTimedEvent(t, a, "ev", "Standup", time.Date(2026, 7, 20, 9, 0, 0, 0, time.Local))
+	a.reload()
+
+	a.setMode(modeAgenda)
+	a.buildAgendaLeft()
+	items := a.dayItems(model.DayStart(when))
+	idx := -1
+	for i, it := range items {
+		if !it.IsTodo() {
+			idx = i
+			break
+		}
+	}
+	if idx < 0 {
+		t.Fatalf("event not present in today's agenda: %+v", items)
+	}
+	a.agendaList.SetCurrentItem(idx)
+
+	a.globalKeys(runeKey(' '))
+	if got := a.statusLeft.GetText(true); !strings.Contains(got, "Can't complete an event") {
+		t.Errorf("status = %q, want the \"Can't complete an event\" flash", got)
+	}
+}
+
 // TestAgendaSelectionBoxFollowsFocus locks L1: the agenda selection box tracks
 // focus (via the active closure) like the calendar day box, rather than being
 // hardwired to the focused color.

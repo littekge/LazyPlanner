@@ -4,6 +4,14 @@
 
 ---
 
+## 2026-07-12 — Hardening pass 3 (#10): Space on an event always gives feedback
+
+- Key-contract fix (owner's explicit Pass-3 rule: a used key must act or flash, never a silent no-op).
+- **Bug:** `toggleComplete` early-returned silently when the target was not a task. In Calendar mode Space pre-handles the event case ("Can't complete an event") in its own switch, but in **Agenda** (and Tasks) mode Space routes straight to `toggleComplete`, so pressing it on an event did nothing with no feedback — inconsistent with Calendar mode.
+- **Fix:** `toggleComplete` now flashes `Can't complete an event` for a non-task target and `Select a task first` when nothing is selected. Calendar mode still pre-empts both cases, so no double message.
+- Test (`internal/ui/lowfixes_test.go`): Space on an Agenda event flashes the event message.
+- Files: `internal/ui/edit.go`, `internal/ui/lowfixes_test.go`. Full gate passes.
+
 ## 2026-07-12 — Hardening pass 3 (#1): malformed recurrence can't blank the calendar
 
 - Deep debugging/hardening audit (multi-agent fan-out, adversarially verified) fix #1 of the confirmed set — the one **high**-severity finding.
