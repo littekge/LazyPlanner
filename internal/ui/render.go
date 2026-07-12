@@ -582,14 +582,18 @@ const (
 
 // interactionMode reports the current modal input context for the mode indicator.
 // It's derived from existing state (no separate state machine): grab mode, a
-// drilled-in calendar day or dived-in task tree, or the resting NORMAL.
+// drilled-in calendar day, or the resting NORMAL.
+//
+// DRILL means "dived into a sub-element" — uniformly the calendar-day drill (where
+// the movement keys navigate within the day). Merely focusing the task tree or the
+// calendar grid from the overview is NOT drilled: both are ordinary Main-pane
+// navigation and read NORMAL, so the tree and grid agree (the tree has no deeper
+// level, so DRILL never shows in Tasks).
 func (a *app) interactionMode() string {
 	switch {
 	case a.grabbing:
 		return modeGrab
 	case a.gridDrilled():
-		return modeDrill
-	case a.mode == modeTasks && a.focused == a.tree:
 		return modeDrill
 	default:
 		return modeNormal

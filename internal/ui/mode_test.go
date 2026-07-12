@@ -7,7 +7,9 @@ import (
 )
 
 // TestInteractionMode covers the mode the status-bar indicator reads: NORMAL at
-// rest, GRAB while grabbing, and DRILL when dived into the task tree.
+// rest, GRAB while grabbing, and DRILL only when dived into a calendar day. Merely
+// focusing the task tree or the calendar grid is ordinary Main navigation (NORMAL)
+// — the tree and grid agree, so DRILL never shows in Tasks (M1).
 func TestInteractionMode(t *testing.T) {
 	a := newRootedTestApp(t, time.Date(2026, 7, 5, 9, 0, 0, 0, time.UTC))
 
@@ -22,11 +24,21 @@ func TestInteractionMode(t *testing.T) {
 	}
 	a.grabbing = false
 
+	// Drilling into a calendar day is the one DRILL state.
+	a.viewMode = viewMonth
+	a.month.eventMode = true
+	if m := a.interactionMode(); m != modeDrill {
+		t.Errorf("drilled calendar day mode = %q, want DRILL", m)
+	}
+	a.month.eventMode = false
+
+	// Focusing the task tree is NOT drilled — it reads NORMAL, matching a focused
+	// (undrilled) calendar grid.
 	a.setMode(modeTasks)
 	a.buildTree()
 	a.setFocus(a.tree)
-	if m := a.interactionMode(); m != modeDrill {
-		t.Errorf("dived-in task tree mode = %q, want DRILL", m)
+	if m := a.interactionMode(); m != modeNormal {
+		t.Errorf("focused task tree mode = %q, want NORMAL", m)
 	}
 
 	a.setFocus(a.tasklists)

@@ -85,7 +85,6 @@ type app struct {
 	// Right + bottom. The bottom is two lines: a 3-section status bar
 	// (general/results · command-view · sync) above an always-visible controls line.
 	detail      *tview.TextView
-	focused     tview.Primitive // last pane we focused; read during draw (GetFocus would deadlock)
 	statusMode  *tview.Box      // interaction-mode indicator (NORMAL / DRILL / GRAB)
 	statusLeft  *tview.TextView // general status + action results (and flashes)
 	statusMid   *tview.TextView // command view — populated in step 10
@@ -490,11 +489,6 @@ func decorate(b *tview.Box, title string) {
 
 // setFocus focuses p and repaints borders so the active pane stands out.
 func (a *app) setFocus(p tview.Primitive) {
-	// Remember the focused pane so the mode indicator can read it during a draw.
-	// tview.Application.GetFocus takes the app read-lock, but Application.draw()
-	// holds the write-lock for the whole draw — calling GetFocus from a draw func
-	// (the mode indicator) would self-deadlock (RWMutex is not reentrant).
-	a.focused = p
 	a.tv.SetFocus(p)
 	for _, bp := range a.borders {
 		if bp.prim == p {

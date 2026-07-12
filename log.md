@@ -4,6 +4,15 @@
 
 ---
 
+## 2026-07-12 — Cross-view consistency M1: mode indicator — tree focus is NORMAL, not DRILL
+
+- Audit fix 4 of N. The mode badge showed `DRILL` the instant the task tree was focused (one Enter from the overview), but the parallel calendar state — grid focused, undrilled — showed `NORMAL` (a day-drill needs a second Enter). So "just dived into Main, hjkl moves things" read differently for the tree vs the grid. Owner chose to align by making tree focus read NORMAL: `DRILL` now means uniformly "drilled into a sub-element" — the calendar-day drill — and merely focusing the tree or grid is ordinary Main navigation (NORMAL). The tree has no deeper level, so DRILL never shows in Tasks.
+- **Fix** (`internal/ui/render.go`): dropped the `a.mode == modeTasks && a.focused == a.tree` case from `interactionMode` (now just `grabbing` → GRAB, `gridDrilled()` → DRILL, else NORMAL).
+- Removed the now-dead `a.focused` field + its `setFocus` assignment (`internal/ui/app.go`): it existed only so the draw-time mode indicator could avoid a `GetFocus()` deadlock; `interactionMode` no longer reads focus at all (only `a.grabbing` + `a.gridDrilled()`, neither takes the app lock), so the draw path stays deadlock-safe and the field is unused. Updated the `CLAUDE.md` freeze-trap note that referenced `a.focused`.
+- Docs: `README.md`, `main.md`, `CLAUDE.md` mode-indicator descriptions (DRILL = calendar-day drill only).
+- Tests (`internal/ui/mode_test.go`): `TestInteractionMode` now asserts drilled calendar day = DRILL and focused tree = NORMAL (was DRILL). The `modedeadlock_test.go` regression still passes (no GetFocus in the draw path). Full gate passes.
+- Files: `internal/ui/render.go`, `internal/ui/app.go`, `internal/ui/mode_test.go`, `README.md`, `main.md`, `CLAUDE.md`.
+
 ## 2026-07-12 — Cross-view consistency H3: quick-set (sp/sd) works in any view
 
 - Audit fix 3 of N. The `s` quick-set chord (`sp` priority, `sd` due) was hard-gated to the Tasks view (`app.go` `case 's'` flashed "set: Tasks view only" everywhere else), even though a task drilled into in the calendar or selected in the agenda can already be completed (`Space`), edited (`e`), deleted (`d`), and grab-nudged (`m`) — all via `currentTarget()`, the same resolver `setPriorityPrompt`/`setDuePrompt` use through `quickTaskTarget()`. Only the one-line dispatch gate made it tree-only; the handlers were already view-agnostic. Especially odd: `sd` (set due) was blocked while `m` (grab, which also changes due) was allowed.
