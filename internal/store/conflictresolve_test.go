@@ -21,7 +21,7 @@ func setupConflict(t *testing.T, dir string) (*store.Store, string) {
 		t.Fatal(err)
 	}
 	serverBytes, _ := mustDecode(t, "e@test", "Server edit").Encode()
-	if err := s.MarkConflict(ctx, "cal1", name, serverBytes, "srv-2"); err != nil {
+	if err := s.MarkConflict(ctx, "cal1", name, serverBytes, "srv-2", false); err != nil {
 		t.Fatal(err)
 	}
 	if len(s.Conflicts()) != 1 {
@@ -98,8 +98,8 @@ func TestResolveKeepServerAcceptsRemoteDeletion(t *testing.T) {
 	if _, err := s.Put(ctx, "cal1", name, mustDecode(t, "e@test", "Local edit")); err != nil {
 		t.Fatal(err)
 	}
-	// Server deleted it: conflict with EMPTY server data.
-	if err := s.MarkConflict(ctx, "cal1", name, nil, ""); err != nil {
+	// Server deleted it: conflict with EMPTY server data, flagged as a deletion.
+	if err := s.MarkConflict(ctx, "cal1", name, nil, "", true); err != nil {
 		t.Fatal(err)
 	}
 	if len(s.Conflicts()) != 1 {

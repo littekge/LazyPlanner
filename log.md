@@ -4,6 +4,13 @@
 
 ---
 
+## 2026-07-12 — Hardening pass 3 (#4): keep-server can't misread an unparseable version as a deletion
+
+- **Bug (silent local-edit loss):** `stashServerConflict` swallowed `model.Parse`/`Encode` errors, so a server version that ical-decodes but fails our stricter model (e.g. a VEVENT missing DTSTART written by another client) stashed with **empty** `ServerData`. `ResolveKeepServer` used `ServerData == ""` as the *sole* signal for "server deleted" → keep-server `Forget`s the local copy. So a present-but-unparseable server version was indistinguishable from a real deletion, and choosing "keep server" silently discarded the local edit with the server version never captured — a keep-both iron-rule violation.
+- **Fix:** added an explicit `ServerDeleted` flag to the conflict (sidecar + `Conflict` + `MarkConflict`), set only on a genuine server deletion; `ResolveKeepServer` now branches on it, never on empty `ServerData`. `stashServerConflict` encodes the decoded server calendar **directly** (not via a typed re-parse) so an unparseable version is still preserved losslessly, and records a skip. Keep-server on an unparseable version now errors (surfaced) and leaves the local edit intact instead of deleting it; a truly empty non-deletion also refuses rather than dropping data.
+- Tests (`internal/sync/sync_test.go`): a both-edited conflict whose server version lacks DTSTART is not flagged deleted, stashes the raw version, and keep-server errors without discarding the local edit. Updated the `MarkConflict` signature in store/ui conflict tests.
+- Files: `internal/store/{conflict,sidecar}.go`, `internal/sync/sync.go`, tests in `internal/store`, `internal/ui`, `internal/sync`. Full gate passes.
+
 ## 2026-07-12 — Hardening pass 3 (#3): sync writeback can't clobber a concurrent edit
 
 - **Bug (silent lost update):** `pushUpdate`/`pushCreate` encode the pre-sync snapshot, run a slow network PUT, then wrote that *same stale snapshot* back as clean (`PutRemote`). Sync runs on a background goroutine while the UI keeps editing on the event loop, so an edit that lands during the in-flight PUT was reverted on disk + in memory **and** marked clean (never pushed) — the edit was irrecoverably lost, no conflict raised. The 3s debounced push (fires while the user is still typing) makes the window reachable. `pullInto` had the same clobber pattern against a concurrent edit during reconcile.

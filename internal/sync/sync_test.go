@@ -419,6 +419,57 @@ func TestSyncSkipsEmptyHrefServerObject(t *testing.T) {
 	}
 }
 
+// TestSyncUnparseableServerConflictNotTreatedAsDeletion locks Pass-3 #4: when
+// both sides edited and the server version ical-decodes but fails our stricter
+// model.Parse (e.g. a VEVENT missing DTSTART written by another client), the
+// conflict must stash the raw server version and NOT be flagged as a deletion —
+// otherwise "keep server" would silently discard the local edit as if the
+// server had deleted the resource.
+func TestSyncUnparseableServerConflictNotTreatedAsDeletion(t *testing.T) {
+	ctx := context.Background()
+	st := newStore(t)
+	srv := newFakeServer()
+
+	name := store.ResourceName("e1@test")
+	href := calPath + name
+	if _, err := st.PutRemote(ctx, "personal", name, mkParsed(t, eventICS("e1@test", "Base")), "srv-1", href); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := st.Put(ctx, "personal", name, mkParsed(t, eventICS("e1@test", "LocalEdit"))); err != nil {
+		t.Fatal(err)
+	}
+	// Server version present (different etag) but model-unparseable: no DTSTART.
+	const noStart = "BEGIN:VCALENDAR\r\nVERSION:2.0\r\nPRODID:-//t//EN\r\n" +
+		"BEGIN:VEVENT\r\nUID:e1@test\r\nDTSTAMP:20260701T120000Z\r\nSUMMARY:ServerNoStart\r\nEND:VEVENT\r\nEND:VCALENDAR\r\n"
+	srv.data[href] = caldav.Object{Path: href, ETag: "srv-2", Data: mkICal(t, noStart)}
+
+	res, err := sync.Sync(ctx, srv, st)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if res.Conflicts != 1 {
+		t.Fatalf("res = %+v, want 1 conflict", res)
+	}
+	confs := st.Conflicts()
+	if len(confs) != 1 {
+		t.Fatalf("Conflicts() = %d, want 1", len(confs))
+	}
+	if confs[0].ServerDeleted {
+		t.Error("conflict flagged as a server deletion; a present-but-unparseable version must not be")
+	}
+	if len(confs[0].ServerData) == 0 {
+		t.Error("server version not stashed; both versions must survive a conflict")
+	}
+	// Keep-server must NOT silently discard the local edit: it errors (can't decode
+	// the unparseable version) and the local resource stays.
+	if err := st.ResolveKeepServer(ctx, "personal", name); err == nil {
+		t.Error("keep-server on an unparseable server version should error, not silently succeed")
+	}
+	if r := findRes(t, st, name); r == nil {
+		t.Error("local edit was discarded on keep-server of an unparseable server version (data loss)")
+	}
+}
+
 func TestSyncConflictKeepsBoth(t *testing.T) {
 	ctx := context.Background()
 	st := newStore(t)

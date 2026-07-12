@@ -58,6 +58,12 @@ type resourceMeta struct {
 type conflictMeta struct {
 	ServerETag string `json:"server_etag,omitempty"`
 	ServerData string `json:"server_data,omitempty"` // raw iCalendar of the server's version
+	// ServerDeleted marks a conflict where the server DELETED the resource while
+	// it was edited locally (ServerData is then empty). It disambiguates that case
+	// from a present-but-unparseable server version, which also stashes without a
+	// typed model but must NOT be treated as a deletion (that would silently
+	// discard the local edit on "keep server").
+	ServerDeleted bool `json:"server_deleted,omitempty"`
 }
 
 // tombstoneMeta is the server identity of a locally-deleted resource, enough to

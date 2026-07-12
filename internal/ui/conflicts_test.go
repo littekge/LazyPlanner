@@ -44,7 +44,7 @@ func TestShowConflictsListsItems(t *testing.T) {
 		}
 	}
 	serverBytes, _ := r.Object.Encode()
-	if err := a.store.MarkConflict(context.Background(), calID, name, serverBytes, "srv-x"); err != nil {
+	if err := a.store.MarkConflict(context.Background(), calID, name, serverBytes, "srv-x", false); err != nil {
 		t.Fatal(err)
 	}
 

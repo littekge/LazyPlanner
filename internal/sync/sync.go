@@ -315,8 +315,9 @@ func reconcileCalendar(ctx context.Context, client Syncer, st *store.Store, calI
 			switch {
 			case !onServer && r.Dirty:
 				// Edited locally, deleted on the server → conflict; keep the
-				// local edit (no server version survives to stash).
-				markConflict(ctx, st, calID, r.Name, nil, "", res)
+				// local edit (no server version survives to stash). Flag it as a
+				// genuine server deletion so keep-server accepts the deletion.
+				markConflict(ctx, st, calID, r.Name, nil, "", true, res)
 			case !onServer:
 				// Clean and gone on the server → it was deleted remotely.
 				if err := st.Forget(ctx, calID, r.Name); err != nil {
@@ -589,17 +590,25 @@ func pullInto(ctx context.Context, st *store.Store, calID, name string, o caldav
 }
 
 // stashServerConflict records a conflict, stashing the server's version. It
-// re-encodes the parsed server data (dropping it only if unparseable).
+// encodes the decoded server calendar directly (not via a stricter typed
+// re-parse), so a server version our model rejects is still preserved rather
+// than dropped to empty — empty would be misread by keep-server as a server
+// deletion and used to silently discard the local edit. A parse failure is
+// surfaced as a skip so keep-server later reports a decode error instead of
+// applying it, but never treats the resource as deleted.
 func stashServerConflict(ctx context.Context, st *store.Store, calID, name string, o caldav.Object, res *SyncResult) {
-	var data []byte
-	if parsed, err := model.Parse(o.Data, time.Local); err == nil {
-		data, _ = parsed.Encode()
+	data, err := (&model.Parsed{Calendar: o.Data}).Encode()
+	if err != nil {
+		recordSkip(res, calID, name, fmt.Errorf("encoding server conflict version: %w", err))
+		data = nil
+	} else if _, perr := model.Parse(o.Data, time.Local); perr != nil {
+		recordSkip(res, calID, name, fmt.Errorf("server conflict version of %q does not parse: %w", name, perr))
 	}
-	markConflict(ctx, st, calID, name, data, o.ETag, res)
+	markConflict(ctx, st, calID, name, data, o.ETag, false, res)
 }
 
-func markConflict(ctx context.Context, st *store.Store, calID, name string, serverData []byte, serverETag string, res *SyncResult) {
-	if err := st.MarkConflict(ctx, calID, name, serverData, serverETag); err != nil {
+func markConflict(ctx context.Context, st *store.Store, calID, name string, serverData []byte, serverETag string, serverDeleted bool, res *SyncResult) {
+	if err := st.MarkConflict(ctx, calID, name, serverData, serverETag, serverDeleted); err != nil {
 		recordSkip(res, calID, name, err)
 		return
 	}

@@ -13,17 +13,18 @@ import (
 // between syncs). The local .ics remains the working copy; ServerData holds the
 // server's diverging version so nothing is lost until the user resolves it.
 type Conflict struct {
-	CalID      string
-	Name       string
-	ServerETag string
-	ServerData []byte
+	CalID         string
+	Name          string
+	ServerETag    string
+	ServerData    []byte
+	ServerDeleted bool // the server deleted the resource (accept-server = drop the local copy)
 }
 
 // MarkConflict records that calID/name conflicts with the server, stashing the
 // server's diverging version losslessly. The local resource is left in place
 // (and flagged Conflicted) so the user's edit is preserved; sync skips a
 // conflicted resource until it is resolved. Re-marking updates the stash.
-func (s *Store) MarkConflict(ctx context.Context, calID, name string, serverData []byte, serverETag string) error {
+func (s *Store) MarkConflict(ctx context.Context, calID, name string, serverData []byte, serverETag string, serverDeleted bool) error {
 	if err := ctx.Err(); err != nil {
 		return err
 	}
@@ -42,7 +43,7 @@ func (s *Store) MarkConflict(ctx context.Context, calID, name string, serverData
 	if cs.conflicts == nil {
 		cs.conflicts = map[string]conflictMeta{}
 	}
-	cs.conflicts[name] = conflictMeta{ServerETag: serverETag, ServerData: string(serverData)}
+	cs.conflicts[name] = conflictMeta{ServerETag: serverETag, ServerData: string(serverData), ServerDeleted: serverDeleted}
 
 	// Replace the resource with a conflicted copy (copy-on-write: never mutate a
 	// snapshot a reader may hold).
@@ -66,10 +67,11 @@ func (s *Store) Conflicts() []Conflict {
 	for _, cs := range s.cals {
 		for name, cm := range cs.conflicts {
 			out = append(out, Conflict{
-				CalID:      cs.id,
-				Name:       name,
-				ServerETag: cm.ServerETag,
-				ServerData: []byte(cm.ServerData),
+				CalID:         cs.id,
+				Name:          name,
+				ServerETag:    cm.ServerETag,
+				ServerData:    []byte(cm.ServerData),
+				ServerDeleted: cm.ServerDeleted,
 			})
 		}
 	}
@@ -138,13 +140,20 @@ func (s *Store) ResolveKeepServer(ctx context.Context, calID, name string) error
 		return fmt.Errorf("store: no conflict for %s/%s", calID, name)
 	}
 
-	// Empty ServerData means the server DELETED the resource while it was edited
-	// locally. "Keep server" = accept the deletion: drop the local copy (no
-	// tombstone — it's already gone on the server) and clear the conflict. Without
-	// this, model.Decode on empty data errored and the conflict was unresolvable
-	// in the server's favor.
-	if cm.ServerData == "" {
+	// The server DELETED the resource while it was edited locally. "Keep server"
+	// = accept the deletion: drop the local copy (no tombstone — it's already gone
+	// on the server) and clear the conflict. This is keyed on the explicit
+	// ServerDeleted flag, NOT on empty ServerData: a present-but-unparseable
+	// server version also lacks a typed model, and treating it as a deletion would
+	// silently discard the local edit.
+	if cm.ServerDeleted {
 		return s.Forget(ctx, calID, name)
+	}
+	if cm.ServerData == "" {
+		// Not a deletion, yet nothing was stashed — the server version couldn't be
+		// captured. Refuse rather than dropping the local edit; the conflict stays
+		// for the user to resolve (e.g. keep-local).
+		return fmt.Errorf("store: server version of %s/%s is unavailable; cannot keep server", calID, name)
 	}
 
 	parsed, err := model.Decode([]byte(cm.ServerData), time.Local)
