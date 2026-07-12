@@ -42,7 +42,7 @@ Run `lazyplanner` with no arguments to open the TUI. It reads the local cache (p
 - **`?`** opens the full help cheat sheet.
 - **Mode indicator**: the status bar (now outlined like the other panes) shows a vim-style **mode badge** at its far left — `NORMAL` at rest, `DRILL` when you've drilled into a calendar day (to cycle its events), and `GRAB` in grab mode. Merely focusing the task tree or the calendar grid is ordinary navigation and stays `NORMAL`. It tells you what the movement keys (`hjkl`) act on right now, so a context-sensitive key is never a surprise.
 - **`:conflicts`** resolves items that changed on both sides (keep local / keep server); the status bar shows the live conflict count.
-- **`+` / `-`** collapse / restore the overview so the calendar or tree fills the width; **`Ctrl-←` / `Ctrl-→`** narrow / widen the overview column (remembered across launches).
+- **`+` / `-`** collapse / restore the overview so the calendar or tree fills the width (in week/day view they zoom the hour height instead, and **`0`** resets it to auto-fit); **`Ctrl-←` / `Ctrl-→`** narrow / widen the overview column. **`Ctrl-W`** opens a resize sub-mode: `←`/`→` size the overview, `H`/`L` the Detail pane, `Esc` exits. All widths are remembered across launches.
 - **`r`** — sync now (alias for `:sync`). LazyPlanner also syncs in the background on startup and **periodically while open** (every `sync_interval_minutes`, default 15, `0` = off); the status bar's right section shows the state (`syncing…`, `synced HH:MM`, `! N conflict(s)`, `offline`, or `not configured`).
 - **Mouse**: click a panel to switch to it, click to select, double-click the tree/agenda to edit, wheel to scroll.
 
@@ -71,8 +71,8 @@ Full key list:
 | `[` / `]` | Cycle the highlighted calendar (any mode) |
 | `{` / `}` | Cycle the highlighted task list (any mode) |
 | `f` / `b` · `gt` | Forward / back one period · jump to today |
-| `+` / `-` | Collapse / restore the overview (accordion) |
-| `Ctrl-←` / `Ctrl-→` | Narrow / widen the overview column (remembered) |
+| `+` / `-` / `0` | Accordion collapse / restore · in week/day: zoom hour height, `0` = auto-fit |
+| `Ctrl-←` / `Ctrl-→` · `Ctrl-W` | Narrow / widen the overview column · resize sub-mode (overview + Detail) |
 | `r` | Sync now (= `:sync`) |
 | `:` · `gd` · `?` | Command line · go to date · help |
 | `.` | Show/hide completed tasks |
@@ -98,7 +98,7 @@ The local cache is **namespaced by account** (a stable id derived from the serve
 
 ### Syncing
 
-Once `[server]` is set, LazyPlanner syncs **both ways** on startup, **periodically** while open (`sync_interval_minutes`, default 15, `0` = off), and whenever you press `r` (or run the `sync` command below). Sync is ETag-based and **never silently overwrites**: it pushes local creates/edits/deletes, pulls remote changes, and when the same item changed on both sides it keeps both versions and flags the conflict — resolve them in-app with `:conflicts` (keep local / keep server). Sync is **incremental**: each calendar's server CTag is checked first, and one whose contents haven't changed (and has nothing local to push) is skipped without re-downloading — so a routine sync of an idle account is cheap, which matters on a Raspberry Pi or with large calendars.
+Once `[server]` is set, LazyPlanner syncs **both ways** on startup, **periodically** while open (`sync_interval_minutes`, default 15, `0` = off), a few seconds after any local edit (a **debounced** background push, so other devices see changes fast), and whenever you press `r` (or run the `sync` command below). Sync is ETag-based and **never silently overwrites**: it pushes local creates/edits/deletes, pulls remote changes, and when the same item changed on both sides it keeps both versions and flags the conflict — resolve them in-app with `:conflicts` (keep local / keep server). Sync is **incremental**: each calendar's server CTag is checked first, and one whose contents haven't changed (and has nothing local to push) is skipped without re-downloading — so a routine sync of an idle account is cheap, which matters on a Raspberry Pi or with large calendars.
 
 **Read-only calendars** (like NextCloud's generated "Contact Birthdays" calendar, or read-only shares) are detected automatically and marked `[ro]` in the overview. LazyPlanner never writes to them — creating/editing/deleting there is blocked with a hint, and sync mirrors them one-way — exactly as the NextCloud web UI treats them.
 

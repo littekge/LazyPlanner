@@ -8,7 +8,7 @@ import (
 func TestResizeLeftClampsAndPersists(t *testing.T) {
 	a := newRootedTestApp(t, time.Date(2026, 7, 5, 12, 0, 0, 0, time.UTC))
 	var saved int
-	a.saveState = func(w int, _ []string, _ int) { saved = w }
+	a.saveState = func(w, _ int, _ []string, _ int) { saved = w }
 
 	start := a.leftWidth
 	a.resizeLeft(leftWidthStep)
@@ -57,7 +57,7 @@ func TestAccordionBlockedInAgenda(t *testing.T) {
 func TestZoomHourAdjustsClampsAndPersists(t *testing.T) {
 	a := newRootedTestApp(t, time.Date(2026, 7, 5, 12, 0, 0, 0, time.UTC))
 	var savedRows int
-	a.saveState = func(_ int, _ []string, rph int) { savedRows = rph }
+	a.saveState = func(_, _ int, _ []string, rph int) { savedRows = rph }
 
 	a.zoomHour(1) // from auto-fit (effective 1) → 2
 	if a.hourRows != 2 || a.timegrid.rowsPerHour != 2 {

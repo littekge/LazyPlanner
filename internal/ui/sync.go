@@ -42,6 +42,34 @@ func (a *app) triggerSync() {
 	}()
 }
 
+// syncDebounce is how long after the last local edit a background push fires.
+const syncDebounce = 3 * time.Second
+
+// scheduleSyncDebounced arms (or re-arms) a one-shot background sync a few seconds
+// after a local edit — the "debounced push after edits" trigger, so other devices
+// see changes fast without a sync on every keystroke. It's a no-op offline (no
+// server), and triggerSync coalesces, so it never stacks with a running sync. The
+// timer is only (re)set from the event-loop goroutine (all mutations run there);
+// the fired callback re-enters the loop via QueueUpdateDraw.
+func (a *app) scheduleSyncDebounced() {
+	if a.syncFn == nil {
+		return
+	}
+	if a.syncTimer != nil {
+		a.syncTimer.Stop()
+	}
+	a.syncTimer = time.AfterFunc(syncDebounce, func() {
+		a.tv.QueueUpdateDraw(func() { a.triggerSync() })
+	})
+}
+
+// stopSyncTimer cancels a pending debounced push (called on quit).
+func (a *app) stopSyncTimer() {
+	if a.syncTimer != nil {
+		a.syncTimer.Stop()
+	}
+}
+
 // startPeriodicSync fires a background sync every interval until the app's context
 // is cancelled (quit). The tick queues triggerSync onto the event-loop goroutine —
 // triggerSync touches UI state (a.syncing) and must not run off it — and

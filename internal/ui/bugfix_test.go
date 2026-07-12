@@ -66,7 +66,7 @@ func TestHideKeepsCalendarSelection(t *testing.T) {
 	if a.calendars.GetItemCount() < 2 {
 		t.Skip("need at least two calendars")
 	}
-	a.saveState = func(int, []string, int) {}
+	a.saveState = func(int, int, []string, int) {}
 	a.calendars.SetCurrentItem(1)
 	want := a.selectedCalendarID()
 

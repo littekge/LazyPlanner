@@ -580,6 +580,7 @@ const (
 	modeNormal = "NORMAL"
 	modeDrill  = "DRILL"
 	modeGrab   = "GRAB"
+	modeResize = "RESIZE"
 )
 
 // interactionMode reports the current modal input context for the mode indicator.
@@ -593,6 +594,8 @@ const (
 // level, so DRILL never shows in Tasks).
 func (a *app) interactionMode() string {
 	switch {
+	case a.resizing:
+		return modeResize
 	case a.grabbing:
 		return modeGrab
 	case a.gridDrilled():
@@ -627,6 +630,8 @@ func (a *app) drawModeIndicator(screen tcell.Screen, x, y, width, height int) (i
 		style = tcell.StyleDefault.Foreground(tcell.ColorBlack).Background(accentColor).Bold(true)
 	case modeGrab:
 		style = tcell.StyleDefault.Foreground(tcell.ColorBlack).Background(todayColor).Bold(true)
+	case modeResize:
+		style = tcell.StyleDefault.Foreground(tcell.ColorBlack).Background(tcell.ColorFuchsia).Bold(true)
 	}
 	col := x + (width-len(label))/2
 	if col < x {

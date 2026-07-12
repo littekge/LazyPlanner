@@ -26,7 +26,7 @@ var helpSections = []struct {
 		{"/ then n / N", "search; next / prev match"},
 		{"Enter", "dive in / open; cycle a day's events"},
 		{"Esc / q", "back out / quit"},
-		{"(mode badge)", "status-bar badge shows the input mode: NORMAL · DRILL (dived into a day/list) · GRAB"},
+		{"(mode badge)", "status-bar badge shows the input mode: NORMAL · DRILL (drilled into a calendar day) · GRAB · RESIZE"},
 	}},
 	{"Create (i prefix)", [][2]string{
 		{"i t / i T", "add task — quick / full form"},
@@ -59,8 +59,9 @@ var helpSections = []struct {
 		{"g d", "go to date (smart-parsed)"},
 	}},
 	{"Layout", [][2]string{
-		{"+ / -", "week/day: zoom hour height (remembered) · else: collapse / restore the overview (accordion)"},
+		{"+ / - / 0", "week/day: zoom hour height in/out · 0 = auto-fit (remembered) · else: +/- collapse / restore the overview (accordion)"},
 		{"Ctrl-← / Ctrl-→", "narrow / widen the overview column"},
+		{"Ctrl-W", "resize sub-mode: ←/→ overview · H/L Detail · Esc done"},
 	}},
 	{"Sync & commands", [][2]string{
 		{"r", "sync now (= :sync)"},

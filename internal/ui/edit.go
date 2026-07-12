@@ -50,6 +50,9 @@ type undoStep struct {
 
 func (a *app) pushUndo(label, selUID string, ops ...undoOp) {
 	a.undo = append(a.undo, undoStep{label: label, selUID: selUID, ops: ops})
+	// Every local mutation pushes an undo step, so this is the single signal to
+	// schedule the debounced background push (offline → no-op).
+	a.scheduleSyncDebounced()
 }
 
 // editTarget is the item the editing shortcuts act on in the current context.
@@ -914,6 +917,8 @@ func (a *app) undoLast() {
 		}
 	}
 	a.refresh(step.selUID)
+	// Undo is itself a local change to push (it doesn't call pushUndo).
+	a.scheduleSyncDebounced()
 	a.flash("Undid " + step.label)
 }
 

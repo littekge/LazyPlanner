@@ -156,14 +156,19 @@ type app struct {
 	syncing     bool
 	lastSyncAt  time.Time
 	lastSyncErr error
+	// syncTimer debounces a background push after local edits (only touched on the
+	// event-loop goroutine, where mutations run).
+	syncTimer *time.Timer
 
 	// Pane sizing (step 10). leftCol is the left overview column so its width can
 	// be resized (Ctrl-←/→) or collapsed (accordion +/-). saveState persists the
 	// chosen width.
-	leftCol   *tview.Flex
-	leftWidth int
-	accordion bool
-	saveState func(leftWidth int, hidden []string, rowsPerHour int)
+	leftCol     *tview.Flex
+	leftWidth   int
+	detailWidth int  // right Detail pane width (Ctrl-W resize sub-mode)
+	resizing    bool // in the Ctrl-W pane-resize sub-mode (modal)
+	accordion   bool
+	saveState   func(leftWidth, detailWidth int, hidden []string, rowsPerHour int)
 
 	// hourRows is the week/day time-grid hour-row height set with +/- (0 =
 	// auto-fit the whole day to the pane); mirrored onto the time grid and
@@ -175,12 +180,17 @@ type app struct {
 	hidden map[string]bool
 }
 
-// Left-column sizing bounds (columns).
+// Left-column and Detail-pane sizing bounds (columns).
 const (
 	defaultLeftWidth = 26
 	minLeftWidth     = 16
 	maxLeftWidth     = 50
 	leftWidthStep    = 3
+
+	defaultDetailWidth = 32
+	minDetailWidth     = 20
+	maxDetailWidth     = 60
+	detailWidthStep    = 3
 )
 
 // modeIndicatorWidth is the fixed status-bar cell for the interaction-mode badge;
@@ -193,6 +203,17 @@ func clampLeftWidth(w int) int {
 		return minLeftWidth
 	case w > maxLeftWidth:
 		return maxLeftWidth
+	default:
+		return w
+	}
+}
+
+func clampDetailWidth(w int) int {
+	switch {
+	case w < minDetailWidth:
+		return minDetailWidth
+	case w > maxDetailWidth:
+		return maxDetailWidth
 	default:
 		return w
 	}
@@ -249,6 +270,7 @@ type Options struct {
 	// SyncIntervalMinutes runs a periodic background sync at this cadence; 0 = off.
 	SyncIntervalMinutes int
 	LeftWidth           int      // remembered left-column width (0 = default)
+	DetailWidth         int      // remembered Detail-pane width (0 = default)
 	Hidden              []string // calendar ids hidden from the calendar/agenda views
 	RowsPerHour         int      // remembered week/day hour-row height (0 = auto-fit)
 	ColorMode           string   // how server calendar colors render: "auto"/"truecolor", "16", or "off"
@@ -259,7 +281,7 @@ type Options struct {
 	DateFormat     string // "us" (default) or "iso"
 	// SaveState persists remembered UI state (nil = don't persist). Every save
 	// passes the full state, so the caller can rewrite the file wholesale.
-	SaveState func(leftWidth int, hidden []string, rowsPerHour int)
+	SaveState func(leftWidth, detailWidth int, hidden []string, rowsPerHour int)
 	// EditConfig opens the config file in $EDITOR and reloads it, returning the
 	// settings the running app can apply live and an error. The UI calls it
 	// inside a tview Suspend so the editor owns the terminal. nil disables
@@ -283,6 +305,7 @@ type ConfigReload struct {
 func Run(opts Options) error {
 	a := newApp(opts.Store, opts.Title, time.Now())
 	defer a.cancel() // on quit, unwind any in-flight background sync cleanly
+	defer a.stopSyncTimer()
 	a.syncFn = opts.Sync
 	a.saveState = opts.SaveState
 	a.editConfig = opts.EditConfig
@@ -299,6 +322,9 @@ func Run(opts Options) error {
 	}
 	if opts.LeftWidth != 0 {
 		a.leftWidth = clampLeftWidth(opts.LeftWidth)
+	}
+	if opts.DetailWidth != 0 {
+		a.detailWidth = clampDetailWidth(opts.DetailWidth)
 	}
 	if opts.RowsPerHour != 0 {
 		a.hourRows = clampRowsPerHour(opts.RowsPerHour)
@@ -357,6 +383,7 @@ func newApp(s *store.Store, title string, now time.Time) *app {
 		hints:           tview.NewTextView(),
 		detailOn:        true,
 		leftWidth:       defaultLeftWidth,
+		detailWidth:     defaultDetailWidth,
 		viewMode:        viewMonth,
 		anchor:          model.DayStart(now),
 		weekStartMonday: true,
@@ -486,7 +513,7 @@ func (a *app) layout() tview.Primitive {
 	a.body = tview.NewFlex(). // default FlexColumn: side by side
 					AddItem(left, a.leftWidth, 0, false).
 					AddItem(a.center, 0, 3, true).
-					AddItem(a.detail, 0, 1, false)
+					AddItem(a.detail, a.detailWidth, 0, false)
 
 	statusBar := tview.NewFlex(). // mode | general | command view | sync
 					AddItem(a.statusMode, modeIndicatorWidth, 0, false).
@@ -528,7 +555,7 @@ func (a *app) showDetail(on bool) {
 	}
 	a.detailOn = on
 	if on {
-		a.body.ResizeItem(a.detail, 0, 1)
+		a.body.ResizeItem(a.detail, a.detailWidth, 0)
 	} else {
 		a.body.ResizeItem(a.detail, 0, 0)
 	}
@@ -591,6 +618,11 @@ func (a *app) globalKeys(ev *tcell.EventKey) *tcell.EventKey {
 	if a.grabbing {
 		return a.handleGrabKey(ev)
 	}
+	// The pane-resize sub-mode (Ctrl-W) is modal: ←/→ size the overview, H/L the
+	// Detail pane, Esc/Enter exit.
+	if a.resizing {
+		return a.handleResizeKey(ev)
+	}
 	// Vim counts: 1-9 start a count and 0 extends one; the next motion repeats.
 	// (Digits are free for this now that panel focus lives on c/t/a.)
 	if ev.Key() == tcell.KeyRune {
@@ -626,6 +658,9 @@ func (a *app) globalKeys(ev *tcell.EventKey) *tcell.EventKey {
 		return nil
 	case tcell.KeyBacktab:
 		a.setMode((a.mode + 2) % 3)
+		return nil
+	case tcell.KeyCtrlW:
+		a.enterResizeMode()
 		return nil
 	case tcell.KeyLeft:
 		if ev.Modifiers()&tcell.ModCtrl != 0 {
@@ -755,6 +790,13 @@ func (a *app) globalKeys(ev *tcell.EventKey) *tcell.EventKey {
 				a.setAccordion(false)
 			}
 			return nil
+		case '0':
+			// In the week/day grid, a bare 0 (not extending a count) resets the
+			// hour-row zoom to auto-fit; elsewhere it's not a binding.
+			if a.timeGridActive() {
+				a.resetHourZoom()
+				return nil
+			}
 		case 'H':
 			if a.mode == modeTasks {
 				a.reparentSelected(outdent)

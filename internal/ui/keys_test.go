@@ -341,7 +341,7 @@ func TestToggleCalendarVisibility(t *testing.T) {
 		t.Skip("fixture has no calendars")
 	}
 	var savedHidden []string
-	a.saveState = func(_ int, hidden []string, _ int) { savedHidden = hidden }
+	a.saveState = func(_, _ int, hidden []string, _ int) { savedHidden = hidden }
 
 	a.calendars.SetCurrentItem(0)
 	id := a.selectedCalendarID()
@@ -394,7 +394,7 @@ func TestHiddenCalendarDropsFromAgenda(t *testing.T) {
 // height; in any other view they drive the accordion (unchanged).
 func TestPlusMinusContextual(t *testing.T) {
 	a := newRootedTestApp(t, time.Date(2026, 7, 5, 12, 0, 0, 0, time.UTC))
-	a.saveState = func(int, []string, int) {}
+	a.saveState = func(int, int, []string, int) {}
 
 	// Week view: + zooms and does not collapse the overview.
 	a.setMode(modeCalendar)

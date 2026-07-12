@@ -312,6 +312,67 @@ func (a *app) resizeLeft(delta int) {
 	a.persistState()
 }
 
+// resizeDetail grows/shrinks the right Detail pane (clamped, remembered). A no-op
+// when Detail is hidden (Agenda mode).
+func (a *app) resizeDetail(delta int) {
+	if !a.detailOn || a.body == nil {
+		return
+	}
+	w := clampDetailWidth(a.detailWidth + delta)
+	if w == a.detailWidth {
+		return
+	}
+	a.detailWidth = w
+	a.body.ResizeItem(a.detail, a.detailWidth, 0)
+	a.persistState()
+}
+
+// enterResizeMode starts the modal pane-resize sub-mode (Ctrl-W). It's keyboard-
+// and terminal-robust (no exotic modifier chords): ←/→ (or h/l) size the overview
+// column, H/L the Detail pane, Esc/Enter exit. Collapsing (accordion) is undone
+// first, since resizing a collapsed column is meaningless.
+func (a *app) enterResizeMode() {
+	if a.accordion {
+		a.setAccordion(false)
+	}
+	a.resizing = true
+	a.updateStatus()
+	a.flash("RESIZE · ←/→ overview · H/L detail · Esc done")
+}
+
+func (a *app) exitResizeMode() {
+	a.resizing = false
+	a.updateStatus()
+	a.flash("Resize done")
+}
+
+// handleResizeKey processes a key while the resize sub-mode is active; every key is
+// consumed so nothing leaks to the views.
+func (a *app) handleResizeKey(ev *tcell.EventKey) *tcell.EventKey {
+	switch ev.Key() {
+	case tcell.KeyEscape, tcell.KeyEnter, tcell.KeyCtrlW:
+		a.exitResizeMode()
+	case tcell.KeyLeft:
+		a.resizeLeft(-leftWidthStep)
+	case tcell.KeyRight:
+		a.resizeLeft(leftWidthStep)
+	case tcell.KeyRune:
+		switch ev.Rune() {
+		case 'h':
+			a.resizeLeft(-leftWidthStep)
+		case 'l':
+			a.resizeLeft(leftWidthStep)
+		case 'H':
+			a.resizeDetail(-detailWidthStep)
+		case 'L':
+			a.resizeDetail(detailWidthStep)
+		case 'q':
+			a.exitResizeMode()
+		}
+	}
+	return nil
+}
+
 // persistState saves the remembered UI prefs (pane width, hidden calendars, and
 // the week/day hour-row zoom) via the callback wired from main. No-op when
 // persistence is disabled.
@@ -326,7 +387,7 @@ func (a *app) persistState() {
 		}
 	}
 	sort.Strings(hidden) // stable file output
-	a.saveState(a.leftWidth, hidden, a.hourRows)
+	a.saveState(a.leftWidth, a.detailWidth, hidden, a.hourRows)
 }
 
 // toggleCalendarVisibility hides or shows the highlighted calendar's items on the
@@ -388,6 +449,19 @@ func (a *app) zoomHour(delta int) {
 	a.timegrid.rowsPerHour = n
 	a.persistState()
 	a.flash(fmt.Sprintf("Hour rows: %d", n))
+}
+
+// resetHourZoom returns the week/day time-grid to auto-fit (the `0` key), undoing
+// any +/- zoom — the 0 = auto-fit reset the spec pairs with the zoom keys.
+func (a *app) resetHourZoom() {
+	if a.hourRows == 0 {
+		a.flash("Hour rows: auto-fit")
+		return
+	}
+	a.hourRows = 0
+	a.timegrid.rowsPerHour = 0
+	a.persistState()
+	a.flash("Hour rows: auto-fit")
 }
 
 // setAccordion collapses (on) or restores (off) the left overview column so the

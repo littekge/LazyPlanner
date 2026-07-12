@@ -51,7 +51,7 @@ func TestCalendarHideShowViaCommand(t *testing.T) {
 	if a.calendars.GetItemCount() == 0 {
 		t.Skip("fixture has no calendars")
 	}
-	a.saveState = func(int, []string, int) {}
+	a.saveState = func(int, int, []string, int) {}
 	a.calendars.SetCurrentItem(0)
 	id := a.selectedCalendarID()
 

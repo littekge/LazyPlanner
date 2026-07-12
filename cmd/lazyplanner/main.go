@@ -119,6 +119,7 @@ func runTUI() error {
 		Sync:                syncFn,
 		SyncIntervalMinutes: cfg.Behavior.SyncIntervalMinutes,
 		LeftWidth:           uiState.LeftWidth,
+		DetailWidth:         uiState.DetailWidth,
 		Hidden:              uiState.HiddenCalendars,
 		RowsPerHour:         uiState.RowsPerHour,
 		ColorMode:           cfg.Appearance.ColorMode,
@@ -126,8 +127,8 @@ func runTUI() error {
 		DefaultView:         cfg.Appearance.DefaultView,
 		TimeFormat:          cfg.Appearance.TimeFormat,
 		DateFormat:          cfg.Appearance.DateFormat,
-		SaveState: func(leftWidth int, hidden []string, rowsPerHour int) {
-			_ = state.Save(statePath, state.State{LeftWidth: leftWidth, HiddenCalendars: hidden, RowsPerHour: rowsPerHour})
+		SaveState: func(leftWidth, detailWidth int, hidden []string, rowsPerHour int) {
+			_ = state.Save(statePath, state.State{LeftWidth: leftWidth, DetailWidth: detailWidth, HiddenCalendars: hidden, RowsPerHour: rowsPerHour})
 		},
 		EditConfig: editConfigFn(configPath, pathErr, accountID, s),
 	})

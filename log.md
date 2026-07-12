@@ -4,6 +4,17 @@
 
 ---
 
+## 2026-07-12 — Hardening pass 1: close promised-vs-implemented gaps
+
+- A deep spec-vs-code audit (fan-out across model/sync/views/tasks/keymap/config) found the implementation very faithful — no missing keybindings or `:` commands. Closed the few real gaps and reconciled the docs; owner decided each fork.
+- **Built #1 — debounced push after edits** (the one missing sync trigger): `scheduleSyncDebounced` (`internal/ui/sync.go`) arms a 3s one-shot background sync after any local mutation, hooked into `pushUndo` (the universal forward-mutation signal) and `undoLast`; no-op offline, coalesced with running/periodic sync, cancelled on quit. Shrinks the conflict window as promised.
+- **Built #2 — `0` = auto-fit hour-zoom reset**: a bare `0` in the week/day grid resets the hour-row height to auto-fit (`resetHourZoom`); still extends a pending vim count otherwise.
+- **Built #4 — Detail-pane resize via a `Ctrl-W` sub-mode**: a modal resize mode (badge `RESIZE`) where `←`/`→`(`h`/`l`) size the overview and `H`/`L` size the Detail pane, `Esc`/`Enter` exit — terminal-robust (no exotic modifier chords, works on a bare Pi console). Detail is now a fixed, persisted width (`state.DetailWidth`, `SaveState` gained a `detailWidth` param); `Ctrl-←`/`Ctrl-→` still quick-resize the overview.
+- **Doc reconciliations** (owner decisions): #3 dropped the promised per-calendar *local color override* from the spec (colors are server-owned via `:calendar color`; hide-locally stays as a state-file toggle); #5 removed the "last-used view" state example (opening view is the config `default_view`); #6 aligned the folder-delete wording (one confirm naming the subtree count; deleting a task with any descendants removes the subtree). Fixed staleness: `help.go` DRILL badge ("calendar day", + `RESIZE`), main.md runtime-paths table now shows the `<account-id>` segment, and documented the new `Ctrl-W`/`0`/debounced-push behavior across README/main.md/CLAUDE.md.
+- Two low/intentional items left as-is (documented): `RANGE=THISANDFUTURE` overrides uninterpreted, and event recurrence surfaced as a boolean "repeats" flag rather than rule text.
+- Tests (`internal/ui/hardening_pass1_test.go`): `0` resets zoom (and still extends a count), debounced push arms only when configured, and the `Ctrl-W` resize sub-mode sizes overview + Detail and exits. Updated the `saveState` test closures to the new signature. Full gate passes.
+- Files: `internal/ui/sync.go`, `internal/ui/edit.go`, `internal/ui/keys.go`, `internal/ui/app.go`, `internal/ui/render.go`, `internal/ui/help.go`, `internal/state/state.go`, `cmd/lazyplanner/main.go`, `internal/ui/hardening_pass1_test.go` (+ test-closure fixups), `README.md`, `main.md`, `CLAUDE.md`.
+
 ## 2026-07-12 — Revert #4: recurring tasks show a single live instance again
 
 - Owner decision after a caveats review: showing every occurrence of a recurring task on the calendar (the earlier #4 change) introduced unneeded complexity, and recurring tasks-with-subtasks ("recurring folders") are a confusing fit for the tasks-as-folders model — so **recurring checklists will not be built**, and #4 is reverted to plain complete-to-advance (a recurring task shows once, at its current due, and advances one occurrence on completion). The current independent handling of a recurring task's subtasks is data-safe (verified: recurrence edits only the parent's own component, stable UID, iron-rule preservation, links never dangle); it just doesn't regenerate subtasks.
