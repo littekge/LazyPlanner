@@ -4,6 +4,13 @@
 
 ---
 
+## 2026-07-12 — Hardening pass 3 (#8): skip server objects with an empty href
+
+- **Bug:** a CalDAV response carrying an empty `<href/>` decoded to an object with `Path==""`. Reconcile step B didn't match it in `localByHref` and pulled it, storing it with `Href==""`; the **next** sync's step A then saw `r.Href == ""`, classified it as a never-pushed local resource, and `pushCreate`'d it — a spurious server-side duplicate from a malformed/buggy server response.
+- **Fix:** step B now skips any server object with an empty `Path`, recording it (`errEmptyHref`) instead of storing an unaddressable resource.
+- Test (`internal/sync/sync_test.go`): an empty-href server object is skipped (recorded, 0 pulled, 0 stored, 0 puts) rather than stored and re-uploaded.
+- Files: `internal/sync/sync.go`, `internal/sync/sync_test.go`. Full gate passes.
+
 ## 2026-07-12 — Hardening pass 3 (#7): UID-less todos no longer collapse in the tree
 
 - **Bug:** `BuildTree` keyed nodes by `Todo.UID`. A VTODO with no UID (malformed — UID is RFC 5545-required but nothing enforces it on read) hashed to the shared `""` slot: every UID-less todo overwrote `nodes[""]`, so only the **last** survived the map, and the roots loop then resolved each UID-less todo to that same node and appended it repeatedly — some tasks vanished, one duplicated. (A duplicate *non-empty* UID had a milder version of the same double-append.)

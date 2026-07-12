@@ -40,6 +40,10 @@ type Syncer interface {
 	GetObject(ctx context.Context, href string) (caldav.Object, error)
 }
 
+// errEmptyHref marks a server response whose resource href was empty — it can't
+// be addressed for later writes, so it is skipped rather than stored.
+var errEmptyHref = errors.New("server response had an empty href")
+
 // SyncError records one resource that could not be synced. The rest of the sync
 // still proceeds; these are collected in the result.
 type SyncError struct {
@@ -336,6 +340,14 @@ func reconcileCalendar(ctx context.Context, client Syncer, st *store.Store, calI
 	// (B) Pull resources that exist on the server but not locally (new remotely),
 	// skipping any with a pending local deletion (handled in step C).
 	for _, o := range serverObjs {
+		if o.Path == "" {
+			// A server response with an empty href can't be addressed for a later
+			// update or delete, and storing it (with Href=="") would make the next
+			// sync mistake it for a never-pushed local resource and re-upload it as
+			// a server-side duplicate. Skip and record it instead.
+			recordSkip(res, calID, "(empty href)", errEmptyHref)
+			continue
+		}
 		if localByHref[o.Path] || tombstonedHref[o.Path] {
 			continue
 		}

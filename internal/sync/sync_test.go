@@ -333,6 +333,36 @@ func TestSyncPullsNewServerObject(t *testing.T) {
 	}
 }
 
+// TestSyncSkipsEmptyHrefServerObject locks Pass-3 #8: a server response whose
+// href is empty must be skipped and recorded, not stored with Href=="" (which
+// the next sync would mistake for a never-pushed local resource and re-upload
+// as a server-side duplicate).
+func TestSyncSkipsEmptyHrefServerObject(t *testing.T) {
+	ctx := context.Background()
+	st := newStore(t)
+	srv := newFakeServer()
+	// Keyed under the calendar so DownloadAll returns it, but the Object's own
+	// Path is empty — the malformed <href/> case.
+	srv.data[calPath+"ghost.ics"] = caldav.Object{Path: "", ETag: "srv-1", Data: mkICal(t, eventICS("ghost@test", "Ghost"))}
+
+	res, err := sync.Sync(ctx, srv, st)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if res.Pulled != 0 {
+		t.Errorf("Pulled = %d, want 0 (empty-href object skipped)", res.Pulled)
+	}
+	if len(res.Skipped) != 1 || !strings.Contains(res.Skipped[0].Err.Error(), "empty href") {
+		t.Errorf("Skipped = %+v, want one empty-href skip", res.Skipped)
+	}
+	if cal, _ := st.Calendar("personal"); len(cal.Resources) != 0 {
+		t.Errorf("stored %d resources, want 0", len(cal.Resources))
+	}
+	if srv.puts != 0 {
+		t.Errorf("puts = %d, want 0 (nothing to re-upload)", srv.puts)
+	}
+}
+
 func TestSyncConflictKeepsBoth(t *testing.T) {
 	ctx := context.Background()
 	st := newStore(t)
