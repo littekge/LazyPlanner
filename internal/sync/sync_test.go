@@ -65,7 +65,9 @@ type fakeServer struct {
 	failDownload map[string]error         // calendar path -> DownloadAll error
 	downloads    int                      // count of DownloadAll calls (CTag short-circuit test)
 	getData      map[string]caldav.Object // href -> version GetObject returns (else f.data)
+	getErr       map[string]error         // href -> error GetObject returns (a resource that won't fetch/decode)
 	gets         int
+	listHrefs    int // count of ListObjectHrefs calls (fallback-path assertion)
 	writable     map[string]bool  // path -> writable (missing = writable); the 403 re-check
 	writableErr  map[string]error // path -> error from the writability re-check
 	seq          int
@@ -89,6 +91,7 @@ func newFakeServer() *fakeServer {
 		failDel:      map[string]error{},
 		failDownload: map[string]error{},
 		getData:      map[string]caldav.Object{},
+		getErr:       map[string]error{},
 		writable:     map[string]bool{},
 		writableErr:  map[string]error{},
 		homeSet:      "/dav/cal/",
@@ -153,6 +156,9 @@ func (f *fakeServer) DiscoverCalendars(context.Context) ([]caldav.Calendar, erro
 // live data. Missing -> not found.
 func (f *fakeServer) GetObject(_ context.Context, href string) (caldav.Object, error) {
 	f.gets++
+	if err := f.getErr[href]; err != nil {
+		return caldav.Object{}, err
+	}
 	if o, ok := f.getData[href]; ok {
 		return o, nil
 	}
@@ -160,6 +166,17 @@ func (f *fakeServer) GetObject(_ context.Context, href string) (caldav.Object, e
 		return o, nil
 	}
 	return caldav.Object{}, errors.New("not found")
+}
+
+func (f *fakeServer) ListObjectHrefs(_ context.Context, p string) ([]caldav.ObjectRef, error) {
+	f.listHrefs++
+	var out []caldav.ObjectRef
+	for href, o := range f.data {
+		if strings.HasPrefix(href, p) {
+			out = append(out, caldav.ObjectRef{Href: href, ETag: o.ETag})
+		}
+	}
+	return out, nil
 }
 
 func (f *fakeServer) DownloadAll(_ context.Context, p string) ([]caldav.Object, error) {
@@ -467,6 +484,50 @@ func TestSyncUnparseableServerConflictNotTreatedAsDeletion(t *testing.T) {
 	}
 	if r := findRes(t, st, name); r == nil {
 		t.Error("local edit was discarded on keep-server of an unparseable server version (data loss)")
+	}
+}
+
+// TestSyncDownloadFallbackSkipsBadResource locks Pass-3 #2: when the bulk
+// calendar-query fails (go-webdav aborts on one unparseable resource), sync
+// falls back to per-resource fetches so the healthy resources still sync and
+// only the bad one is skipped — not the whole calendar.
+func TestSyncDownloadFallbackSkipsBadResource(t *testing.T) {
+	ctx := context.Background()
+	st := newStore(t)
+	srv := newFakeServer()
+
+	goodHref := calPath + "good.ics"
+	badHref := calPath + "bad.ics"
+	srv.data[goodHref] = caldav.Object{Path: goodHref, ETag: "g1", Data: mkICal(t, eventICS("good@test", "Good"))}
+	srv.data[badHref] = caldav.Object{Path: badHref, ETag: "b1", Data: mkICal(t, eventICS("bad@test", "Bad"))}
+	// The bulk download fails (one resource won't decode in the real client)...
+	srv.failDownload[calPath] = errors.New("calendar-data decode failed")
+	// ...and fetching the bad resource individually also fails; the good one is fine.
+	srv.getErr[badHref] = errors.New("this resource won't decode")
+
+	res, err := sync.Sync(ctx, srv, st)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if srv.listHrefs == 0 {
+		t.Error("fallback ListObjectHrefs was never called")
+	}
+	if res.Pulled != 1 {
+		t.Errorf("Pulled = %d, want 1 (the good resource synced despite the bad one)", res.Pulled)
+	}
+	if cal, _ := st.Calendar("personal"); len(cal.Resources) != 1 || cal.Resources[0].Object.Events[0].Summary != "Good" {
+		t.Errorf("expected only the good resource stored, got %+v", func() []string {
+			c, _ := st.Calendar("personal")
+			var s []string
+			for _, r := range c.Resources {
+				s = append(s, r.Name)
+			}
+			return s
+		}())
+	}
+	// The failure was surfaced, not silent: a bulk-download skip + the bad resource.
+	if len(res.Skipped) < 2 {
+		t.Errorf("Skipped = %+v, want the bulk-download note and the bad resource", res.Skipped)
 	}
 }
 

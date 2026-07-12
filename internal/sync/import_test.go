@@ -74,6 +74,28 @@ func (f *fakeSource) DownloadAll(_ context.Context, p string) ([]caldav.Object, 
 	return f.objs[p], nil
 }
 
+// ListObjectHrefs/GetObject satisfy the Source interface for the resilient
+// download fallback; the import tests exercise the happy bulk path, so these are
+// simple pass-throughs over the same fixture data.
+func (f *fakeSource) ListObjectHrefs(_ context.Context, p string) ([]caldav.ObjectRef, error) {
+	var out []caldav.ObjectRef
+	for _, o := range f.objs[p] {
+		out = append(out, caldav.ObjectRef{Href: o.Path, ETag: o.ETag})
+	}
+	return out, nil
+}
+
+func (f *fakeSource) GetObject(_ context.Context, href string) (caldav.Object, error) {
+	for _, objs := range f.objs {
+		for _, o := range objs {
+			if o.Path == href {
+				return o, nil
+			}
+		}
+	}
+	return caldav.Object{}, errors.New("not found")
+}
+
 func findResource(cal store.Calendar, name string) *store.Resource {
 	for _, r := range cal.Resources {
 		if r.Name == name {

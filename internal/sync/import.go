@@ -17,6 +17,10 @@ import (
 type Source interface {
 	DiscoverCalendars(ctx context.Context) ([]caldav.Calendar, error)
 	DownloadAll(ctx context.Context, calendarPath string) ([]caldav.Object, error)
+	// ListObjectHrefs and GetObject back the per-resource download fallback when
+	// DownloadAll aborts the whole batch on one unparseable resource.
+	ListObjectHrefs(ctx context.Context, calendarPath string) ([]caldav.ObjectRef, error)
+	GetObject(ctx context.Context, href string) (caldav.Object, error)
 }
 
 // ImportError records a single resource that could not be imported. The rest of
@@ -45,7 +49,9 @@ type ImportResult struct {
 // not delete local resources that are absent from the server, nor push local
 // changes — that is the two-way sync step. Individual unparseable or unwritable
 // resources are skipped and collected in the result; only discovery and
-// per-calendar listing failures abort.
+// per-calendar listing failures abort. A bulk-download failure (one resource the
+// transport can't decode) falls back to per-resource fetches so the rest of the
+// calendar still imports.
 func Import(ctx context.Context, src Source, dst *store.Store) (ImportResult, error) {
 	var res ImportResult
 
@@ -69,9 +75,12 @@ func Import(ctx context.Context, src Source, dst *store.Store) (ImportResult, er
 		}
 		res.Calendars++
 
-		objs, err := src.DownloadAll(ctx, cal.Path)
+		objs, skips, err := downloadResilient(ctx, src, cal.Path)
 		if err != nil {
 			return res, fmt.Errorf("import: downloading calendar %q: %w", id, err)
+		}
+		for _, s := range skips {
+			res.Skipped = append(res.Skipped, ImportError{Calendar: id, Path: s.Ref, Err: s.Err})
 		}
 
 		for _, obj := range objs {

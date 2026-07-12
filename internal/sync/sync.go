@@ -18,6 +18,10 @@ import (
 type Syncer interface {
 	DiscoverCalendars(ctx context.Context) ([]caldav.Calendar, error)
 	DownloadAll(ctx context.Context, calendarPath string) ([]caldav.Object, error)
+	// ListObjectHrefs enumerates a calendar's resource hrefs+ETags without
+	// fetching calendar-data — the per-resource download fallback when DownloadAll
+	// aborts the whole batch on one unparseable resource.
+	ListObjectHrefs(ctx context.Context, calendarPath string) ([]caldav.ObjectRef, error)
 	// PutObject writes an encoded resource with a conditional header and returns
 	// the new bare ETag (see caldav.Client.PutObject).
 	PutObject(ctx context.Context, href string, data []byte, ifMatch string, create bool) (string, error)
@@ -262,10 +266,70 @@ func pushCalendarCreates(ctx context.Context, client Syncer, st *store.Store, re
 
 // reconcileCalendar performs the two-way merge for one calendar. It aborts only
 // on a full-calendar download failure; per-resource problems are collected.
-func reconcileCalendar(ctx context.Context, client Syncer, st *store.Store, calID string, sc caldav.Calendar, res *SyncResult) error {
-	serverObjs, err := client.DownloadAll(ctx, sc.Path)
+// downloader is the subset of the server API the resilient download needs; both
+// Syncer (two-way sync) and Source (one-way import) satisfy it.
+type downloader interface {
+	DownloadAll(ctx context.Context, calendarPath string) ([]caldav.Object, error)
+	ListObjectHrefs(ctx context.Context, calendarPath string) ([]caldav.ObjectRef, error)
+	GetObject(ctx context.Context, href string) (caldav.Object, error)
+}
+
+// downloadSkip is one resource (or the bulk step) that could not be downloaded;
+// callers fold these into their own result type (SyncResult/ImportResult).
+type downloadSkip struct {
+	Ref string
+	Err error
+}
+
+// downloadResilient fetches every resource in a calendar. It first tries the bulk
+// calendar-query (DownloadAll); if that fails — go-webdav aborts the whole batch
+// on the first resource whose iCalendar won't decode — it falls back to
+// enumerating hrefs (ListObjectHrefs never decodes data) and fetching each
+// resource individually, so one malformed .ics can no longer silently disable a
+// whole calendar (the resilience the docs promise). Returned skips include a
+// note that the bulk path failed (so the slower degraded path isn't invisible)
+// plus any per-resource fetch failures. A non-nil error means even the fallback
+// listing failed — a genuine per-calendar abort.
+func downloadResilient(ctx context.Context, d downloader, calPath string) ([]caldav.Object, []downloadSkip, error) {
+	objs, err := d.DownloadAll(ctx, calPath)
+	if err == nil {
+		return objs, nil, nil
+	}
+	refs, lerr := d.ListObjectHrefs(ctx, calPath)
+	if lerr != nil {
+		return nil, nil, fmt.Errorf("bulk download failed: %v; fallback listing failed: %w", err, lerr)
+	}
+	skips := []downloadSkip{{Ref: "(bulk download)", Err: fmt.Errorf("bulk download failed, fetching resources individually: %w", err)}}
+	out := make([]caldav.Object, 0, len(refs))
+	for _, ref := range refs {
+		if cerr := ctx.Err(); cerr != nil {
+			return nil, nil, cerr
+		}
+		o, gerr := d.GetObject(ctx, ref.Href)
+		if gerr != nil {
+			skips = append(skips, downloadSkip{Ref: ref.Href, Err: gerr}) // skip just this resource
+			continue
+		}
+		out = append(out, o)
+	}
+	return out, skips, nil
+}
+
+func downloadCalendar(ctx context.Context, client Syncer, calID, calPath string, res *SyncResult) ([]caldav.Object, error) {
+	objs, skips, err := downloadResilient(ctx, client, calPath)
 	if err != nil {
-		return fmt.Errorf("sync: downloading calendar %q: %w", calID, err)
+		return nil, fmt.Errorf("sync: downloading calendar %q: %w", calID, err)
+	}
+	for _, s := range skips {
+		recordSkip(res, calID, s.Ref, s.Err)
+	}
+	return objs, nil
+}
+
+func reconcileCalendar(ctx context.Context, client Syncer, st *store.Store, calID string, sc caldav.Calendar, res *SyncResult) error {
+	serverObjs, err := downloadCalendar(ctx, client, calID, sc.Path, res)
+	if err != nil {
+		return err
 	}
 	serverByHref := make(map[string]caldav.Object, len(serverObjs))
 	for _, o := range serverObjs {

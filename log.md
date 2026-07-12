@@ -4,6 +4,13 @@
 
 ---
 
+## 2026-07-12 — Hardening pass 3 (#2): one bad resource no longer stalls a whole calendar's download
+
+- **Bug:** `DownloadAll` runs go-webdav's bulk calendar-query, whose `decodeCalendarObjectList` returns on the **first** resource whose iCalendar won't decode. So a single corrupt/truncated `.ics` made the whole calendar's download fail; `reconcileCalendar` recorded the entire calendar as one skip and none of its other (healthy) resources synced — every sync, until the bad item was fixed server-side. This contradicted the documented per-resource resilience (the decode happens in the transport before the app sees individual objects, so the per-item skip in `pullInto`/`model.Parse` never got a chance).
+- **Fix:** new caldav `ListObjectHrefs` (a Depth-1 PROPFIND for `getetag`/`resourcetype`, no calendar-data → can't fail on a bad body) + a shared `downloadResilient` helper: on a bulk-download failure it enumerates hrefs and `GetObject`s each resource individually, skipping (and recording) only the ones that won't fetch/decode. Wired into both two-way sync (`downloadCalendar`) and one-way `Import`. The fallback records a skip so the slower degraded path isn't invisible (no silent truncation).
+- Tests: `internal/sync/sync_test.go` — a failed bulk download falls back, syncs the good resource, and skips the bad one (via new `onPut`-style `getErr`/`failDownload`/`ListObjectHrefs` fakes); `internal/caldav/listobjects_test.go` — the PROPFIND parse excludes the collection and returns members with unquoted ETags. `Import`'s and `Sync`'s doc comments now match reality.
+- Files: `internal/caldav/listobjects.go` (new, +test), `internal/sync/{sync,import}.go`, `internal/sync/{sync,import}_test.go`. Full gate passes.
+
 ## 2026-07-12 — Hardening pass 3 (#9): a concurrent calendar rename/recolor survives its PROPPATCH
 
 - **Bug (metadata loss):** `pushCalendarProps` snapshotted the pending name/color, ran the network `SetCalendarProps` PROPPATCH, then `MarkCalendarPropsSynced` cleared `pendingName`/`pendingColor` **unconditionally**. If the user renamed/recolored the same calendar during the round-trip, the flag was cleared even though the value had changed — so the new value never re-pushed, and the next discovery's `SyncCalendarName`/`SyncCalendarColor` (which skip only while pending) then adopted the server's *older* value, overwriting the local edit. Silent metadata loss.
