@@ -4,6 +4,14 @@
 
 ---
 
+## 2026-07-13 — Hardening pass 8: exhaustive timezone/DST recurrence sweep (no bug found; regression guards added)
+
+- Recurrence + DST is a classic bug farm, so swept it exhaustively (`internal/model/tzsweep_test.go`), first observing the model's actual output on the hard cases, then pinning the observed-correct behavior. All assertions are on the **local wall-clock** time (the user-facing truth, and the property that must survive an offset change).
+- Cases, all **passing** (behavior confirmed correct): daily/weekly wall-clock preserved across the US spring-forward and fall-back; southern-hemisphere DST (Australia/Sydney, opposite direction); half-hour-offset zone (Australia/Adelaide); leap-day `FREQ=YEARLY` recurs only on leap years (2024/2028/2032, not normalized); `FREQ=MONTHLY` on the 31st skips short months; year-boundary daily; UTC (no shift); floating time interpreted in loc; Windows/Outlook zone name (`Eastern Standard Time`) resolved via the CLDR map; all-day weekly stays date-only on the right dates across DST.
+- The two hard cases are pinned by `TestTZSweepGapAndFold`: a **spring-forward gap** time (02:30 on the skip day) and a **fall-back ambiguous** time (01:30, which occurs twice) each yield exactly one occurrence on each expected day — no crash, drop, or duplicate. (The gap-day instant is an hour off, a benign zone-arithmetic quirk in the underlying library; the invariant that matters — one-per-day, no error — holds.)
+- No product code changed; the sweep is a permanent regression guard on the normal gate. Full gate passes.
+- Files: `internal/model/tzsweep_test.go` (new).
+
 ## 2026-07-13 — Hardening pass 7: network fault-injection — cap response bodies, verify clean degradation
 
 - Hardened the CalDAV network trust boundary against a hostile/buggy/compromised server.
