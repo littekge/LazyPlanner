@@ -119,6 +119,23 @@ func cloneProp(p ical.Prop) ical.Prop {
 	return np
 }
 
+// deepCopyComponent returns a full deep copy of comp — every property (with a
+// copied param map) and, recursively, every child component. Used when a
+// recurrence primitive carries a component forward (a VALARM, or a whole
+// RECURRENCE-ID override) so nothing the app doesn't model is lost (iron rule).
+func deepCopyComponent(comp *ical.Component) *ical.Component {
+	c := ical.NewComponent(comp.Name)
+	for name, props := range comp.Props {
+		cp := make([]ical.Prop, 0, len(props))
+		for _, p := range props {
+			cp = append(cp, cloneProp(p))
+		}
+		c.Props[name] = cp
+	}
+	c.Children = cloneChildren(comp)
+	return c
+}
+
 // cloneChildren deep-copies a component's child components (VALARM, and any other
 // nested component the app doesn't model). A recurrence primitive that hand-builds
 // a new component from a master must carry these over rather than silently
@@ -129,16 +146,7 @@ func cloneChildren(src *ical.Component) []*ical.Component {
 	}
 	out := make([]*ical.Component, 0, len(src.Children))
 	for _, child := range src.Children {
-		c := ical.NewComponent(child.Name)
-		for name, props := range child.Props {
-			cp := make([]ical.Prop, 0, len(props))
-			for _, p := range props {
-				cp = append(cp, cloneProp(p))
-			}
-			c.Props[name] = cp
-		}
-		c.Children = cloneChildren(child) // recurse for defensively-nested children
-		out = append(out, c)
+		out = append(out, deepCopyComponent(child))
 	}
 	return out
 }
@@ -333,7 +341,8 @@ func NewSeriesFrom(obj *Parsed, uid string, occ time.Time, mutate func(*ical.Com
 	// this-and-future split doesn't strip reminders from every future occurrence
 	// (iron rule).
 	comp.Children = cloneChildren(master)
-	comp.Props.SetText(ical.PropUID, NewUID())
+	newUID := NewUID()
+	comp.Props.SetText(ical.PropUID, newUID)
 	// Preserve the rule's bound: keep an absolute UNTIL as-is, and reduce a COUNT by
 	// the occurrences that remain with the capped master (before occ), so the two
 	// halves together still yield the original number of occurrences.
@@ -349,6 +358,28 @@ func NewSeriesFrom(obj *Parsed, uid string, occ time.Time, mutate func(*ical.Com
 	}
 	setDateTimeUTC(comp, ical.PropCreated, now)
 	cal.Children = append(cal.Children, comp)
+
+	// Carry forward any RECURRENCE-ID override strictly after the split point,
+	// re-keyed to the new series' UID. CapSeries drops these from the past half and
+	// the new series is built from the master alone, so without this a customized
+	// future occurrence would be lost from both halves (iron rule). The occurrence
+	// at occ itself is redefined by mutate below, so its old override (if any) is
+	// intentionally not carried.
+	for _, c := range src.Calendar.Children {
+		if text(c.Props, ical.PropUID) != uid {
+			continue
+		}
+		rid := c.Props.Get(ical.PropRecurrenceID)
+		if rid == nil {
+			continue
+		}
+		if t, err := resolveDateTime(rid, loc); err != nil || t.Unix() <= occ.Unix() {
+			continue
+		}
+		ov := deepCopyComponent(c)
+		ov.Props.SetText(ical.PropUID, newUID)
+		cal.Children = append(cal.Children, ov)
+	}
 
 	mutate(comp)
 	return Parse(cal, loc)

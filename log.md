@@ -4,6 +4,13 @@
 
 ---
 
+## 2026-07-13 — Hardening pass 9 (H5): carry future RECURRENCE-ID overrides across a this-and-future split
+
+- Pre-1.0 audit finding (HIGH, data-loss, confirmed): a this-and-future split lost any per-occurrence customization after the split point. `CapSeries` removes overrides with `rid >= until` from the (past) master half, and `NewSeriesFrom` rebuilt the future half from the master alone — so a `RECURRENCE-ID` override on a *future* occurrence vanished from **both** halves and that occurrence silently reverted to the series default.
+- **Fix:** `NewSeriesFrom` now carries forward every override strictly after the split point (`rid > occ`), deep-copied (`deepCopyComponent`, incl. VALARM/nested children) and re-keyed to the new series' UID, so the customization moves with the occurrences it describes. The occurrence at `occ` itself is intentionally not carried — it's redefined by the this-and-future edit. Refactored the H3/H4 child-copy into a general `deepCopyComponent` reused here.
+- Tests: `internal/model/recuroverridesplit_test.go` — a weekly series with a customized future occurrence, split before it, keeps that override (its `SUMMARY:custom` and `RECURRENCE-ID`) in the future series under the new UID. Full gate passes.
+- Files: `internal/model/recur_edit.go`, `internal/model/recuroverridesplit_test.go`.
+
 ## 2026-07-13 — Hardening pass 9 (H3+H4): preserve VALARM/child components in recurrence overrides & splits
 
 - Pre-1.0 audit finding (HIGH, iron-rule/data-loss, confirmed): the recurrence primitives that **hand-build** a component from a master copied only `master.Props`, never `master.Children` — so a nested `VALARM` (and any other child component) was silently dropped. Two reachable losses: (H3) "edit this occurrence" of an alarmed recurring event (`cloneOverrideComponent`) produced an override with **no reminder**; (H4) "this & future" split (`NewSeriesFrom`) produced a future series with **no reminder on any occurrence**. Root cause: these bypass the encode→decode `clone` round-trip that makes the `editComponent`-based paths iron-rule-safe.
