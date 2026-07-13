@@ -50,6 +50,17 @@ returned "no issues" on the first try — that selects for the least-thorough ru
 
 ## Running it
 
+The `/audit` slash command is a thin wrapper that just launches this workflow with
+your arguments:
+
+```
+/audit                       # full run; Plan auto-picks the least-audited surfaces
+/audit internal/sync race    # one explicit target (surface + method)
+/audit maxTargets=3          # cheaper run
+```
+
+Or drive the workflow directly (ask in natural language; the assistant calls the tool):
+
 ```
 Workflow({ name: 'hardening-audit' })
 Workflow({ name: 'hardening-audit', args: { targets: [{ surface: 'internal/sync', pkg: 'internal/sync', method: 'race' }], maxTargets: 4 } })

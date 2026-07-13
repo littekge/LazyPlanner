@@ -4,6 +4,12 @@
 
 ---
 
+## 2026-07-13 — Tooling: /audit slash-command wrapper for the hardening-audit workflow
+
+- Added `.claude/commands/audit.md` — a thin `/audit` slash command that launches the deterministic `hardening-audit` Workflow, giving the `/`-command ergonomics over the code-driven engine. It parses `$ARGUMENTS` into the workflow's `args` (empty = auto-pick least-audited surfaces; `surface [method]` = one explicit target; `key=value` for `maxTargets`/`maxCanaries`/`skeptics`), calls `Workflow({ name: "hardening-audit", args })`, and on completion relays the residual-risk recommendation, findings-with-repros, canary escapes, and any `ENFORCEMENT` warnings — never a bare "clean". Invoking the command is itself the multi-agent opt-in.
+- Updated `docs/audit/PROTOCOL.md` "Running it" to show the `/audit` forms alongside the direct `Workflow(...)` calls.
+- Files: `.claude/commands/audit.md`, `docs/audit/PROTOCOL.md`.
+
 ## 2026-07-13 — Tooling: coverage-first hardening-audit workflow
 
 - Added a reusable multi-agent audit workflow that enforces the evidence-over-verdict protocol (motivated by a prior pass declaring "1.0-ready" while real HIGH bugs sat in un-audited surfaces). Phases: **Plan** (read the coverage ledger + repo, pick the *least-audited* surfaces) → **Audit** (one method per target: fuzz / fault-injection / race / data-loss / input-edge / spec-diff) → **Verify** (N skeptics refute each finding; survivors must carry a repro the verifier actually ran) → **Canary** (inject known bugs in isolated worktrees; the suite must catch them — tests the net, not the code) → **Report** (coverage-ledger update with explicit blind spots, findings with repros, convergence vs last pass, bounded residual risk). It structurally cannot return "clean" — the recommendation enum is `more_passes_recommended` | `residual_accepted_with_caveats` — and an enforcement gate flags a report missing a ledger, "confirmed" findings without an executed repro, or escaped canaries.
