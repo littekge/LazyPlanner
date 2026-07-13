@@ -2,7 +2,7 @@
 
 A terminal-based todo-list and calendar manager with offline-first CalDAV sync — a full-screen interactive TUI in the style of [lazygit](https://github.com/jesseduffield/lazygit), written in Go.
 
-> **Status: early build.** The spec is complete (see [`main.md`](main.md)). Done so far: build steps 1–8 — the Go module, packages, vendored deps, and CI (step 1); the `model` layer parsing iCalendar events and todos (step 2); timezone-aware recurrence expansion (step 3); the local vdir cache with an in-memory index and atomic writes (step 4); one-way CalDAV import from NextCloud (step 5); a read-only TUI with a calendar subtask tree and today's agenda (step 6); **month/week/day calendar views** with movement keys (step 7); and **editing** — create/edit/complete/delete tasks and events, indent/outdent subtasks, and a session undo (step 8). **Step 9 (two-way sync) is complete**: a `config.toml` (generated on first run), an ETag-based **two-way sync engine** that never silently overwrites, the account-namespaced local cache, an in-app sync trigger with a sync-status indicator, and offline-first calendar/task-list creation & deletion. **Step 10 (command mode & keybinding polish) is complete**: a **vim-style chorded keymap** with a which-key popup, a `:` **command line** with a status-bar command view, a `?` **help** overlay, interactive **conflict resolution** (`:conflicts`), **pane sizing** (accordion + keyboard resize, remembered), and a mouse pass. A **step-10 finale** rounded out the keyboard interface: mnemonic panel keys (`c`/`t`/`a`) with the create prefix on `i`, vim **counts** (`3j`) + `gg`/`G`, tree **fold-all** (`z`), incremental **search** (`/` · `n`/`N`), a **calendar visibility toggle** (`Space`, remembered), **quick field-set** (`sp`/`sd`), **yank/paste** task moves (`y`/`p`), `:config` (edit in `$EDITOR`), and `:calendar rename`/`color` (CalDAV `PROPPATCH`). Read-only calendars (e.g. NextCloud birthdays) are detected and respected. **Step 11 (recurrence editing) is complete**: editing/deleting/grabbing a recurring event prompts for scope (this occurrence / this & future / all — via `RECURRENCE-ID` overrides, series splits, or master edits), and completing a recurring task advances it to its next occurrence. **Step 12 (background sync) is underway**: periodic background sync (`sync_interval_minutes`) and an incremental **CTag short-circuit** that skips re-downloading unchanged calendars now land; the full `sync-collection` delta REPORT is a planned follow-up.
+> **Status: feature-complete, hardened, approaching 1.0.** All 13 build steps in [`main.md`](main.md) are implemented: offline-first **two-way CalDAV sync** (ETag-based, never silently overwrites; startup/periodic/debounced/on-quit triggers plus an incremental CTag short-circuit), deep **subtask trees**, **month/week/day** calendar views, **recurring** events and tasks with per-occurrence editing, a **vim-style chorded keymap** with a which-key popup, a `:` command line, a `?` help overlay, interactive **conflict resolution**, in-app **calendar management**, mouse support, and the **Raspberry Pi** cross-build. Since the feature set landed, the project has been through eight adversarial **hardening passes** — spec/consistency/deep-debugging audits, an iCalendar-ingest **fuzz** pass, a **scale-performance** pass, a **terminal-display** stress pass, **network fault-injection**, and an exhaustive **timezone/DST** sweep — each fix carrying a regression test and a full-gate commit. It's considered **1.0-ready pending an on-hardware Raspberry Pi smoke-test**. See [`log.md`](log.md) for the full history.
 
 ## What it does
 
@@ -116,9 +116,9 @@ lazyplanner sync \
   --password <app-password>
 ```
 
-### Managing calendars (early)
+### Managing calendars
 
-You can create and delete calendars/task lists in-app (the `c` / `D` keys — offline-first), so you never need the NextCloud web UI. These CLI subcommands do the same directly on the server (via CalDAV `MKCALENDAR` / `DELETE`); connection flags/env vars are the same as `import`.
+You can create and delete calendars/task lists in-app (`ic` / `il` to create a calendar / list, `d` to delete the focused pane's collection — all offline-first), so you never need the NextCloud web UI. These CLI subcommands do the same directly on the server (via CalDAV `MKCALENDAR` / `DELETE`); connection flags/env vars are the same as `import`.
 
 ```sh
 lazyplanner calendar list                          # show calendars + their server paths
@@ -137,7 +137,7 @@ Requires [Go](https://go.dev/dl/) (the stable release current at scaffold time o
 - **Linux** (primary): `go build -o lazyplanner ./cmd/lazyplanner` — a single static binary, no runtime dependencies. Run `./lazyplanner`.
 - **Windows** (secondary): `GOOS=windows go build -o lazyplanner.exe ./cmd/lazyplanner`.
 
-On first launch LazyPlanner writes a starter `config.toml` (see [Configuration](#configuration)) and exits; fill in `[server]` and run it again to open the TUI. Press `q` or `Ctrl-C` to quit. Remaining functionality lands over the build steps in [`main.md`](main.md).
+On first launch LazyPlanner writes a starter `config.toml` (see [Configuration](#configuration)) and exits; fill in `[server]` and run it again to open the TUI. Press `q` or `Ctrl-C` to quit.
 
 A `Makefile` wraps the common tasks: `make build` (native binary), `make check` (test + vet + staticcheck), `make run`, and `make cross` (the Raspberry Pi binaries below).
 
