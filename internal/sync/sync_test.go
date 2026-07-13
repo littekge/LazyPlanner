@@ -63,6 +63,7 @@ type fakeServer struct {
 	deletes      int
 	failPut      map[string]error
 	failDel      map[string]error
+	discoverErr  error                    // if set, DiscoverCalendars fails with it
 	failDownload map[string]error         // calendar path -> DownloadAll error
 	downloads    int                      // count of DownloadAll calls (CTag short-circuit test)
 	getData      map[string]caldav.Object // href -> version GetObject returns (else f.data)
@@ -149,6 +150,9 @@ func (f *fakeServer) DeleteCalendar(_ context.Context, path string) error {
 }
 
 func (f *fakeServer) DiscoverCalendars(context.Context) ([]caldav.Calendar, error) {
+	if f.discoverErr != nil {
+		return nil, f.discoverErr
+	}
 	return f.cals, nil
 }
 

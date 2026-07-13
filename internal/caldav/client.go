@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"io"
 	"net/http"
 	"net/url"
 	"strings"
@@ -13,6 +14,57 @@ import (
 	"github.com/emersion/go-webdav"
 	dav "github.com/emersion/go-webdav/caldav"
 )
+
+// maxResponseBodyBytes bounds how much of any server response the client reads.
+// A hostile or buggy CalDAV server that streams an unbounded (or enormous) body
+// would otherwise hang a sync or exhaust memory — a real risk on the Raspberry
+// Pi target. 64 MiB is far above any realistic calendar listing or bulk resource
+// dump; exceeding it fails that request, which sync records as a skip (and a bulk
+// download that trips it falls back to per-resource fetches).
+const maxResponseBodyBytes = 64 << 20
+
+// errResponseTooLarge is returned when a response body exceeds maxResponseBodyBytes.
+var errResponseTooLarge = errors.New("caldav: server response exceeds size limit")
+
+// cappingTransport bounds every response body at maxResponseBodyBytes. It wraps
+// the underlying RoundTripper so the cap applies to both go-webdav's requests and
+// our own PROPFINDs (they share one http.Client), as defense-in-depth against a
+// hostile/oversized server response.
+type cappingTransport struct{ rt http.RoundTripper }
+
+func (t cappingTransport) RoundTrip(req *http.Request) (*http.Response, error) {
+	resp, err := t.rt.RoundTrip(req)
+	if err != nil || resp == nil || resp.Body == nil {
+		return resp, err
+	}
+	resp.Body = &cappedBody{inner: resp.Body, remaining: maxResponseBodyBytes}
+	return resp, nil
+}
+
+// cappedBody fails the read once more than maxResponseBodyBytes has been
+// consumed, rather than silently truncating (a truncated XML/iCal body then
+// surfaces as a decode error, never as a silently-accepted partial response).
+type cappedBody struct {
+	inner     io.ReadCloser
+	remaining int64
+}
+
+func (b *cappedBody) Read(p []byte) (int, error) {
+	if b.remaining < 0 {
+		return 0, errResponseTooLarge
+	}
+	if int64(len(p)) > b.remaining+1 { // read one extra byte to detect overflow
+		p = p[:b.remaining+1]
+	}
+	n, err := b.inner.Read(p)
+	b.remaining -= int64(n)
+	if b.remaining < 0 {
+		return n, errResponseTooLarge
+	}
+	return n, err
+}
+
+func (b *cappedBody) Close() error { return b.inner.Close() }
 
 // defaultTimeout bounds each HTTP request when the caller does not set one.
 const defaultTimeout = 30 * time.Second
@@ -92,6 +144,16 @@ func NewClient(cfg Config) (*Client, error) {
 			timeout = defaultTimeout
 		}
 		base = &http.Client{Timeout: timeout}
+	}
+
+	// Bound every response body against a hostile/oversized server. Wrapping the
+	// shared client's transport covers both go-webdav's requests and our own.
+	if _, already := base.Transport.(cappingTransport); !already {
+		rt := base.Transport
+		if rt == nil {
+			rt = http.DefaultTransport
+		}
+		base.Transport = cappingTransport{rt: rt}
 	}
 
 	httpClient := webdav.HTTPClientWithBasicAuth(base, cfg.Username, cfg.Password)

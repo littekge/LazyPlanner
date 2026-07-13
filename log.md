@@ -4,6 +4,14 @@
 
 ---
 
+## 2026-07-13 — Hardening pass 7: network fault-injection — cap response bodies, verify clean degradation
+
+- Hardened the CalDAV network trust boundary against a hostile/buggy/compromised server.
+- **Fix — response body size cap:** the four own-XML PROPFIND parsers (colors, ctag, privileges, listobjects) and go-webdav's calendar-data reads all did an unbounded `xml.NewDecoder(resp.Body).Decode(...)` / decode, so a server streaming an unbounded (or enormous) body could hang a sync or exhaust memory — a real risk on the Pi. Added a `cappingTransport` on the shared HTTP client (so it covers both go-webdav's requests and our own): every response body is bounded at `maxResponseBodyBytes` (64 MiB, far above any real listing), and exceeding it fails the request with an explicit error rather than silently truncating. A bulk download that trips it falls back to per-resource fetches (pass-3 #2); a metadata PROPFIND that trips it just degrades (best-effort).
+- **Tests — hostile responses** (`internal/caldav/hostile_test.go`): an oversized/streaming body makes the call fail (bounded read) within a watchdog instead of hanging; malformed XML, non-XML bytes, an empty 207, 500/401 statuses, a Content-Length-lying truncated body, and a 5000-deep nested document each return an error without panicking or hanging (the deep-nest case confirms no stack overflow in the XML decode).
+- **Tests — sync fault propagation** (`internal/sync/fault_test.go`): a discovery failure surfaces as a clean error without mutating the cache; a transient push failure leaves the local edit intact and still dirty (never marked clean or dropped) and it pushes cleanly once the server recovers. (Per-calendar reconcile failures were already record-and-continue from passes 2–3.)
+- Files: `internal/caldav/client.go` (+`hostile_test.go`), `internal/sync/sync_test.go` (fake gained `discoverErr`), `internal/sync/fault_test.go`. Full gate passes.
+
 ## 2026-07-13 — Hardening pass 6: terminal/display robustness stress pass (no bug found; regression guards added)
 
 - Targeted the layer with the worst historical track record — the six custom-drawn widgets (`calendarView`, `timeGridView`, `agendaBoard`, `colorPicker`, the mode indicator, `caretForm`), which previously produced two freeze bugs (draw-deadlock and the tree infinite-loop). Method mirrors the fuzz passes: drive display-hostile content through every draw path across a matrix of terminal geometries and assert no `Draw` panics or hangs (a panic in a draw path crashes the live app).
