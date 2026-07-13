@@ -4,6 +4,12 @@
 
 ---
 
+## 2026-07-13 — Hardening pass 9: fuzz the recurrence write-side (guards the H2–H5 class)
+
+- The decode-only fuzzers (pass 4) structurally couldn't reach the recurrence *mutation* primitives, which is exactly where pass-9 H2–H5 lived. Added `FuzzRecurrenceMutations` (extending `internal/model/fuzz_test.go` per the "extend, don't fork" rule): for any body that decodes, it drives `AddOccurrenceOverride`, `AddException`, `SplitEvent`, and `AdvanceRecurringTodo`, asserting each (a) never panics and (b) yields an object that re-encodes — so a degenerate rule can't crash the app (H2) and a mutation can't produce an unsaveable object.
+- Seeds added (`recurEditSeeds`): the near-zero anchor (H2), an alarmed recurring event (H3/H4), an all-day recurring event (H6), reused alongside the existing `icalSeeds`. Seed corpus runs on the normal gate; `go test -fuzz` explored ~4.8M execs in 26s with **no crash** after the H2–H5 fixes.
+- Files: `internal/model/fuzz_test.go`.
+
 ## 2026-07-13 — Hardening pass 9 (H5): carry future RECURRENCE-ID overrides across a this-and-future split
 
 - Pre-1.0 audit finding (HIGH, data-loss, confirmed): a this-and-future split lost any per-occurrence customization after the split point. `CapSeries` removes overrides with `rid >= until` from the (past) master half, and `NewSeriesFrom` rebuilt the future half from the master alone — so a `RECURRENCE-ID` override on a *future* occurrence vanished from **both** halves and that occurrence silently reverted to the series default.

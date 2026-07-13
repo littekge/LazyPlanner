@@ -4,6 +4,8 @@ import (
 	"testing"
 	"time"
 
+	"github.com/emersion/go-ical"
+
 	"github.com/littekge/LazyPlanner/internal/model"
 )
 
@@ -237,6 +239,76 @@ func idName(b byte) string {
 		return ""
 	}
 	return string(rune('a' + n))
+}
+
+// recurEditSeeds are recurrence bodies specifically for the mutation fuzzer: a
+// near-zero anchor (the write-side panic of pass-9 H2), an alarmed recurring
+// event (the dropped-VALARM of H3/H4), an all-day recurring event (the H6 UNTIL
+// value-type bug), and a series with a future override (the H5 dropped-override).
+var recurEditSeeds = []string{
+	"BEGIN:VCALENDAR\r\nVERSION:2.0\r\nPRODID:-//x//x//EN\r\nBEGIN:VTODO\r\nUID:z\r\nDTSTAMP:20260101T000000Z\r\nDTSTART:00000101T000000Z\r\nDUE:00000102T000000Z\r\nRRULE:FREQ=WEEKLY\r\nSUMMARY:t\r\nEND:VTODO\r\nEND:VCALENDAR\r\n",
+	"BEGIN:VCALENDAR\r\nVERSION:2.0\r\nPRODID:-//x//x//EN\r\nBEGIN:VEVENT\r\nUID:al\r\nDTSTAMP:20260101T000000Z\r\nDTSTART:20260106T090000Z\r\nDTEND:20260106T100000Z\r\nRRULE:FREQ=WEEKLY\r\nSUMMARY:e\r\nBEGIN:VALARM\r\nACTION:DISPLAY\r\nTRIGGER:-PT15M\r\nEND:VALARM\r\nEND:VEVENT\r\nEND:VCALENDAR\r\n",
+	"BEGIN:VCALENDAR\r\nVERSION:2.0\r\nPRODID:-//x//x//EN\r\nBEGIN:VEVENT\r\nUID:ad\r\nDTSTAMP:20260101T000000Z\r\nDTSTART;VALUE=DATE:20260106\r\nRRULE:FREQ=WEEKLY\r\nSUMMARY:allday\r\nEND:VEVENT\r\nEND:VCALENDAR\r\n",
+}
+
+// FuzzRecurrenceMutations drives the write-side recurrence primitives — the class
+// of bugs from hardening pass 9 that sits just outside the decode-only fuzzers.
+// For any body that decodes, editing an occurrence, splitting a series, adding an
+// exception, and advancing a recurring todo must all (a) never panic and (b)
+// produce an object that re-encodes — so a degenerate rule can't crash the app
+// and a mutation can't yield an unsaveable object.
+func FuzzRecurrenceMutations(f *testing.F) {
+	for _, s := range icalSeeds {
+		f.Add([]byte(s))
+	}
+	for _, s := range recurEditSeeds {
+		f.Add([]byte(s))
+	}
+	now := time.Date(2026, 7, 13, 12, 0, 0, 0, time.UTC)
+	noop := func(*ical.Component) {}
+
+	mustEncode := func(t *testing.T, p *model.Parsed) {
+		if p == nil {
+			return
+		}
+		if len(p.Events) == 0 && len(p.Todos) == 0 {
+			return // go-ical won't encode a component-less calendar; not a mutation bug.
+		}
+		if _, err := p.Encode(); err != nil {
+			t.Fatalf("recurrence mutation produced an unencodable object: %v", err)
+		}
+	}
+
+	f.Fuzz(func(t *testing.T, data []byte) {
+		p, err := model.Decode(data, fuzzLoc)
+		if err != nil {
+			return
+		}
+		for _, ev := range p.Events {
+			if ev.UID == "" {
+				continue
+			}
+			occ := ev.Start
+			if out, err := model.AddOccurrenceOverride(p, ev.UID, occ, ev.AllDay, noop, now, fuzzLoc); err == nil {
+				mustEncode(t, out)
+			}
+			if out, err := model.AddException(p, ev.UID, occ, ev.AllDay, now, fuzzLoc); err == nil {
+				mustEncode(t, out)
+			}
+			if capped, future, err := model.SplitEvent(p, ev.UID, occ.Add(24*time.Hour), model.EventDraft{Summary: "x"}, now, fuzzLoc); err == nil {
+				mustEncode(t, capped)
+				mustEncode(t, future)
+			}
+		}
+		for _, td := range p.Todos {
+			if td.UID == "" {
+				continue
+			}
+			if out, _, err := model.AdvanceRecurringTodo(p, td.UID, now, fuzzLoc); err == nil {
+				mustEncode(t, out)
+			}
+		}
+	})
 }
 
 // FuzzParseQuickAdd checks the smart parser never panics and always returns a
