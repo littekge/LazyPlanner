@@ -4,6 +4,13 @@
 
 ---
 
+## 2026-07-13 — Hardening pass 9 (H3+H4): preserve VALARM/child components in recurrence overrides & splits
+
+- Pre-1.0 audit finding (HIGH, iron-rule/data-loss, confirmed): the recurrence primitives that **hand-build** a component from a master copied only `master.Props`, never `master.Children` — so a nested `VALARM` (and any other child component) was silently dropped. Two reachable losses: (H3) "edit this occurrence" of an alarmed recurring event (`cloneOverrideComponent`) produced an override with **no reminder**; (H4) "this & future" split (`NewSeriesFrom`) produced a future series with **no reminder on any occurrence**. Root cause: these bypass the encode→decode `clone` round-trip that makes the `editComponent`-based paths iron-rule-safe.
+- **Fix:** added `cloneChildren` (recursive deep-copy of child components) and a shared `cloneProp` (deep-copies the param map), and call `cloneChildren(master)` when building the override and the new series. Both now carry the master's VALARMs (and any unknown nested component/params) forward.
+- Tests: `internal/model/recurchildren_test.go` — an alarmed recurring event keeps its VALARM (and the alarm's `X-CUSTOM` prop) through both "edit this occurrence" (override has 1 alarm; total 2 across master+override) and "this & future" (future series has 1). Full gate passes.
+- Files: `internal/model/recur_edit.go`, `internal/model/recurchildren_test.go`.
+
 ## 2026-07-13 — Hardening pass 9 (H2): guard write-side recurrence expansion against panics
 
 - Pre-1.0 audit finding (HIGH, reproduced): the recurrence *write* path expanded rules by calling rrule-go directly (`nextInstantAfter` → `set.After`, `occurrencesBefore` → `set.Between`), bypassing the `safeBetween` recover/bound guard the *read* path uses. A degenerate rule — e.g. a near-zero DTSTART year — panics rrule-go's `calcDaySet` (`index out of range [1] with length 0`, confirmed with a throwaway repro), so a malformed recurring item *displayed* fine (read path guarded) then **crashed the live app** on `Space`-complete (`AdvanceRecurringTodo`) or a this-and-future split (`SplitEvent`/`NewSeriesFrom`). Violates "the TUI must never crash on bad .ics data".

@@ -106,10 +106,48 @@ func nextInstantAfter(comp *ical.Component, anchor, after time.Time) (time.Time,
 // match regardless of location.
 func sameInstant(a, b time.Time) bool { return a.Unix() == b.Unix() }
 
+// cloneProp copies an iCal property, deep-copying its parameter map so the copy
+// never aliases the source's params.
+func cloneProp(p ical.Prop) ical.Prop {
+	np := p // copy the struct
+	if p.Params != nil {
+		np.Params = make(ical.Params, len(p.Params))
+		for k, v := range p.Params {
+			np.Params[k] = v
+		}
+	}
+	return np
+}
+
+// cloneChildren deep-copies a component's child components (VALARM, and any other
+// nested component the app doesn't model). A recurrence primitive that hand-builds
+// a new component from a master must carry these over rather than silently
+// dropping them — the iron rule (never lose data the app doesn't understand).
+func cloneChildren(src *ical.Component) []*ical.Component {
+	if len(src.Children) == 0 {
+		return nil
+	}
+	out := make([]*ical.Component, 0, len(src.Children))
+	for _, child := range src.Children {
+		c := ical.NewComponent(child.Name)
+		for name, props := range child.Props {
+			cp := make([]ical.Prop, 0, len(props))
+			for _, p := range props {
+				cp = append(cp, cloneProp(p))
+			}
+			c.Props[name] = cp
+		}
+		c.Children = cloneChildren(child) // recurse for defensively-nested children
+		out = append(out, c)
+	}
+	return out
+}
+
 // cloneOverrideComponent deep-copies a master component into a new component of the
 // same kind, dropping the series-level recurrence properties (RRULE/RDATE/EXDATE)
-// so the copy describes a single instance. Params maps are copied too, so the
-// override never aliases the master's.
+// so the copy describes a single instance. Params maps and child components
+// (VALARM) are copied too, so the override neither aliases the master's props nor
+// loses its reminders (iron rule).
 func cloneOverrideComponent(master *ical.Component) *ical.Component {
 	c := ical.NewComponent(master.Name)
 	for name, props := range master.Props {
@@ -119,17 +157,11 @@ func cloneOverrideComponent(master *ical.Component) *ical.Component {
 		}
 		cp := make([]ical.Prop, 0, len(props))
 		for _, p := range props {
-			np := p // copy the struct
-			if p.Params != nil {
-				np.Params = make(ical.Params, len(p.Params))
-				for k, v := range p.Params {
-					np.Params[k] = v
-				}
-			}
-			cp = append(cp, np)
+			cp = append(cp, cloneProp(p))
 		}
 		c.Props[name] = cp
 	}
+	c.Children = cloneChildren(master)
 	return c
 }
 
@@ -293,17 +325,14 @@ func NewSeriesFrom(obj *Parsed, uid string, occ time.Time, mutate func(*ical.Com
 		}
 		cp := make([]ical.Prop, 0, len(props))
 		for _, p := range props {
-			np := p
-			if p.Params != nil {
-				np.Params = make(ical.Params, len(p.Params))
-				for k, v := range p.Params {
-					np.Params[k] = v
-				}
-			}
-			cp = append(cp, np)
+			cp = append(cp, cloneProp(p))
 		}
 		comp.Props[name] = cp
 	}
+	// Carry the master's child components (VALARM) into the future series, so a
+	// this-and-future split doesn't strip reminders from every future occurrence
+	// (iron rule).
+	comp.Children = cloneChildren(master)
 	comp.Props.SetText(ical.PropUID, NewUID())
 	// Preserve the rule's bound: keep an absolute UNTIL as-is, and reduce a COUNT by
 	// the occurrences that remain with the capped master (before occ), so the two
