@@ -175,7 +175,11 @@ func (c *Client) DownloadAll(ctx context.Context, calendarPath string) ([]Object
 		CompFilter: dav.CompFilter{Name: ical.CompCalendar},
 	}
 
-	objs, err := c.dav.QueryCalendar(ctx, calendarPath, query)
+	var objs []dav.CalendarObject
+	err := guardICalPanic(func() (e error) {
+		objs, e = c.dav.QueryCalendar(ctx, calendarPath, query)
+		return e
+	})
 	if err != nil {
 		return nil, fmt.Errorf("caldav: querying calendar %q: %w", calendarPath, err)
 	}
@@ -192,9 +196,29 @@ func (c *Client) DownloadAll(ctx context.Context, calendarPath string) ([]Object
 // the stashed conflict holds the up-to-date server copy (the version downloaded
 // at the start of the sync is stale by definition of a 412).
 func (c *Client) GetObject(ctx context.Context, href string) (Object, error) {
-	o, err := c.dav.GetCalendarObject(ctx, href)
+	var o *dav.CalendarObject
+	err := guardICalPanic(func() (e error) {
+		o, e = c.dav.GetCalendarObject(ctx, href)
+		return e
+	})
 	if err != nil {
 		return Object{}, fmt.Errorf("caldav: getting object %q: %w", href, err)
 	}
 	return Object{Path: o.Path, ETag: o.ETag, Data: o.Data}, nil
+}
+
+// guardICalPanic runs fn, converting a panic raised while decoding server
+// iCalendar into an ordinary error. go-webdav decodes calendar-data with
+// go-ical, whose line decoder panics on some malformed inputs (a content line
+// ending mid-parameter); a hostile or buggy server must degrade to a
+// skipped/errored resource, never crash the app (iron rule). A bulk-query panic
+// surfaces as a DownloadAll error, which sync already handles by falling back to
+// per-resource fetches, so one poison object no longer stalls a whole calendar.
+func guardICalPanic(fn func() error) (err error) {
+	defer func() {
+		if r := recover(); r != nil {
+			err = fmt.Errorf("malformed iCalendar from server: %v", r)
+		}
+	}()
+	return fn()
 }

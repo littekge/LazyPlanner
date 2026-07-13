@@ -187,7 +187,16 @@ Set `color_mode = "16"` in the config if the Pi console is a bare framebuffer TT
 - [`CLAUDE.md`](CLAUDE.md) — project rules and coding standards
 - [`log.md`](log.md) — the change log; every change gets an entry
 
-`make check` runs the offline suite. A separate **opt-in live suite** exercises
+`make check` runs the offline suite. The iCalendar parser and quick-add parser
+also have **fuzz targets** (`internal/model/fuzz_test.go`); their seed corpus
+(including saved crash regressions) runs as part of the normal suite, and you can
+explore new inputs with, e.g.:
+
+```sh
+go test -fuzz=FuzzDecode ./internal/model/
+```
+
+A separate **opt-in live suite** exercises
 the full CalDAV round-trip against a real server and is excluded from the normal
 build behind a `live` build tag. It reads the configured account from
 `~/.config/lazyplanner/config.toml` and operates only inside a throwaway

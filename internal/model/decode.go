@@ -42,11 +42,32 @@ func (p *Parsed) Encode() ([]byte, error) {
 // that need per-item resilience (skip the bad one, keep the rest) should
 // iterate the calendar's children and call ParseEvent / ParseTodo directly.
 func Decode(data []byte, loc *time.Location) (*Parsed, error) {
-	cal, err := ical.NewDecoder(bytes.NewReader(data)).Decode()
+	cal, err := decodeCalendar(data)
+	if err != nil {
+		return nil, err
+	}
+	return Parse(cal, loc)
+}
+
+// decodeCalendar runs go-ical's decoder, containing any panic it raises and
+// returning it as an ordinary error. go-ical's line decoder indexes past the end
+// of the buffer on some malformed inputs (e.g. a content line that ends
+// mid-parameter, "PROP;X="), panicking rather than erroring. LazyPlanner must
+// never crash on a bad .ics from disk or a hostile/buggy server response (the
+// iron rule and the error-handling standard), and vendored code must not be
+// hand-edited — so the panic is contained at this boundary and surfaced as the
+// normal decode error that every caller already skips-and-continues on.
+func decodeCalendar(data []byte) (cal *ical.Calendar, err error) {
+	defer func() {
+		if r := recover(); r != nil {
+			cal, err = nil, fmt.Errorf("decoding icalendar: malformed data (%v)", r)
+		}
+	}()
+	cal, err = ical.NewDecoder(bytes.NewReader(data)).Decode()
 	if err != nil {
 		return nil, fmt.Errorf("decoding icalendar: %w", err)
 	}
-	return Parse(cal, loc)
+	return cal, nil
 }
 
 // Parse builds typed events and todos from an already-decoded calendar,
@@ -58,16 +79,22 @@ func Parse(cal *ical.Calendar, loc *time.Location) (*Parsed, error) {
 	if loc == nil {
 		loc = time.Local
 	}
+	dedupeSingleValued(cal)
+	stripForbiddenNesting(cal)
+	ensureCalendarProps(cal)
+	sanitizePropValues(cal)
 	p := &Parsed{Calendar: cal}
 	for _, child := range cal.Children {
 		switch child.Name {
 		case ical.CompEvent:
+			ensureDTStamp(child)
 			ev, err := ParseEvent(child, loc)
 			if err != nil {
 				return nil, err
 			}
 			p.Events = append(p.Events, ev)
 		case ical.CompToDo:
+			ensureDTStamp(child)
 			td, err := ParseTodo(child, loc)
 			if err != nil {
 				return nil, err
@@ -76,6 +103,182 @@ func Parse(cal *ical.Calendar, loc *time.Location) (*Parsed, error) {
 		}
 	}
 	return p, nil
+}
+
+// singleValuedProps mirrors go-ical's encoder cardinality checks (encoder.go
+// validateComponent): per component type, the properties it requires to appear
+// exactly once or at most once. A malformed object carrying duplicates decodes
+// but fails to encode ("want exactly one/at most one … got N"), so the whole
+// resource — not just the bad item — becomes unwritable. Only the component
+// types LazyPlanner emits are listed; if go-ical's rules change on a dependency
+// bump, re-check this table.
+var singleValuedProps = map[string][]string{
+	ical.CompCalendar: {
+		ical.PropProductID, ical.PropVersion, ical.PropCalendarScale, ical.PropMethod,
+		ical.PropUID, ical.PropLastModified, ical.PropURL, ical.PropRefreshInterval,
+		ical.PropSource, ical.PropColor,
+	},
+	ical.CompEvent: {
+		ical.PropDateTimeStamp, ical.PropUID, ical.PropDateTimeStart, ical.PropClass,
+		ical.PropCreated, ical.PropDescription, ical.PropGeo, ical.PropLastModified,
+		ical.PropLocation, ical.PropOrganizer, ical.PropPriority, ical.PropRecurrenceRule,
+		ical.PropSequence, ical.PropStatus, ical.PropSummary, ical.PropTransparency,
+		ical.PropURL, ical.PropRecurrenceID, ical.PropDateTimeEnd, ical.PropDuration,
+		ical.PropColor,
+	},
+	ical.CompToDo: {
+		ical.PropDateTimeStamp, ical.PropUID, ical.PropClass, ical.PropCompleted,
+		ical.PropCreated, ical.PropDescription, ical.PropDateTimeStart, ical.PropGeo,
+		ical.PropLastModified, ical.PropLocation, ical.PropOrganizer, ical.PropPercentComplete,
+		ical.PropPriority, ical.PropRecurrenceID, ical.PropSequence, ical.PropStatus,
+		ical.PropSummary, ical.PropURL, ical.PropDue, ical.PropDuration, ical.PropColor,
+	},
+	ical.CompTimezone: {
+		ical.PropTimezoneID, ical.PropLastModified, ical.PropTimezoneURL,
+	},
+	ical.CompTimezoneStandard: {
+		ical.PropDateTimeStart, ical.PropTimezoneOffsetTo, ical.PropTimezoneOffsetFrom,
+	},
+	ical.CompTimezoneDaylight: {
+		ical.PropDateTimeStart, ical.PropTimezoneOffsetTo, ical.PropTimezoneOffsetFrom,
+	},
+}
+
+// dedupeSingleValued drops all but the first occurrence of each RFC 5545
+// single-valued property (see singleValuedProps). The first is the one text()
+// and the typed parsers already read, so this heals the encode-blocking
+// duplicate without changing what the app displays. A duplicate of a required
+// property is corruption, not data the iron rule protects, and keeping the
+// resource writable preserves far more than the dropped duplicate.
+func dedupeSingleValued(cal *ical.Calendar) {
+	dedupeProps(cal.Props, singleValuedProps[ical.CompCalendar])
+	for _, comp := range cal.Children {
+		dedupeComponent(comp)
+	}
+}
+
+func dedupeComponent(comp *ical.Component) {
+	dedupeProps(comp.Props, singleValuedProps[comp.Name])
+	for _, child := range comp.Children {
+		dedupeComponent(child)
+	}
+}
+
+func dedupeProps(props ical.Props, names []string) {
+	for _, name := range names {
+		if list := props[name]; len(list) > 1 {
+			props[name] = list[:1]
+		}
+	}
+}
+
+// allowedChildren lists the only nested component types go-ical will encode
+// under each parent (encoder.go): a VEVENT or VTODO admits only VALARM, a
+// VTIMEZONE only STANDARD/DAYLIGHT. Any other nesting is malformed and, left in
+// place, blocks encoding the entire resource.
+var allowedChildren = map[string]map[string]bool{
+	ical.CompEvent:    {ical.CompAlarm: true},
+	ical.CompToDo:     {ical.CompAlarm: true},
+	ical.CompTimezone: {ical.CompTimezoneStandard: true, ical.CompTimezoneDaylight: true},
+}
+
+// stripForbiddenNesting removes illegally-nested child components so the object
+// stays encodable. An event/todo can only ever contain a VALARM; anything else
+// found nested there is corruption (never addressable as a real item, since Parse
+// only walks the calendar's direct children), and dropping it keeps the parent
+// item editable instead of making the whole resource unwritable.
+func stripForbiddenNesting(cal *ical.Calendar) {
+	for _, comp := range cal.Children {
+		stripForbiddenChildren(comp)
+	}
+}
+
+func stripForbiddenChildren(comp *ical.Component) {
+	if allowed, ok := allowedChildren[comp.Name]; ok {
+		kept := comp.Children[:0]
+		for _, child := range comp.Children {
+			if allowed[child.Name] {
+				kept = append(kept, child)
+			}
+		}
+		comp.Children = kept
+	}
+	for _, child := range comp.Children {
+		stripForbiddenChildren(child)
+	}
+}
+
+// sanitizePropValues strips raw CR and LF bytes from every property value in the
+// calendar, including nested components (VALARM, VTIMEZONE). Per RFC 5545 a value
+// never contains a raw control character — a real line break in text is the
+// two-character escape "\n" (a backslash and an n, left intact here) — so a raw
+// CR/LF is structural corruption that go-ical's decoder tolerates but its encoder
+// rejects, which would make the containing item unwritable. Removing them keeps
+// the item editable without altering any legitimate content.
+func sanitizePropValues(cal *ical.Calendar) {
+	sanitizeProps(cal.Props)
+	for _, comp := range cal.Children {
+		sanitizeComponent(comp)
+	}
+}
+
+func sanitizeComponent(comp *ical.Component) {
+	sanitizeProps(comp.Props)
+	for _, child := range comp.Children {
+		sanitizeComponent(child)
+	}
+}
+
+func sanitizeProps(props ical.Props) {
+	for _, list := range props {
+		for i := range list {
+			if strings.ContainsAny(list[i].Value, "\r\n") {
+				list[i].Value = crlfStripper.Replace(list[i].Value)
+			}
+		}
+	}
+}
+
+var crlfStripper = strings.NewReplacer("\r", "", "\n", "")
+
+// ensureCalendarProps guarantees the VCALENDAR carries the RFC 5545-required
+// VERSION and PRODID. go-ical's encoder refuses to serialize a calendar missing
+// either, so a foreign or hand-edited object that omits them would decode yet
+// become unwritable — blocking every edit of the items inside it. We add our own
+// only when absent (an existing PRODID naming another producer is preserved, per
+// the property-preservation iron rule), mirroring ensureDTStamp.
+func ensureCalendarProps(cal *ical.Calendar) {
+	if cal.Props.Get(ical.PropVersion) == nil {
+		cal.Props.SetText(ical.PropVersion, icalVersion)
+	}
+	if cal.Props.Get(ical.PropProductID) == nil {
+		cal.Props.SetText(ical.PropProductID, ProductID)
+	}
+}
+
+// ensureDTStamp guarantees comp carries DTSTAMP, the RFC 5545-required object
+// timestamp. Some tools and hand-edited vdir files omit it; go-ical's encoder
+// then refuses to serialize the component, which would leave an otherwise-loaded
+// item uneditable and unwritable — and block writing every sibling in the same
+// resource. We heal it on ingest (mirroring how resolveDateTime recovers an
+// unknown TZID) so the item degrades gracefully instead of hard-failing at the
+// next edit. The value is taken from an existing timestamp (LAST-MODIFIED, then
+// CREATED) so a re-decode of our own output is stable, with a fixed epoch only
+// when the component carries no timestamp at all; a real edit overwrites DTSTAMP
+// via touch(), so this placeholder rarely persists.
+func ensureDTStamp(comp *ical.Component) {
+	if comp.Props.Get(ical.PropDateTimeStamp) != nil {
+		return
+	}
+	for _, src := range []string{ical.PropLastModified, ical.PropCreated} {
+		if prop := comp.Props.Get(src); prop != nil {
+			if t, err := prop.DateTime(time.UTC); err == nil {
+				setDateTimeUTC(comp, ical.PropDateTimeStamp, t)
+				return
+			}
+		}
+	}
+	setDateTimeUTC(comp, ical.PropDateTimeStamp, time.Date(1970, 1, 1, 0, 0, 0, 0, time.UTC))
 }
 
 // text returns the unescaped text value of the named property, or "" when the

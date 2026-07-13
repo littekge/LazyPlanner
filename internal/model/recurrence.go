@@ -51,14 +51,35 @@ func (e *Event) Occurrences(from, to time.Time) ([]Occurrence, error) {
 
 	// Start the query one duration early so an instance that begins before the
 	// window but runs into it is still found — Between filters on start alone.
+	starts, ok := safeBetween(set, from.Add(-dur), to)
+	if !ok {
+		// rrule-go panics (index out of range in calcDaySet) while iterating some
+		// degenerate rules — e.g. a near-zero DTSTART year. Degrade to the base
+		// instance, the same graceful fallback as a rule that fails to build,
+		// rather than let a malformed .ics crash the UI (iron rule).
+		return e.baseInstance(from, to), nil
+	}
 	var out []Occurrence
-	for _, start := range set.Between(from.Add(-dur), to, true) {
+	for _, start := range starts {
 		end := start.Add(dur)
 		if overlaps(start, end, from, to) {
 			out = append(out, Occurrence{Start: start, End: end, Event: e})
 		}
 	}
 	return out, nil
+}
+
+// safeBetween returns the recurrence-set instances in [from, to], containing any
+// panic rrule-go raises on a degenerate rule (ok=false) so callers can degrade
+// instead of crashing. Vendored code must not be hand-edited, so the guard lives
+// here at the call boundary.
+func safeBetween(set *rrule.Set, from, to time.Time) (starts []time.Time, ok bool) {
+	defer func() {
+		if r := recover(); r != nil {
+			starts, ok = nil, false
+		}
+	}()
+	return set.Between(from, to, true), true
 }
 
 // baseInstance returns the event's single un-recurred instance if it overlaps

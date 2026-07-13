@@ -4,6 +4,29 @@
 
 ---
 
+## 2026-07-13 — Hardening pass 4: fuzz the iCalendar ingest boundary — contain library panics
+
+- Started a **fuzz pass** over LazyPlanner's input trust boundary (the decision to address fuzzing now: the app ingests arbitrary iCalendar from any other CalDAV client and any server response, yet had **zero** fuzz tests — the single largest robustness surface, and pass-3 already proved it harbors real bugs). Added native Go fuzz targets in `internal/model/fuzz_test.go`: `FuzzDecode` (decode → Encode → re-decode round-trip), `FuzzEventOccurrences` (recurrence expansion), `FuzzBuildTree` (subtask forest from a fuzzed topology), `FuzzParseQuickAdd` (smart parser). `go test` runs the seed corpus (incl. every saved crasher) on the normal gate; `go test -fuzz` explores.
+- **Two crash bugs found and contained** (both violated the iron rule "the TUI must never crash on a bad server response or malformed .ics"):
+  - **go-ical decoder panic** — its line decoder indexes past the buffer (`peek()` with no `empty()` guard) on a content line ending mid-parameter (e.g. `PROP;X=`), panicking instead of erroring. A malformed `.ics` on disk **or a hostile/buggy server response** (go-webdav decodes calendar-data with the same decoder) would crash the whole app. Contained at both byte→calendar boundaries: `model.decodeCalendar` (recover → error; covers the store load + conflict re-parse paths) and `internal/caldav`'s new `guardICalPanic` around `QueryCalendar`/`GetCalendarObject` (a bulk-query panic surfaces as a `DownloadAll` error, which sync already falls back from to per-resource fetches, so one poison object is skipped, not fatal).
+  - **rrule-go iteration panic** — `Set.Between`→`calcDaySet` panics (index out of range) expanding some degenerate rules (e.g. a near-zero DTSTART year). `Event.Occurrences` now iterates via `safeBetween` (recover) and degrades to the event's base instance — the same graceful fallback it already uses for a rule that fails to *build*.
+- Vendored code is never hand-edited (per CLAUDE.md); both fixes live at our own call boundaries.
+- Tests: `internal/model/harden_ingest_test.go` (`TestDecodeContainsDecoderPanic`, `TestOccurrencesDegradeOnRrulePanic`); `internal/caldav/guardpanic_test.go` (guard converts the real go-ical decode panic to an error; passes a normal error through). Saved crashers under `internal/model/testdata/fuzz/`. Full gate + all four fuzzers clean (FuzzDecode 18.5M execs / 3 min).
+- Files: `internal/model/{decode,recurrence}.go`, `internal/caldav/client.go`, tests + fuzz corpus.
+
+## 2026-07-13 — Hardening pass 4: heal decode-but-unencodable iCalendar on ingest
+
+- `FuzzDecode`'s round-trip invariant (anything that decodes must re-encode, so anything LazyPlanner can display it can also save) surfaced a class of **"loaded but uneditable"** bugs: go-ical's decoder is tolerant but its **encoder** is strict, so an item that parsed fine could fail to re-encode — and since every edit re-encodes the whole resource (`editComponent`→`clone`→`Encode`, and `store.writeResource`), that hard-failed the edit **and blocked editing every sibling in the same resource**. Downloads already re-encode (so the server can't inject these — they're rejected as a skip), but a `.ics` written by another vdir tool (vdirsyncer/khal) or hand-edited reaches the cache and displays.
+- **Healed at ingest** (`model.Parse`, mirroring how `resolveDateTime` recovers an unknown TZID — add only what's missing, never mangle existing props, so the iron rule holds):
+  - **Missing DTSTAMP** (`ensureDTStamp`) — synthesized from LAST-MODIFIED/CREATED, else a fixed epoch; a real edit's `touch()` overwrites it, so the placeholder rarely persists.
+  - **Missing VERSION/PRODID** on the VCALENDAR (`ensureCalendarProps`) — LazyPlanner's own, only when absent (an existing PRODID naming another producer is preserved).
+  - **Duplicate single-valued properties** (`dedupeSingleValued`, e.g. two UIDs) — drop all but the first (the one `text()`/typed parsing already read), via a table mirroring go-ical's encoder cardinality rules for the component types we emit.
+  - **Raw CR/LF in a property value** (`sanitizePropValues`) — stripped; a real line break is the two-char escape `\n`, so a raw control char is structural corruption, never content.
+  - **Illegally nested components** (`stripForbiddenNesting`, e.g. a VTODO inside a VTODO) — dropped; only VALARM may nest under VEVENT/VTODO (STANDARD/DAYLIGHT under VTIMEZONE), and a mis-nested item is unaddressable anyway.
+- A UID-less component is **not** given a fabricated UID (that would churn identity under sync — pass-3 #7 deliberately keeps such todos display-only), so it remains the one documented non-round-trippable case. The remaining go-ical *semantic* encoder constraints (DUE+DURATION / DTEND+DURATION mutual exclusion, empty VCALENDAR, VTIMEZONE-needs-a-child) are not auto-healed — extremely low reachability (the fuzzer ran clean past them) — left as a documented follow-up.
+- Tests: `TestDecodeHealsForEditability` (a DTSTAMP/VERSION/PRODID-less todo decodes, re-encodes, edits, and keeps an unknown `X-` prop), `TestDecodeDedupesAndStripsToEncodable` (two UIDs → first kept; nested VTODO + the rest re-encode). All existing tests unaffected (heals are no-ops on well-formed fixtures). Full gate passes.
+- Files: `internal/model/decode.go`, `internal/model/harden_ingest_test.go` (+ fuzz corpus).
+
 ## 2026-07-12 — Session wrap-up: entering continuous hardening/audit phase
 
 - End-of-day checkpoint. All 13 build steps are complete; the project is now explicitly in a **continuous hardening & audit phase** — bug-hunting, resilience, and consistency, not new features. Next session picks up with **continued auditing**.
