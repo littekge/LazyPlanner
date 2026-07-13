@@ -6,12 +6,18 @@ package state
 
 import (
 	"encoding/json"
+	"io"
 	"os"
 	"path/filepath"
 )
 
 // FileName is the state file's name within the data directory.
 const FileName = "state.json"
+
+// maxStateFileBytes bounds the state-file read so a corrupt/huge file (or a
+// symlink to an endless device) can't exhaust memory or hang startup. The real
+// file is a few hundred bytes; this is generous headroom.
+const maxStateFileBytes = 4 << 20
 
 // State is the persisted UI state. Zero values mean "use the app default", so a
 // missing or partial file is harmless.
@@ -34,7 +40,12 @@ type State struct {
 // startup.
 func Load(path string) State {
 	var s State
-	data, err := os.ReadFile(path)
+	f, err := os.Open(path)
+	if err != nil {
+		return State{}
+	}
+	defer f.Close()
+	data, err := io.ReadAll(io.LimitReader(f, maxStateFileBytes))
 	if err != nil {
 		return State{}
 	}

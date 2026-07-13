@@ -7,6 +7,7 @@ import (
 	"encoding/hex"
 	"errors"
 	"fmt"
+	"io"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -16,6 +17,10 @@ import (
 
 	"github.com/BurntSushi/toml"
 )
+
+// maxConfigBytes bounds the config-file read so a huge or endless file can't
+// exhaust memory or hang startup. A real config is well under a kilobyte.
+const maxConfigBytes = 4 << 20
 
 // configName is the config file LazyPlanner reads under ConfigDir.
 const configName = "config.toml"
@@ -122,7 +127,18 @@ func Load() (cfg Config, configured bool, warning string, err error) {
 		warns = append(warns, w)
 	}
 
-	if _, err := toml.DecodeFile(path, &cfg); err != nil {
+	// Read with a size cap so a huge or endless (e.g. a /dev/zero symlink) config
+	// can't exhaust memory or hang startup, then parse the bytes.
+	f, err := os.Open(path)
+	if err != nil {
+		return Config{}, false, strings.Join(warns, "; "), fmt.Errorf("opening config %q: %w", path, err)
+	}
+	data, err := io.ReadAll(io.LimitReader(f, maxConfigBytes))
+	f.Close()
+	if err != nil {
+		return Config{}, false, strings.Join(warns, "; "), fmt.Errorf("reading config %q: %w", path, err)
+	}
+	if _, err := toml.Decode(string(data), &cfg); err != nil {
 		// Fatal by design: the local cache is namespaced by account (server URL +
 		// username), so an unparseable config leaves the account — and thus which
 		// cache to open — unknown. Degrading to defaults would open an empty/wrong

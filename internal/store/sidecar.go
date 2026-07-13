@@ -4,9 +4,15 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"io"
 	"os"
 	"path/filepath"
 )
+
+// maxLocalFileBytes bounds a single cache-file read (sidecar or .ics) so a corrupt
+// or hostile file — including a symlink to an endless device — can't exhaust memory
+// or hang. It mirrors the 64 MiB network-body cap; real files are far smaller.
+const maxLocalFileBytes = 64 << 20
 
 // sidecar is the on-disk JSON companion to a calendar directory. It caches
 // server-owned metadata and per-resource sync state (ETags, hrefs, the sync
@@ -76,10 +82,15 @@ type tombstoneMeta struct {
 // readSidecar loads a calendar's sidecar. A missing sidecar is normal (a vdir
 // populated by another tool, or a first run) and yields an empty one.
 func readSidecar(dir string) (*sidecar, error) {
-	data, err := os.ReadFile(filepath.Join(dir, sidecarName))
+	f, err := os.Open(filepath.Join(dir, sidecarName))
 	if errors.Is(err, os.ErrNotExist) {
 		return &sidecar{}, nil
 	}
+	if err != nil {
+		return nil, err
+	}
+	defer f.Close()
+	data, err := io.ReadAll(io.LimitReader(f, maxLocalFileBytes))
 	if err != nil {
 		return nil, err
 	}

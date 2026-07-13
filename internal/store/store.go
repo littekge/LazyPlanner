@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"io"
 	"os"
 	"path/filepath"
 	"sort"
@@ -214,7 +215,12 @@ func isStaleTempName(name string) bool {
 // sidecar recorded for it (empty state if the file is untracked — the .ics
 // files, not the sidecar, are the source of truth for what exists).
 func loadResource(dir, name string, sc *sidecar) (*Resource, error) {
-	data, err := os.ReadFile(filepath.Join(dir, name))
+	f, err := os.Open(filepath.Join(dir, name))
+	if err != nil {
+		return nil, err
+	}
+	defer f.Close()
+	data, err := io.ReadAll(io.LimitReader(f, maxLocalFileBytes))
 	if err != nil {
 		return nil, err
 	}

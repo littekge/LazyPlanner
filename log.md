@@ -4,6 +4,13 @@
 
 ---
 
+## 2026-07-13 — Hardening pass 9 (L-caps): bound local file reads
+
+- Pre-1.0 audit finding (LOW): unlike the CalDAV response body (capped in pass 7), the local reads did an unbounded `os.ReadFile`/`toml.DecodeFile` — so a huge file, or a **symlink to an endless device** (`/dev/zero`) at any of those paths, could OOM or hang the app. Weaker threat model than the network (these are under the user's own dirs), but cheap symmetry.
+- **Fix:** every local read now goes through `io.ReadAll(io.LimitReader(f, cap))`: the state file (4 MiB), `config.toml` (4 MiB, read-then-`toml.Decode`), and the sidecar + each `.ics` (64 MiB, mirroring the network cap). An over-cap file reads bounded bytes that then fail to parse and degrade exactly as a corrupt file already does (zero State / non-fatal `LoadError` / actionable config error). (The `password_command` output remains time-bounded by `WaitDelay`; a size cap there was judged unwarranted for a user-owned command.)
+- Tests: `internal/state/statecap_test.go` — a state file symlinked to `/dev/zero` returns a zero `State` within a watchdog instead of hanging (skipped where `/dev/zero` is absent). Full gate passes.
+- Files: `internal/state/state.go`, `internal/store/{sidecar,store}.go`, `internal/config/config.go`, `internal/state/statecap_test.go`.
+
 ## 2026-07-13 — Hardening pass 9 (B1): CLI reports unknown commands + adds help/version
 
 - Pre-1.0 audit finding (LOW, CLI UX): an unrecognized first argument fell through to `runTUI()`, so a typo like `lazyplanner imprt` silently opened the TUI (exit 0) instead of reporting the mistake; there was also no `help`/`version`.
