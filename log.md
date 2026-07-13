@@ -4,6 +4,14 @@
 
 ---
 
+## 2026-07-13 — Pass 10 fix (HIGH + MED): yank/paste operates per-component on bundled resources
+
+- Fixes the pass-10 bundled-resource data-loss class. LazyPlanner writes one item per `.ics`, but a foreign/hand-edited resource can bundle several top-level todos; `moveSubtree`/`copySubtree` acted on the whole `loc.Object`, so a cross-list **move** dragged co-resident bystanders to the destination and deleted them from the source (HIGH #5), and a **copy** duplicated them into the destination with their **original UIDs** (MED #9 — a phantom copy + a duplicate-UID-on-push integrity break).
+- **New model primitives** (`internal/model/edit.go`): `IsolateComponent` (a copy holding only the selected item, co-resident sibling items dropped, non-item components like VTIMEZONE kept) and `RemoveComponent` (the object without the item, reporting whether any item remains). Both clone-first, so the store snapshot is never mutated.
+- **Wiring** (`internal/ui/yankpaste.go`): copy isolates the item before `CopyTodo`; move isolates before the destination `Put`, and on the source side removes only that item — **rewriting** the resource when siblings remain, deleting the file only when it was the last item. Rollback/undo restore the full original either way. The normal one-item-per-file case is unchanged (isolate = identity, remove → empty → delete).
+- Tests: the two untracked ui repros (`repro_coresident_move`, `bundled_copy_repro`) are now green; added `internal/model/isolate_test.go` (IsolateComponent drops siblings + doesn't mutate input; RemoveComponent reports remaining correctly). Full gate + `-race` on ui/store pass; the whole tree is green again.
+- Files: `internal/model/edit.go`, `internal/model/isolate_test.go`, `internal/ui/yankpaste.go`, `internal/ui/{repro_coresident_move,bundled_copy_repro}_test.go`.
+
 ## 2026-07-13 — Pass 10 fix (HIGH x4 + MED x1): heal decode-but-unencodable go-ical shapes
 
 - Fixes the pass-10 encoder-constraint class — objects that decode but fail `Encode()`, poisoning the whole resource (every edit/push re-encodes). All reachable only via a foreign/bundled/hand-edited `.ics` (LazyPlanner never writes these shapes), but each breaks the iron rule for those inputs. Extended `model.Parse`'s ingest healers (add-only/drop-redundant, never mangle real data):

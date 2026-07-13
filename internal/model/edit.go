@@ -120,6 +120,70 @@ func CopyTodo(obj *Parsed, uid, newUID, newParentUID string, now time.Time, loc 
 	})
 }
 
+// isItemComponent reports whether c is a top-level schedulable item (a VEVENT or
+// VTODO) — the components that carry a user-facing UID and can be co-resident in a
+// bundled resource.
+func isItemComponent(c *ical.Component) bool {
+	return c.Name == ical.CompEvent || c.Name == ical.CompToDo
+}
+
+// IsolateComponent returns a copy of obj containing only the VEVENT/VTODO carrying
+// uid, dropping any co-resident sibling *items* (non-item components like VTIMEZONE
+// are kept). LazyPlanner writes one item per resource, but a foreign or hand-edited
+// .ics can bundle several; move/copy must act on the selected item alone rather
+// than dragging or duplicating its file-mates.
+func IsolateComponent(obj *Parsed, uid string, loc *time.Location) (*Parsed, error) {
+	if loc == nil {
+		loc = time.Local
+	}
+	clone, err := obj.clone(loc)
+	if err != nil {
+		return nil, err
+	}
+	if findComponent(clone.Calendar, uid) == nil {
+		return nil, fmt.Errorf("model: no event or todo with UID %q", uid)
+	}
+	kept := clone.Calendar.Children[:0]
+	for _, c := range clone.Calendar.Children {
+		if isItemComponent(c) && text(c.Props, ical.PropUID) != uid {
+			continue
+		}
+		kept = append(kept, c)
+	}
+	clone.Calendar.Children = kept
+	return Parse(clone.Calendar, loc)
+}
+
+// RemoveComponent returns a copy of obj with the VEVENT/VTODO carrying uid removed,
+// and reports whether any item component remains. The caller rewrites the resource
+// when items remain (a bundled file loses only the moved item) or deletes it when
+// none do — so a cross-list move never drags a co-resident bystander.
+func RemoveComponent(obj *Parsed, uid string, loc *time.Location) (result *Parsed, remaining bool, err error) {
+	if loc == nil {
+		loc = time.Local
+	}
+	clone, err := obj.clone(loc)
+	if err != nil {
+		return nil, false, err
+	}
+	if findComponent(clone.Calendar, uid) == nil {
+		return nil, false, fmt.Errorf("model: no event or todo with UID %q", uid)
+	}
+	kept := clone.Calendar.Children[:0]
+	for _, c := range clone.Calendar.Children {
+		if isItemComponent(c) && text(c.Props, ical.PropUID) == uid {
+			continue
+		}
+		kept = append(kept, c)
+	}
+	clone.Calendar.Children = kept
+	out, err := Parse(clone.Calendar, loc)
+	if err != nil {
+		return nil, false, err
+	}
+	return out, len(out.Events) > 0 || len(out.Todos) > 0, nil
+}
+
 // newObject creates a VCALENDAR wrapping one empty component of compName, with
 // the required VERSION/PRODID and the component's required UID/DTSTAMP/CREATED.
 func newObject(compName string, now time.Time) (*ical.Calendar, *ical.Component) {

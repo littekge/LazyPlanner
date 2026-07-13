@@ -166,8 +166,15 @@ func (a *app) moveSubtree(uid, targetParent, srcCal, dstCal string) {
 			}
 			obj = edited
 		}
+		// Move only the selected item: isolate it so a bundled source resource
+		// doesn't drag its co-resident file-mates to the destination.
+		single, err := model.IsolateComponent(obj, u, a.loc)
+		if err != nil {
+			fail("Move failed: " + err.Error())
+			return
+		}
 		name := store.ResourceName(u)
-		if _, err := a.store.Put(ctx, dstCal, name, obj); err != nil {
+		if _, err := a.store.Put(ctx, dstCal, name, single); err != nil {
 			fail("Move failed: " + err.Error())
 			return
 		}
@@ -175,11 +182,25 @@ func (a *app) moveSubtree(uid, targetParent, srcCal, dstCal string) {
 		// leaves no tombstone).
 		rollback = append(rollback, func() { _ = a.store.Forget(ctx, dstCal, name) })
 
-		if err := a.store.Delete(ctx, srcCal, loc.Name); err != nil {
+		// Source side: remove just u. If other items still share the resource,
+		// rewrite it without u; only delete the file when u was its last item — so a
+		// co-resident bystander is never erased from the source.
+		reduced, remaining, err := model.RemoveComponent(loc.Object, u, a.loc)
+		if err != nil {
 			fail("Move failed: " + err.Error())
 			return
 		}
-		// Reversal for the Delete: restore the original (clears its tombstone).
+		if remaining {
+			if _, err := a.store.Put(ctx, srcCal, loc.Name, reduced); err != nil {
+				fail("Move failed: " + err.Error())
+				return
+			}
+		} else if err := a.store.Delete(ctx, srcCal, loc.Name); err != nil {
+			fail("Move failed: " + err.Error())
+			return
+		}
+		// Reversal restores the original resource (full, with u) whether it was
+		// rewritten or deleted.
 		srcName, srcPrev := loc.Name, loc.Prev
 		rollback = append(rollback, func() { _, _ = a.store.Restore(ctx, srcCal, srcName, srcPrev) })
 
@@ -232,7 +253,14 @@ func (a *app) copySubtree(rootUID, targetParent, dstCal string) {
 		if u != rootUID {
 			parent = newUID[td.ParentUID] // descendants point at their copied parent
 		}
-		obj, err := model.CopyTodo(loc.Object, u, newUID[u], parent, a.now, a.loc)
+		// Isolate u first so a bundled source resource (multiple co-resident todos)
+		// doesn't duplicate its file-mates into the destination with their original UIDs.
+		single, err := model.IsolateComponent(loc.Object, u, a.loc)
+		if err != nil {
+			fail("Copy failed: " + err.Error())
+			return
+		}
+		obj, err := model.CopyTodo(single, u, newUID[u], parent, a.now, a.loc)
 		if err != nil {
 			fail("Copy failed: " + err.Error())
 			return
