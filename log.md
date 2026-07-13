@@ -4,6 +4,14 @@
 
 ---
 
+## 2026-07-13 — Hardening pass 9 (M3): surface a failed revert instead of swallowing it
+
+- Pre-1.0 audit finding (MED): `revertMutation` — invoked when a sidecar write fails, so the disk is likely already failing (ENOSPC/EACCES) — swallowed the result of its own restore write (`_ = writeFileAtomic`, `_ = os.Remove`). If that restore also failed, the on-disk `.ics` kept the failed-edit content while the in-memory + on-disk sidecar held the prior state; on reload the new content loaded as clean, a silent local edit loss / server divergence with no signal to the caller.
+- **Fix:** `revertMutation` now returns the restore error (in-memory restore still always runs); the `revert` closure and both callers (`writeResourceLocked`, `remove`) propagate it, and on a double failure return a distinct "cache may be inconsistent until the next successful sync" error (`errors.Join` of the sidecar + revert errors) instead of hiding it. The common single-failure case (revert succeeds) still returns the plain sidecar error and rolls back cleanly.
+- Note: a true double failure requires a disk that fails mid-operation (initial write ok → sidecar write fails → revert write fails), which isn't reproducible with static filesystem permissions (initial-write success implies the dir is writable), so it's verified by inspection; the tests cover the single-failure branch selection + reload consistency.
+- Tests: `internal/store/revertsurface_test.go` — a sidecar-only failure yields the clean (non-"inconsistent") error and reloads the reverted content clean; existing `rollback_test.go` still passes (regression guard for the refactor). Full gate + `-race` on store pass.
+- Files: `internal/store/mutate.go`, `internal/store/revertsurface_test.go`.
+
 ## 2026-07-13 — Hardening pass 9 (M2): store.Open degrades when the cache root is unreadable
 
 - Pre-1.0 audit finding (MED): `store.Open` returned a fatal error when `os.ReadDir(<dataDir>/calendars)` failed for any reason other than not-existing (root is a regular file, a symlink to a non-dir, or permission-denied) — locking the user out of the whole app, inconsistent with `loadCalendar`, which records a per-calendar `ReadDir` failure as a `LoadError` and continues.

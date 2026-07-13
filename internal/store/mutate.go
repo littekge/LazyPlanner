@@ -73,7 +73,10 @@ func (s *Store) writeResourceLocked(calID, name string, build func(prev *Resourc
 		// The sidecar didn't persist — revert the .ics and in-memory state so the
 		// two on-disk files can't diverge (a stale sidecar could otherwise strand
 		// this edit or resurrect a deleted item after a restart).
-		revert()
+		if rerr := revert(); rerr != nil {
+			return nil, fmt.Errorf("updating sidecar for %q failed and the on-disk revert also failed — cache may be inconsistent until the next successful sync: %w",
+				calID, errors.Join(err, rerr))
+		}
 		return nil, fmt.Errorf("updating sidecar for %q: %w", calID, err)
 	}
 	return res, nil
@@ -85,7 +88,7 @@ func (s *Store) writeResourceLocked(calID, name string, build func(prev *Resourc
 // following sidecar write fails). Splitting the sidecar write out lets a bulk
 // pull (PullRemoteBatch) write many .ics files under one sidecar write instead of
 // re-serializing the whole calendar per resource. The caller must hold s.mu.
-func (s *Store) stageResourceLocked(cs *calState, calID, name string, build func(prev *Resource) *Resource) (*Resource, func(), error) {
+func (s *Store) stageResourceLocked(cs *calState, calID, name string, build func(prev *Resource) *Resource) (*Resource, func() error, error) {
 	prevRes := cs.resources[name]
 	prevConf, hadConf := cs.conflicts[name]
 	prevTomb, hadTomb := cs.tombstones[name]
@@ -110,7 +113,7 @@ func (s *Store) stageResourceLocked(cs *calState, calID, name string, build func
 	delete(cs.tombstones, name)
 	delete(cs.conflicts, name)
 
-	revert := func() { s.revertMutation(calID, name, prevRes, prevConf, hadConf, prevTomb, hadTomb) }
+	revert := func() error { return s.revertMutation(calID, name, prevRes, prevConf, hadConf, prevTomb, hadTomb) }
 	return res, revert, nil
 }
 
@@ -229,7 +232,10 @@ func (s *Store) remove(ctx context.Context, calID, name string, tombstone bool) 
 	if err := writeSidecar(s.root, cs); err != nil {
 		// Revert the removal (restore the .ics + in-memory state) so a failed
 		// sidecar write can't leave a lost tombstone that resurrects the item.
-		s.revertMutation(calID, name, r, prevConf, hadConf, prevTomb, hadTomb)
+		if rerr := s.revertMutation(calID, name, r, prevConf, hadConf, prevTomb, hadTomb); rerr != nil {
+			return fmt.Errorf("updating sidecar for %q failed and the on-disk revert also failed — cache may be inconsistent until the next successful sync: %w",
+				calID, errors.Join(err, rerr))
+		}
 		return fmt.Errorf("updating sidecar for %q: %w", calID, err)
 	}
 	return nil
@@ -239,21 +245,30 @@ func (s *Store) remove(ctx context.Context, calID, name string, tombstone bool) 
 // values after a sidecar write failed, so the .ics and the sidecar never diverge.
 // prevRes is the resource before the write (nil if it was a create — then the
 // .ics is removed); prevConf/prevTomb (with their had* flags) are the conflict and
-// tombstone entries to put back.
-func (s *Store) revertMutation(calID, name string, prevRes *Resource, prevConf conflictMeta, hadConf bool, prevTomb tombstoneMeta, hadTomb bool) {
+// tombstone entries to put back. It returns a non-nil error when the on-disk
+// restore itself fails (a failing disk — e.g. ENOSPC — that also broke the sidecar
+// write): the caller must surface that rather than swallow it, because the on-disk
+// .ics may then hold the failed edit while the sidecar still describes the prior
+// state. The in-memory restore always succeeds.
+func (s *Store) revertMutation(calID, name string, prevRes *Resource, prevConf conflictMeta, hadConf bool, prevTomb tombstoneMeta, hadTomb bool) error {
 	cs := s.cals[calID]
 	if cs == nil {
-		return
+		return nil
 	}
 	path := filepath.Join(s.root, calID, name)
+	var revertErr error
 	if prevRes != nil {
 		cs.resources[name] = prevRes
-		if data, err := prevRes.Object.Encode(); err == nil {
-			_ = writeFileAtomic(path, data, filePerm)
+		if data, err := prevRes.Object.Encode(); err != nil {
+			revertErr = fmt.Errorf("re-encoding prior %s/%s: %w", calID, name, err)
+		} else if err := writeFileAtomic(path, data, filePerm); err != nil {
+			revertErr = fmt.Errorf("restoring %s/%s: %w", calID, name, err)
 		}
 	} else {
 		delete(cs.resources, name)
-		_ = os.Remove(path)
+		if err := os.Remove(path); err != nil && !errors.Is(err, os.ErrNotExist) {
+			revertErr = fmt.Errorf("removing staged %s/%s: %w", calID, name, err)
+		}
 	}
 	if hadConf {
 		cs.conflicts[name] = prevConf
@@ -268,6 +283,7 @@ func (s *Store) revertMutation(calID, name string, prevRes *Resource, prevConf c
 	} else {
 		delete(cs.tombstones, name)
 	}
+	return revertErr
 }
 
 // ResourceName returns the .ics file name for a new resource with the given
