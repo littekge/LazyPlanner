@@ -668,8 +668,11 @@ func (a *app) updateStatus() {
 		completed = "on"
 	}
 	// Plain text (no color tags) so the [ and ] calendar keys read literally.
-	// Kept short so it fits without truncation; the full keymap lives in ? help.
-	a.hints.SetText(fmt.Sprintf("c/t/a panes · [ ] cal · { } list · i… new · e edit · d del · Space done/hide · / find · u undo · r sync · v/f/b/gt cal · . comp:%s · : cmd · ? help · q quit", completed))
+	// The full keymap lives in ? help; this line is a curated subset. Order is
+	// deliberate: with wrap off a narrow terminal clips the right end, so the two
+	// most important hints (? help, q quit) lead, then the basic movement/navigation
+	// a new user needs, then the editing actions, then the rest.
+	a.hints.SetText(fmt.Sprintf("? help · q quit · hjkl move · Enter open · Esc back · c/t/a panes · f/b prev/next · v view · [ ] cal · { } list · i… new · e edit · d del · Space done/hide · / find · u undo · r sync · . comp:%s · : cmd", completed))
 }
 
 // --- shared helpers ---

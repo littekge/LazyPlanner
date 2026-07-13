@@ -156,6 +156,30 @@ func (s *Store) SetCalendarCTag(ctx context.Context, calID, ctag string) error {
 // locally-edited resource, or a pending deletion. Paired with the CTag
 // short-circuit: an unchanged server CTag lets sync skip a calendar only when
 // there is also nothing local to push.
+// HasPendingChanges reports whether any calendar holds a local change not yet
+// pushed to the server: a dirty or never-pushed resource, a pending deletion
+// (tombstone), or a pending calendar create/delete/rename/recolor. It lets a
+// caller decide whether a best-effort sync is worth running (e.g. the flush on
+// quit) so the common "nothing to push" case stays instant.
+func (s *Store) HasPendingChanges() bool {
+	s.mu.RLock()
+	defer s.mu.RUnlock()
+	for _, cs := range s.cals {
+		if cs.pendingCreate || cs.pendingDelete || cs.pendingName || cs.pendingColor {
+			return true
+		}
+		if len(cs.tombstones) > 0 {
+			return true
+		}
+		for _, r := range cs.resources {
+			if r.Dirty || r.Href == "" {
+				return true
+			}
+		}
+	}
+	return false
+}
+
 func (s *Store) HasLocalChanges(calID string) bool {
 	s.mu.RLock()
 	defer s.mu.RUnlock()

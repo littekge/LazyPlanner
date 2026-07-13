@@ -7,6 +7,8 @@ package ui
 import (
 	"context"
 	"fmt"
+	"io"
+	"os"
 	"time"
 
 	"github.com/gdamore/tcell/v2"
@@ -159,6 +161,15 @@ type app struct {
 	// syncTimer debounces a background push after local edits (only touched on the
 	// event-loop goroutine, where mutations run).
 	syncTimer *time.Timer
+
+	// flushOnQuit config: best-effort push of pending local changes as the app
+	// exits (so an edit made just before quitting, inside the debounce window or
+	// while briefly offline, reaches other devices without waiting for relaunch).
+	// quitFlushTimeout bounds it so a hung network can never trap the user;
+	// quitOut is where its progress notes go (os.Stdout in production; a test
+	// injects a buffer). Both default in newApp.
+	quitFlushTimeout time.Duration
+	quitOut          io.Writer
 
 	// Pane sizing (step 10). leftCol is the left overview column so its width can
 	// be resized (Ctrl-←/→) or collapsed (accordion +/-). saveState persists the
@@ -354,9 +365,17 @@ func Run(opts Options) error {
 
 	a.tv.SetMouseCapture(a.mouseCapture)
 
-	if err := a.tv.SetRoot(a.root, true).EnableMouse(true).SetInputCapture(a.globalKeys).Run(); err != nil {
-		return fmt.Errorf("running tui: %w", err)
+	runErr := a.tv.SetRoot(a.root, true).EnableMouse(true).SetInputCapture(a.globalKeys).Run()
+
+	// Stop background workers before the exit flush so they don't race it, then
+	// best-effort push any change made just before quitting. (These are idempotent
+	// with the deferred cancel/stopSyncTimer, which also cover the error path.)
+	a.cancel()
+	a.stopSyncTimer()
+	if runErr != nil {
+		return fmt.Errorf("running tui: %w", runErr)
 	}
+	a.flushOnQuit()
 	return nil
 }
 
@@ -366,39 +385,77 @@ func Run(opts Options) error {
 func newApp(s *store.Store, title string, now time.Time) *app {
 	useTerminalTheme() // configure tview globals before any widget is created
 	a := &app{
-		tv:              tview.NewApplication(),
-		store:           s,
-		title:           title,
-		now:             now,
-		loc:             time.Local,
-		calendars:       tview.NewList(),
-		tasklists:       tview.NewList(),
-		agendaList:      tview.NewList(),
-		center:          tview.NewPages(),
-		month:           newCalendarView(),
-		timegrid:        newTimeGridView(),
-		tree:            tview.NewTreeView(),
-		agenda:          newAgendaBoard(),
-		detail:          tview.NewTextView(),
-		statusMode:      tview.NewBox(),
-		statusLeft:      tview.NewTextView(),
-		statusMid:       tview.NewTextView(),
-		statusRight:     tview.NewTextView(),
-		hints:           tview.NewTextView(),
-		detailOn:        true,
-		leftWidth:       defaultLeftWidth,
-		detailWidth:     defaultDetailWidth,
-		viewMode:        viewMonth,
-		anchor:          model.DayStart(now),
-		weekStartMonday: true,
-		calColors:       map[string]calColor{},
-		itemColors:      map[string]calColor{},
-		folders:         map[string]bool{},
-		stickyDone:      map[string]bool{},
-		hidden:          map[string]bool{},
+		tv:               tview.NewApplication(),
+		store:            s,
+		title:            title,
+		now:              now,
+		loc:              time.Local,
+		calendars:        tview.NewList(),
+		tasklists:        tview.NewList(),
+		agendaList:       tview.NewList(),
+		center:           tview.NewPages(),
+		month:            newCalendarView(),
+		timegrid:         newTimeGridView(),
+		tree:             tview.NewTreeView(),
+		agenda:           newAgendaBoard(),
+		detail:           tview.NewTextView(),
+		statusMode:       tview.NewBox(),
+		statusLeft:       tview.NewTextView(),
+		statusMid:        tview.NewTextView(),
+		statusRight:      tview.NewTextView(),
+		hints:            tview.NewTextView(),
+		detailOn:         true,
+		leftWidth:        defaultLeftWidth,
+		detailWidth:      defaultDetailWidth,
+		viewMode:         viewMonth,
+		anchor:           model.DayStart(now),
+		weekStartMonday:  true,
+		calColors:        map[string]calColor{},
+		itemColors:       map[string]calColor{},
+		folders:          map[string]bool{},
+		stickyDone:       map[string]bool{},
+		hidden:           map[string]bool{},
+		quitFlushTimeout: defaultQuitFlushTimeout,
+		quitOut:          os.Stdout,
 	}
 	a.ctx, a.cancel = context.WithCancel(context.Background())
 	return a
+}
+
+// defaultQuitFlushTimeout bounds the best-effort push on quit. Kept short: the
+// point is to catch a just-made edit, not to block exit on a slow network.
+const defaultQuitFlushTimeout = 10 * time.Second
+
+// flushOnQuit best-effort pushes pending local changes to the server as the app
+// exits. It runs AFTER the TUI has stopped (terminal restored), so it prints
+// plainly and cannot deadlock the event loop, and uses its own context so the
+// app-context cancellation on shutdown doesn't abort it. It is a no-op when
+// offline (no syncFn) or when nothing is pending — keeping quit instant in the
+// common case — and a hard timeout guarantees it returns even if syncFn ignores
+// context cancellation (the process is exiting, so a stuck sync goroutine is
+// harmless). Nothing is ever lost either way: unpushed edits stay in the local
+// cache and sync on the next launch.
+func (a *app) flushOnQuit() {
+	if a.syncFn == nil || !a.store.HasPendingChanges() {
+		return
+	}
+	fmt.Fprintln(a.quitOut, "Syncing pending changes before exit…")
+	ctx, cancel := context.WithTimeout(context.Background(), a.quitFlushTimeout)
+	defer cancel()
+
+	done := make(chan error, 1)
+	go func() {
+		_, err := a.syncFn(ctx)
+		done <- err
+	}()
+	select {
+	case err := <-done:
+		if err != nil {
+			fmt.Fprintf(a.quitOut, "Exit sync incomplete — changes are saved locally and will sync next launch (%v)\n", err)
+		}
+	case <-ctx.Done():
+		fmt.Fprintln(a.quitOut, "Exit sync timed out — changes are saved locally and will sync next launch.")
+	}
 }
 
 func (a *app) build() {

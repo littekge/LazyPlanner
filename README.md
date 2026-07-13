@@ -76,7 +76,7 @@ Full key list:
 | `r` | Sync now (= `:sync`) |
 | `:` · `gd` · `?` | Command line · go to date · help |
 | `.` | Show/hide completed tasks |
-| `q` / `Ctrl-C` | Quit / back out |
+| `q` / `Ctrl-C` | Quit / back out (best-effort syncs pending changes on the way out) |
 
 ### Configuration
 
@@ -98,7 +98,7 @@ The local cache is **namespaced by account** (a stable id derived from the serve
 
 ### Syncing
 
-Once `[server]` is set, LazyPlanner syncs **both ways** on startup, **periodically** while open (`sync_interval_minutes`, default 15, `0` = off), a few seconds after any local edit (a **debounced** background push, so other devices see changes fast), and whenever you press `r` (or run the `sync` command below). Sync is ETag-based and **never silently overwrites**: it pushes local creates/edits/deletes, pulls remote changes, and when the same item changed on both sides it keeps both versions and flags the conflict — resolve them in-app with `:conflicts` (keep local / keep server). Sync is **incremental**: each calendar's server CTag is checked first, and one whose contents haven't changed (and has nothing local to push) is skipped without re-downloading — so a routine sync of an idle account is cheap, which matters on a Raspberry Pi or with large calendars.
+Once `[server]` is set, LazyPlanner syncs **both ways** on startup, **periodically** while open (`sync_interval_minutes`, default 15, `0` = off), a few seconds after any local edit (a **debounced** background push, so other devices see changes fast), on **quit** (a best-effort push of anything still pending, so an edit made right before you quit isn't stranded until the next launch — it's skipped instantly when nothing's pending or you're offline, and is time-bounded so a slow network can't delay exit), and whenever you press `r` (or run the `sync` command below). Sync is ETag-based and **never silently overwrites**: it pushes local creates/edits/deletes, pulls remote changes, and when the same item changed on both sides it keeps both versions and flags the conflict — resolve them in-app with `:conflicts` (keep local / keep server). Sync is **incremental**: each calendar's server CTag is checked first, and one whose contents haven't changed (and has nothing local to push) is skipped without re-downloading — so a routine sync of an idle account is cheap, which matters on a Raspberry Pi or with large calendars.
 
 **Read-only calendars** (like NextCloud's generated "Contact Birthdays" calendar, or read-only shares) are detected automatically and marked `[ro]` in the overview. LazyPlanner never writes to them — creating/editing/deleting there is blocked with a hint, and sync mirrors them one-way — exactly as the NextCloud web UI treats them.
 

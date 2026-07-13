@@ -4,6 +4,20 @@
 
 ---
 
+## 2026-07-13 — Pre-1.0: best-effort push-flush on quit
+
+- Closed the "edit then immediately quit" gap: previously pressing `q` stopped instantly and only cancelled work (`a.cancel()` + `stopSyncTimer`), so a local edit made inside the 3s debounce window — or while briefly offline — sat unpushed in the cache until the next launch (data-safe, but other devices didn't see it until reopen).
+- **New `flushOnQuit`** (`internal/ui/app.go`): after the TUI stops (terminal restored — so it prints a plain notice and can't deadlock the event loop), it best-effort pushes pending changes. It's a **no-op when offline** (`syncFn == nil`) **or nothing is pending** (new `store.HasPendingChanges`), so quit stays instant in the common case; it uses its **own** context (so shutdown's `a.cancel()` doesn't abort it) with a **hard timeout** (`defaultQuitFlushTimeout` = 10s) enforced via a select/watchdog, so even a `syncFn` that ignores context cancellation can't trap the user (the process is exiting; a stuck goroutine is harmless). Nothing is ever lost — unpushed edits persist and sync next launch. Wired into `Run`: background workers are stopped (`cancel`+`stopSyncTimer`) before the flush so they don't race it; skipped on a TUI error.
+- **`store.HasPendingChanges`** (`internal/store/calendar.go`): store-wide check — true for a dirty/never-pushed resource, a tombstone, or a pending calendar create/delete/rename/recolor (the per-calendar `HasLocalChanges` missed the calendar-level pending flags). Read-only, additive.
+- Tests: `internal/ui/quitflush_test.go` — offline no-op, nothing-pending no-call (quit stays instant), pending → one bounded sync call with a deadline, sync-error note, and the **timeout watchdog** (a 2s-sleeping syncFn returns within a 100ms injected timeout). `internal/store/pending_test.go` — `HasPendingChanges` across all pending kinds + clean cases. Full gate + `-race` on ui/store pass; release binary builds.
+- Files: `internal/ui/app.go`, `internal/store/calendar.go`, `internal/ui/quitflush_test.go`, `internal/store/pending_test.go`, docs (`README.md`, `main.md`, `CLAUDE.md`).
+
+## 2026-07-13 — Pre-1.0: reorder the bottom help bar (help/quit first, then movement)
+
+- Cosmetic, non-breaking. The help bar is still a single hardcoded string with wrap off, so a narrow terminal clips the right end. Reordered it so the two most important hints — `? help` (reveals the full keymap) and `q quit` — lead and survive clipping, followed by the basic movement/navigation a new user needs (`hjkl move · Enter open · Esc back · c/t/a panes · f/b prev/next · v view · [ ] cal · { } list`), then the editing actions, then the rest. Also newly surfaces `hjkl`/`Enter`/`Esc` on the bar (they weren't listed before). No behavior change; the `?` overlay remains the full reference.
+- Tests: `internal/ui/hints_test.go` — asserts `? help · q quit` leads and the intended token order holds, plus the `comp:on/off` toggle. Full gate passes.
+- Files: `internal/ui/render.go`, `internal/ui/hints_test.go`.
+
 ## 2026-07-13 — Hardening pass 8: exhaustive timezone/DST recurrence sweep (no bug found; regression guards added)
 
 - Recurrence + DST is a classic bug farm, so swept it exhaustively (`internal/model/tzsweep_test.go`), first observing the model's actual output on the hard cases, then pinning the observed-correct behavior. All assertions are on the **local wall-clock** time (the user-facing truth, and the property that must survive an offset change).
