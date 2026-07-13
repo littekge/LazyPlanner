@@ -26,12 +26,12 @@ not hidden. See `PROTOCOL.md`.
 | UI input handlers (keys/chords/commands) | internal/ui | deep audit | 9 | recent |
 | CLI wiring | cmd/lazyplanner | deep audit | 9 | recent |
 | Mouse handling | internal/ui | input-edge | 10 | recent |
-| `:config` reload / $EDITOR flow | internal/ui, internal/config | fault-injection | 10 | recent (open MED: EDITOR-with-args) |
-| Store write pipeline atomicity (.ics + sidecar temp/rename) under disk fault | internal/store | fault-injection | 10 | recent (open MED: crash-between-renames loses Dirty) |
-| Yank/paste cross-list move & copy rollback | internal/ui | data-loss | 10 | recent (open HIGH+MED: co-resident bundle drag/dup) |
+| `:config` reload / $EDITOR flow | internal/ui, internal/config | fault-injection | 10 | recent (MED fixed: $EDITOR shell-split) |
+| Store write pipeline atomicity (.ics + sidecar temp/rename) under disk fault | internal/store | fault-injection | 10 | recent (MED fixed: content-hash reconcile; delete-half left to safe re-pull) |
+| Yank/paste cross-list move & copy rollback | internal/ui | data-loss | 10 | recent (HIGH+MED fixed: per-component isolate/remove) |
 | Feature-promise conformance vs main.md/CLAUDE.md | (whole app) | spec-diff | 10 | recent |
 | Full `sync-collection` incremental (token delta) | internal/sync | — (deliberately deferred) | — | never |
-| go-ical semantic encoder constraints (DTEND/DUE+DURATION, empty VTIMEZONE, VJOURNAL/VFREEBUSY nesting) | internal/model | fuzz (re-encode round-trip) | 10 | recent (open: 4 HIGH + 1 MED heal gaps) |
+| go-ical semantic encoder constraints (DTEND/DUE+DURATION, empty VTIMEZONE, VJOURNAL/VFREEBUSY nesting) | internal/model | fuzz (re-encode round-trip) | 10 | recent (4 HIGH + 1 MED fixed: ingest healers) |
 | Raspberry Pi target (on-device timing / kiosk) | (hardware) | — | — | never |
 
 ## Declared blind spots (not covered by any pass)
@@ -40,22 +40,25 @@ not hidden. See `PROTOCOL.md`.
   color. Needs a physical Pi; the sole known-never surface with product risk.
 - **Full `sync-collection` incremental sync** — a deliberate feature deferral, not a
   bug (the CTag short-circuit is in place); audit once implemented.
-- **go-ical semantic encoder healing** — pass 10 upgraded this from "documented"
-  to CONFIRMED-with-repros: five decode-but-unencodable classes (VEVENT DTEND+DURATION,
-  VTODO DUE+DURATION, VTODO DURATION-without-DTSTART, empty VTIMEZONE incl. one
-  `stripForbiddenNesting` self-inflicts, VJOURNAL/VFREEBUSY nesting) each poison a
-  whole resource. Healers still not written; the iron-rule promise is broken for
-  these inputs until they are.
-- **Backward search cycling (`N` key / `searchNext(-1)`)** — mutation canary escaped:
-  the negative-index wrap path in `internal/ui/search.go` has no test; a `+len(matches)`
-  regression would panic at runtime undetected. (New this pass.)
-- **VTODO PRIORITY upper-bound clamp (>9)** — mutation canary escaped: `internal/model`
-  `priority()` clamps to 0–9 but no test exercises an out-of-range value, so dropping
-  the `> 9` clamp ships silently and corrupts smart-sort. (New this pass.)
-- **`HasPendingChanges`/`HasLocalChanges` pull-orphan (href-less clean) clause** —
-  mutation canary escaped: no store-package test seeds a clean, href-less resource, so
-  removing the `|| r.Href == ""` clause (which re-pulls a batched pull orphan) is
-  undetected by `go test ./internal/store/`. (New this pass.)
+- **go-ical semantic encoder healing** — RESOLVED (pass 10 fix): the five
+  decode-but-unencodable classes (VEVENT DTEND+DURATION, VTODO DUE+DURATION, VTODO
+  DURATION-without-DTSTART, empty VTIMEZONE incl. the `stripForbiddenNesting` self-
+  inflict, VJOURNAL/VFREEBUSY nesting) are now healed on ingest with regression tests.
+
+## Resolved this pass (were blind spots / open findings)
+
+- **All 9 pass-10 findings fixed** (5 HIGH, 4 MED), each with a green regression test.
+- **The 3 mutation-canary escapes are closed** with a test apiece — backward search
+  wrap (`searchNext(-1)`), PRIORITY `>9` clamp, and the href-less pull-orphan
+  `HasPendingChanges`/`HasLocalChanges` clause. The priority test was mutation-verified
+  (fails under the canary's mutation, passes on correct code).
+
+## Delete-half of the write-atomicity finding (intentionally not "healed")
+
+- A crash between an `.ics` **delete** and its tombstone write re-pulls the item on
+  next sync — safe and recoverable. Synthesizing a tombstone from a missing-`.ics`-
+  with-href would risk deleting server data whenever a `.ics` merely went missing, so
+  the safe re-pull is kept by design (not a gap to close).
 
 > The workflow updates this table and this list at the end of each pass. Hand-edits
 > are welcome — it's a plain table on purpose.
