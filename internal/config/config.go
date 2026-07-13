@@ -194,6 +194,11 @@ func (s Server) ResolvePassword(ctx context.Context) (string, error) {
 	// stderr so a failure (e.g. "bw" not logged in) surfaces the real cause
 	// instead of a bare "exit status 1".
 	c := exec.CommandContext(ctx, "sh", "-c", cmd)
+	// WaitDelay forces the child's pipes closed and reaps it shortly after the
+	// context is cancelled, so a command that leaves a grandchild holding stdout
+	// open (e.g. one that backgrounds a process) can't make Output's internal Wait
+	// block past the timeout — the timeout above bounds sh, this bounds its leftovers.
+	c.WaitDelay = passwordCommandTimeout
 	var errBuf bytes.Buffer
 	c.Stderr = &errBuf
 	out, err := c.Output()
@@ -203,7 +208,14 @@ func (s Server) ResolvePassword(ctx context.Context) (string, error) {
 		}
 		return "", fmt.Errorf("running password_command: %w", err)
 	}
-	return strings.TrimSpace(string(out)), nil
+	pw := strings.TrimSpace(string(out))
+	if pw == "" {
+		// Exit 0 with no output means the secret store returned nothing (e.g. an
+		// empty bw field). Fail with a clear cause instead of silently using an empty
+		// password, which would surface later only as an opaque auth failure.
+		return "", fmt.Errorf("password_command produced no output")
+	}
+	return pw, nil
 }
 
 // Configured reports whether the server connection is filled in enough to

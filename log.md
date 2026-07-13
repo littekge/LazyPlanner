@@ -4,6 +4,13 @@
 
 ---
 
+## 2026-07-13 — Hardening pass 9 (M6): harden password_command execution
+
+- Pre-1.0 audit findings (MED/LOW): (1) `ResolvePassword` bounded the command with a context timeout but didn't set `Cmd.WaitDelay`, so a command that leaves a grandchild holding stdout open (e.g. one that backgrounds a process) could make `Output`'s internal `Wait` block past the deadline. (2) A command that exited 0 with no output silently produced an **empty password**, surfacing later only as an opaque auth failure.
+- **Fix:** set `c.WaitDelay = passwordCommandTimeout` so a lingering child's pipes are force-closed and it's reaped shortly after cancellation; and treat empty trimmed output as an explicit `password_command produced no output` error instead of an empty secret.
+- Tests: `internal/config/config_test.go` `TestResolvePassword` gains a failing-command case, an empty-output case, and a bounded-timeout case (returns promptly under a short deadline). Full gate passes.
+- Files: `internal/config/config.go`, `internal/config/config_test.go`.
+
 ## 2026-07-13 — Hardening pass 9 (M5): roll back a failed in-app calendar create
 
 - Pre-1.0 audit finding (MED/LOW): `CreateCalendarLocal` set `s.cals[id]` (with `pendingCreate:true`) and made the directory before writing the sidecar, but did not roll back on a sidecar-write failure. The orphan dir and the in-memory phantom lingered; on the next launch the dir loaded with no sidecar → `pendingCreate=false`, so the calendar was silently never `MKCALENDAR`'d on the server (a non-functional collection).

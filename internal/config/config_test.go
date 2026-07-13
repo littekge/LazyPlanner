@@ -7,6 +7,7 @@ import (
 	"runtime"
 	"strings"
 	"testing"
+	"time"
 )
 
 // withConfigDir points ConfigDir at a temp directory for the duration of a test
@@ -131,6 +132,30 @@ func TestResolvePassword(t *testing.T) {
 	}
 	if got2 != "inline" {
 		t.Errorf("ResolvePassword = %q, want inline", got2)
+	}
+
+	// A failing command surfaces an error (not a silent empty password).
+	if _, err := (Server{PasswordCommand: "exit 3"}).ResolvePassword(context.Background()); err == nil {
+		t.Error("failing password_command returned no error")
+	}
+
+	// M6: exit 0 with no output is an error, not a silent empty password.
+	if _, err := (Server{PasswordCommand: "true"}).ResolvePassword(context.Background()); err == nil {
+		t.Error("empty password_command output returned no error")
+	}
+
+	// M6: a hung command is bounded by the context — it returns an error promptly
+	// rather than blocking for the command's full duration. ("exec" so the deadline
+	// kill lands on sleep directly, keeping the test fast; WaitDelay additionally
+	// bounds the exotic case where a command orphans a child holding stdout open.)
+	ctx, cancel := context.WithTimeout(context.Background(), 200*time.Millisecond)
+	defer cancel()
+	start := time.Now()
+	if _, err := (Server{PasswordCommand: "exec sleep 30"}).ResolvePassword(ctx); err == nil {
+		t.Error("hung password_command returned no error")
+	}
+	if elapsed := time.Since(start); elapsed > 5*time.Second {
+		t.Errorf("hung password_command not bounded: took %v", elapsed)
 	}
 }
 
