@@ -21,6 +21,9 @@ func (s *Store) CreateCalendarLocal(ctx context.Context, id string, meta Calenda
 	if id == "" {
 		return errors.New("store: CreateCalendarLocal requires a calendar id")
 	}
+	if !validCalendarID(id) {
+		return fmt.Errorf("store: unsafe calendar id %q", id)
+	}
 
 	s.mu.Lock()
 	defer s.mu.Unlock()
@@ -84,6 +87,9 @@ func (s *Store) MarkCalendarDeleted(ctx context.Context, id string) error {
 func (s *Store) RemoveCalendarLocal(ctx context.Context, id string) error {
 	if err := ctx.Err(); err != nil {
 		return err
+	}
+	if !validCalendarID(id) {
+		return fmt.Errorf("store: unsafe calendar id %q", id)
 	}
 	s.mu.Lock()
 	defer s.mu.Unlock()

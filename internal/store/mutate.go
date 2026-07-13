@@ -117,6 +117,9 @@ func (s *Store) stageResourceLocked(cs *calState, calID, name string, build func
 // ensureCalendar returns the calendar state for calID, creating the directory
 // and index entry on first use. Callers must hold s.mu.
 func (s *Store) ensureCalendar(calID string) (*calState, error) {
+	if !validCalendarID(calID) {
+		return nil, fmt.Errorf("store: unsafe calendar id %q", calID)
+	}
 	cs := s.cals[calID]
 	if cs == nil {
 		if err := os.MkdirAll(filepath.Join(s.root, calID), dirPerm); err != nil {
@@ -295,7 +298,26 @@ func SafeName(s string) string {
 			b.WriteRune('_')
 		}
 	}
+	// "." and ".." are the two dot-only names the filesystem treats specially, so
+	// a name that sanitizes to either would be a path-traversal segment (e.g. a
+	// calendar id of ".." joined to the cache root escapes it). Neutralize them —
+	// legitimate names never sanitize to a bare "." or "..".
+	if out := b.String(); out == "." || out == ".." {
+		return "unnamed"
+	}
 	return b.String()
+}
+
+// validCalendarID reports whether id is safe to join onto the cache root as a
+// calendar directory: non-empty, not a dot-traversal segment, and free of any
+// path separator or NUL. SafeName already produces such ids; this is a
+// defense-in-depth guard on the mutation paths (above all the RemoveAll one), so
+// a raw id can never escape the calendars root regardless of how it was derived.
+func validCalendarID(id string) bool {
+	if id == "" || id == "." || id == ".." {
+		return false
+	}
+	return !strings.ContainsAny(id, "/\\\x00")
 }
 
 // writeFileAtomic writes data to a temp file in the destination directory,

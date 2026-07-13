@@ -113,7 +113,7 @@ func Import(ctx context.Context, src Source, dst *store.Store) (ImportResult, er
 // path (its last path segment).
 func collectionID(calPath string) string {
 	base := path.Base(strings.Trim(calPath, "/"))
-	if base == "" || base == "." {
+	if base == "" || base == "." || base == ".." {
 		return "calendar"
 	}
 	return store.SafeName(base)

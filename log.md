@@ -4,6 +4,13 @@
 
 ---
 
+## 2026-07-13 — Hardening pass 9 (H1): neutralize path-traversal calendar ids (data-loss fix)
+
+- Pre-1.0 audit finding (HIGH, verified): `store.SafeName` allowed `.` and `..` through unchanged, so a calendar id of `..` — reachable by typing `..` as a calendar name (`internal/ui/calendar.go` → `SafeName`) **or** from a hostile/buggy server collection href ending in `/..` (`sync.collectionID` guarded `"."` but not `".."`) — became a traversal segment joined onto the cache root. Create-then-delete such a calendar ran `RemoveCalendarLocal` → `os.RemoveAll(filepath.Join(root, ".."))`, which resolves to the **entire account data directory** (all calendars + state file). Confirmed the reachability trace end-to-end.
+- **Fix (chokepoint + defense-in-depth):** `SafeName` now maps a result of exactly `"."`/`".."` to `"unnamed"` (legitimate names never sanitize to a bare dot-segment; `.ics` resource names are unaffected since they carry an extension). Added `validCalendarID` (rejects empty, `.`, `..`, or any `/`\`\x00`) and gated the three store paths that join a calendar id onto the root — `ensureCalendar`, `CreateCalendarLocal`, and (above all) `RemoveCalendarLocal`. `sync.collectionID` now also folds `".."` into the `"calendar"` fallback.
+- Tests: `internal/store/pathsafety_test.go` — `SafeName` never yields a traversal/empty element; `RemoveCalendarLocal("..")` refuses and a sentinel file beside the calendars root survives (the catastrophe guard); `CreateCalendarLocal` rejects unsafe ids. `internal/sync/collectionid_internal_test.go` — traversal collection paths fold to `"calendar"`, normal paths keep their safe segment. Full gate (test/vet/staticcheck) passes.
+- Files: `internal/store/mutate.go`, `internal/store/calendar.go`, `internal/sync/import.go`, + the two new tests.
+
 ## 2026-07-13 — Pre-1.0: best-effort push-flush on quit
 
 - Closed the "edit then immediately quit" gap: previously pressing `q` stopped instantly and only cancelled work (`a.cancel()` + `stopSyncTimer`), so a local edit made inside the 3s debounce window — or while briefly offline — sat unpushed in the cache until the next launch (data-safe, but other devices didn't see it until reopen).
