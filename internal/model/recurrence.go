@@ -114,6 +114,31 @@ func safeBetween(set *rrule.Set, from, to time.Time) (starts []time.Time, ok boo
 	return starts, true
 }
 
+// safeAfter returns the first recurrence instant strictly after `after` (or at or
+// after `after` when inc is true), with the same bound and panic guards as
+// safeBetween — so a write-side caller (grab/complete/split of a recurring item)
+// degrades instead of crashing on a degenerate rule. ok is false when rrule-go
+// panics; a zero time with ok=true means the series has no such instant. Within
+// the bounds the result matches set.After(after, inc).
+func safeAfter(set *rrule.Set, after time.Time, inc bool) (t time.Time, ok bool) {
+	defer func() {
+		if r := recover(); r != nil {
+			t, ok = time.Time{}, false
+		}
+	}()
+	next := set.Iterator()
+	for steps := 0; steps < maxOccurrenceSteps; steps++ {
+		v, valid := next()
+		if !valid {
+			return time.Time{}, true
+		}
+		if v.After(after) || (inc && v.Equal(after)) {
+			return v, true
+		}
+	}
+	return time.Time{}, true
+}
+
 // baseInstance returns the event's single un-recurred instance if it overlaps
 // [from, to). It serves both the non-recurring path and the graceful fallback
 // when a malformed recurrence rule can't be expanded.

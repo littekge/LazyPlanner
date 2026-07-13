@@ -90,7 +90,15 @@ func nextInstantAfter(comp *ical.Component, anchor, after time.Time) (time.Time,
 	if err != nil {
 		return time.Time{}, err
 	}
-	return set.After(after, false), nil
+	// safeAfter (not set.After) so a degenerate rule — e.g. a near-zero anchor
+	// year that panics rrule-go's calcDaySet — degrades to "no next occurrence"
+	// instead of crashing the app on complete/grab/split (iron rule). The read
+	// path is already guarded the same way via safeBetween.
+	t, ok := safeAfter(set, after, false)
+	if !ok {
+		return time.Time{}, nil
+	}
+	return t, nil
 }
 
 // sameInstant compares two recurrence instants at second resolution (the
@@ -329,8 +337,14 @@ func occurrencesBefore(master *ical.Component, occ time.Time, loc *time.Location
 	if err != nil {
 		return 0
 	}
+	// safeBetween (not set.Between) so a degenerate rule degrades to 0 rather than
+	// panicking during a this-and-future split (iron rule).
+	starts, ok := safeBetween(set, anchor, occ)
+	if !ok {
+		return 0
+	}
 	n := 0
-	for _, t := range set.Between(anchor, occ, true) {
+	for _, t := range starts {
 		if t.Before(occ) {
 			n++
 		}

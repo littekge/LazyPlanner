@@ -4,6 +4,13 @@
 
 ---
 
+## 2026-07-13 — Hardening pass 9 (H2): guard write-side recurrence expansion against panics
+
+- Pre-1.0 audit finding (HIGH, reproduced): the recurrence *write* path expanded rules by calling rrule-go directly (`nextInstantAfter` → `set.After`, `occurrencesBefore` → `set.Between`), bypassing the `safeBetween` recover/bound guard the *read* path uses. A degenerate rule — e.g. a near-zero DTSTART year — panics rrule-go's `calcDaySet` (`index out of range [1] with length 0`, confirmed with a throwaway repro), so a malformed recurring item *displayed* fine (read path guarded) then **crashed the live app** on `Space`-complete (`AdvanceRecurringTodo`) or a this-and-future split (`SplitEvent`/`NewSeriesFrom`). Violates "the TUI must never crash on bad .ics data".
+- **Fix:** added `safeAfter` (in `recurrence.go`, mirroring `safeBetween`: same panic-recover + `maxOccurrenceSteps` bound, matching `set.After(after, inc)` within the bound). `nextInstantAfter` now uses `safeAfter` and degrades to "no next occurrence" on a panic; `occurrencesBefore` now uses `safeBetween` and degrades to 0. Both are the same graceful fallback the read path already takes. Confirmed these were the only two unguarded rrule expansions in `internal/model`.
+- Tests: `internal/model/recurpanic_test.go` — `AdvanceRecurringTodo` and `SplitEvent` on a near-zero-anchor recurring item complete without panicking (the pre-fix repro). Full gate passes.
+- Files: `internal/model/recurrence.go`, `internal/model/recur_edit.go`, `internal/model/recurpanic_test.go`.
+
 ## 2026-07-13 — Hardening pass 9 (H1): neutralize path-traversal calendar ids (data-loss fix)
 
 - Pre-1.0 audit finding (HIGH, verified): `store.SafeName` allowed `.` and `..` through unchanged, so a calendar id of `..` — reachable by typing `..` as a calendar name (`internal/ui/calendar.go` → `SafeName`) **or** from a hostile/buggy server collection href ending in `/..` (`sync.collectionID` guarded `"."` but not `".."`) — became a traversal segment joined onto the cache root. Create-then-delete such a calendar ran `RemoveCalendarLocal` → `os.RemoveAll(filepath.Join(root, ".."))`, which resolves to the **entire account data directory** (all calendars + state file). Confirmed the reachability trace end-to-end.
