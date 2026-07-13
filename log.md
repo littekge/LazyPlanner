@@ -4,6 +4,15 @@
 
 ---
 
+## 2026-07-13 — Pass 10 fix (HIGH x4 + MED x1): heal decode-but-unencodable go-ical shapes
+
+- Fixes the pass-10 encoder-constraint class — objects that decode but fail `Encode()`, poisoning the whole resource (every edit/push re-encodes). All reachable only via a foreign/bundled/hand-edited `.ics` (LazyPlanner never writes these shapes), but each breaks the iron rule for those inputs. Extended `model.Parse`'s ingest healers (add-only/drop-redundant, never mangle real data):
+  - **`healComponentConstraints`** — drops a redundant `DURATION` when the encoder's mutual-exclusion/dependency rules would reject it: VEVENT with `DTEND`+`DURATION`; VTODO with `DUE`+`DURATION`; VTODO with `DURATION` but no `DTSTART`. DTEND/DUE (what the typed parser reads) is kept.
+  - **`dropEmptyTimezones`** — drops a `VTIMEZONE` with no STANDARD/DAYLIGHT child (natural, or left childless after `stripForbiddenNesting`); runs *after* strip. An empty VTIMEZONE has no offset data and the app resolves zones via the embedded tz DB, so nothing usable is lost.
+  - **VJOURNAL/VFREEBUSY nesting** — added empty allow-sets to `allowedChildren` so `stripForbiddenChildren` strips their (encoder-forbidden) nested components.
+- Tests: the three untracked repro files are now green regression tests (`repro_duedur`, `repro_durnodtstart`, `emptyvtimezone_repro`); added `heal_encoder_test.go` covering DTEND+DURATION and VJOURNAL/VFREEBUSY (whose workflow repros were run-then-removed). Full gate passes (the remaining red is the yank/paste repros, fixed next).
+- Files: `internal/model/decode.go`, `internal/model/{repro_duedur,repro_durnodtstart,emptyvtimezone_repro,heal_encoder}_test.go`.
+
 ## 2026-07-13 — Hardening pass 10: stale-surface sweep (via the hardening-audit workflow) — findings pending fixes
 
 - First run of the new `hardening-audit` workflow (63 agents, ~2.5M tokens, ~22 min). It targeted the surfaces the ledger still marked **stale** after pass 9. **9 findings confirmed with executed, RED repros (5 HIGH, 4 MED)** + **3 escaped mutation canaries** (test-coverage holes). Full report: `docs/audit/passes/PASS-10.md`; ledger updated in `docs/audit/COVERAGE.md`.

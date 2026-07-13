@@ -81,6 +81,8 @@ func Parse(cal *ical.Calendar, loc *time.Location) (*Parsed, error) {
 	}
 	dedupeSingleValued(cal)
 	stripForbiddenNesting(cal)
+	dropEmptyTimezones(cal) // after strip, which can leave a VTIMEZONE childless
+	healComponentConstraints(cal)
 	ensureCalendarProps(cal)
 	sanitizePropValues(cal)
 	p := &Parsed{Calendar: cal}
@@ -180,6 +182,10 @@ var allowedChildren = map[string]map[string]bool{
 	ical.CompEvent:    {ical.CompAlarm: true},
 	ical.CompToDo:     {ical.CompAlarm: true},
 	ical.CompTimezone: {ical.CompTimezoneStandard: true, ical.CompTimezoneDaylight: true},
+	// go-ical forbids ANY nested component under VJOURNAL/VFREEBUSY (encoder.go),
+	// so an empty allow-set strips whatever a foreign object nested there.
+	ical.CompJournal:  {},
+	ical.CompFreeBusy: {},
 }
 
 // stripForbiddenNesting removes illegally-nested child components so the object
@@ -205,6 +211,49 @@ func stripForbiddenChildren(comp *ical.Component) {
 	}
 	for _, child := range comp.Children {
 		stripForbiddenChildren(child)
+	}
+}
+
+// dropEmptyTimezones removes any VTIMEZONE with no STANDARD/DAYLIGHT child.
+// go-ical refuses to encode an empty VTIMEZONE, so such a component — present in a
+// foreign object, or left childless after stripForbiddenNesting drops its only,
+// illegally-nested child — would block encoding the whole resource (every sibling
+// item too). An empty VTIMEZONE carries no offset data, and the app resolves zones
+// via the embedded tz database rather than the object's VTIMEZONE, so dropping it
+// loses nothing usable. Must run after stripForbiddenNesting.
+func dropEmptyTimezones(cal *ical.Calendar) {
+	kept := cal.Children[:0]
+	for _, comp := range cal.Children {
+		if comp.Name == ical.CompTimezone && len(comp.Children) == 0 {
+			continue
+		}
+		kept = append(kept, comp)
+	}
+	cal.Children = kept
+}
+
+// healComponentConstraints drops properties that decode cleanly but violate
+// go-ical's encoder mutual-exclusion / dependency rules (encoder.go), which would
+// otherwise make the whole resource unwritable on the next edit. RFC 5545: a
+// component carries a DTEND/DUE *or* a DURATION, never both, and a VTODO DURATION
+// needs a DTSTART to anchor it. In every conflicting case the redundant DURATION
+// is dropped (DTEND/DUE is the value the typed parser reads), so the heal only
+// removes a duplicate/unanchored derived value — consistent with the iron rule and
+// the other ingest healers (add-only-when-missing, never mangle real data).
+func healComponentConstraints(cal *ical.Calendar) {
+	for _, comp := range cal.Children {
+		switch comp.Name {
+		case ical.CompEvent:
+			if comp.Props.Get(ical.PropDuration) != nil && comp.Props.Get(ical.PropDateTimeEnd) != nil {
+				comp.Props.Del(ical.PropDuration)
+			}
+		case ical.CompToDo:
+			hasDue := comp.Props.Get(ical.PropDue) != nil
+			hasStart := comp.Props.Get(ical.PropDateTimeStart) != nil
+			if comp.Props.Get(ical.PropDuration) != nil && (hasDue || !hasStart) {
+				comp.Props.Del(ical.PropDuration)
+			}
+		}
 	}
 }
 
