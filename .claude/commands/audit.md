@@ -18,7 +18,7 @@ Invoking this command **is** the explicit request to run a multi-agent workflow 
    - Multiple surfaces → multiple target objects. `key=value` and targets can combine.
    - **Ambiguous** → ask one short clarifying question instead of guessing.
 
-2. Call `Workflow({ name: "hardening-audit", args })` — omit `args` entirely when empty. It runs in the background; tell the user they can watch progress with `/workflows`.
+2. Call `Workflow({ scriptPath: ".claude/workflows/hardening-audit.js", args })` — omit `args` entirely when empty. (Launch by `scriptPath`, not `name`: this environment only resolves built-in workflow names, so `name: "hardening-audit"` fails with "not found".) It runs in the background; tell the user they can watch progress with `/workflows`.
 
 3. When it completes, relay from the returned object — **do not** summarize it as "clean":
    - the **recommendation** (`more_passes_recommended` or `residual_accepted_with_caveats`) and the **residualRisk**,

@@ -59,11 +59,13 @@ your arguments:
 /audit maxTargets=3          # cheaper run
 ```
 
-Or drive the workflow directly (ask in natural language; the assistant calls the tool):
+Or drive the workflow directly (ask in natural language; the assistant calls the tool).
+Launch by `scriptPath` — this environment resolves only built-in workflow *names*, so
+`name: 'hardening-audit'` fails; the file path always works:
 
 ```
-Workflow({ name: 'hardening-audit' })
-Workflow({ name: 'hardening-audit', args: { targets: [{ surface: 'internal/sync', pkg: 'internal/sync', method: 'race' }], maxTargets: 4 } })
+Workflow({ scriptPath: '.claude/workflows/hardening-audit.js' })
+Workflow({ scriptPath: '.claude/workflows/hardening-audit.js', args: { targets: [{ surface: 'internal/sync', pkg: 'internal/sync', method: 'race' }], maxTargets: 4 } })
 ```
 
 It fans out many agents (opt into multi-agent first). It is **read-only** on your
