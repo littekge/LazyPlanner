@@ -4,6 +4,15 @@
 
 ---
 
+## 2026-07-13 — Pass 10 fix: close the 3 mutation-canary test-coverage holes
+
+- Adds the missing regression tests the pass-10 canaries exposed (the code was already correct; the *tests* didn't cover these paths, so a future regression would ship silently):
+  - **Backward search wrap** (`internal/ui/searchwrap_test.go`): drives `searchNext(-1)` from the first match; asserts it wraps to the last and cycles — guards the `(idx + dir + len) % len` negative-index path (a `+len` regression panics on `N`).
+  - **PRIORITY out of range** (`internal/model/priorityrange_test.go`): PRIORITY `15`/`10`/`-1` parse to `PriorityUndefined`, `5` preserved — guards `priority()`'s `>9` clamp.
+  - **Href-less pull orphan** (`internal/store/pendinghrefless_test.go`): a clean, href-less resource makes `HasLocalChanges`/`HasPendingChanges` true — guards the `|| r.Href == ""` reconcile clause (previously untested in the store package).
+- Verified the net now has teeth: re-applied the priority canary mutation (`>9`→`>100`) and confirmed the new test **fails**, then reverted and confirmed it passes. Full gate passes.
+- Files: `internal/ui/searchwrap_test.go`, `internal/model/priorityrange_test.go`, `internal/store/pendinghrefless_test.go` (all test-only).
+
 ## 2026-07-13 — Pass 10 fix (MED): reconcile a crash between the .ics and sidecar renames
 
 - Fixes pass-10 MED #8 (edit half): `writeResourceLocked` renames the `.ics` durably, then writes the sidecar. A crash/power-loss in that window (a real Pi/SD-card risk) left the new `.ics` beside the old sidecar (`Dirty=false`, prior ETag), so on reload the offline edit looked clean-and-synced and sync **never pushed it** — silent data loss.
