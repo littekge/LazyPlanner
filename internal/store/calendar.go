@@ -31,7 +31,12 @@ func (s *Store) CreateCalendarLocal(ctx context.Context, id string, meta Calenda
 	if _, exists := s.cals[id]; exists {
 		return fmt.Errorf("store: calendar %q already exists", id)
 	}
-	if err := os.MkdirAll(filepath.Join(s.root, id), dirPerm); err != nil {
+	dir := filepath.Join(s.root, id)
+	// Remember whether the directory already existed, so a rollback only removes one
+	// we created (never a pre-existing dir with content).
+	_, statErr := os.Stat(dir)
+	freshDir := os.IsNotExist(statErr)
+	if err := os.MkdirAll(dir, dirPerm); err != nil {
 		return fmt.Errorf("creating calendar %q: %w", id, err)
 	}
 	cs := &calState{
@@ -47,6 +52,14 @@ func (s *Store) CreateCalendarLocal(ctx context.Context, id string, meta Calenda
 	}
 	s.cals[id] = cs
 	if err := writeSidecar(s.root, cs); err != nil {
+		// Roll back so a failed create leaves nothing behind: without this the
+		// in-memory pendingCreate entry and an empty orphan dir survive, and on the
+		// next launch the dir loads with no sidecar → pendingCreate=false, so it is
+		// never MKCALENDAR'd on the server (silently non-functional).
+		delete(s.cals, id)
+		if freshDir {
+			_ = os.RemoveAll(dir)
+		}
 		return fmt.Errorf("updating sidecar for %q: %w", id, err)
 	}
 	return nil

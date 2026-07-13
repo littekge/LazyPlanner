@@ -4,6 +4,13 @@
 
 ---
 
+## 2026-07-13 — Hardening pass 9 (M5): roll back a failed in-app calendar create
+
+- Pre-1.0 audit finding (MED/LOW): `CreateCalendarLocal` set `s.cals[id]` (with `pendingCreate:true`) and made the directory before writing the sidecar, but did not roll back on a sidecar-write failure. The orphan dir and the in-memory phantom lingered; on the next launch the dir loaded with no sidecar → `pendingCreate=false`, so the calendar was silently never `MKCALENDAR`'d on the server (a non-functional collection).
+- **Fix:** on sidecar-write failure, `delete(s.cals, id)` and `os.RemoveAll` the directory — but only when the create actually made it (a `freshDir` stat check first), so a pre-existing directory with content is never destroyed by the rollback. A retry after the transient cause clears now succeeds.
+- Tests: `internal/store/createrollback_test.go` — a create whose sidecar write fails leaves no phantom calendar, preserves a pre-existing dir's content, and a subsequent create succeeds. Full gate passes.
+- Files: `internal/store/calendar.go`, `internal/store/createrollback_test.go`.
+
 ## 2026-07-13 — Hardening pass 9 (M3): surface a failed revert instead of swallowing it
 
 - Pre-1.0 audit finding (MED): `revertMutation` — invoked when a sidecar write fails, so the disk is likely already failing (ENOSPC/EACCES) — swallowed the result of its own restore write (`_ = writeFileAtomic`, `_ = os.Remove`). If that restore also failed, the on-disk `.ics` kept the failed-edit content while the in-memory + on-disk sidecar held the prior state; on reload the new content loaded as clean, a silent local edit loss / server divergence with no signal to the caller.
