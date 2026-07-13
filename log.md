@@ -4,6 +4,13 @@
 
 ---
 
+## 2026-07-13 — Pass 10 fix (MED): :config honors a flag-bearing $EDITOR
+
+- Fixes pass-10 MED #6: `:config` ran `exec.Command(editor, path)` with the whole `$EDITOR` string as the binary name, so any value carrying arguments — `code --wait`, `subl -w`, `emacsclient -c`, `vim -f` — failed with ENOENT and made `:config` unusable for those common editors.
+- **Fix:** extracted `editorCommand(editorEnv, path)` which splits `$EDITOR` on whitespace into command + args (defaulting to `vi` when empty), so flags stay arguments. (Whitespace-in-path editor values remain unsupported — rare, and shelling out via `sh -c` would cost portability on the Windows target; documented.)
+- Tests: `cmd/lazyplanner/main_test.go` `TestEditorCommandSplitsArgs` — `code --wait` → `[code --wait /cfg]`, bare `vim`, `emacsclient -c`, and the empty→`vi` default. Full gate passes.
+- Files: `cmd/lazyplanner/main.go`, `cmd/lazyplanner/main_test.go`.
+
 ## 2026-07-13 — Pass 10 fix (HIGH + MED): yank/paste operates per-component on bundled resources
 
 - Fixes the pass-10 bundled-resource data-loss class. LazyPlanner writes one item per `.ics`, but a foreign/hand-edited resource can bundle several top-level todos; `moveSubtree`/`copySubtree` acted on the whole `loc.Object`, so a cross-list **move** dragged co-resident bystanders to the destination and deleted them from the source (HIGH #5), and a **copy** duplicated them into the destination with their **original UIDs** (MED #9 — a phantom copy + a duplicate-UID-on-push integrity break).

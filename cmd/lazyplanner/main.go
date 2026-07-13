@@ -177,11 +177,7 @@ func editConfigFn(configPath string, pathErr error, accountID string, s *store.S
 		return nil
 	}
 	return func() (ui.ConfigReload, error) {
-		editor := os.Getenv("EDITOR")
-		if editor == "" {
-			editor = "vi"
-		}
-		ed := exec.Command(editor, configPath)
+		ed := editorCommand(os.Getenv("EDITOR"), configPath)
 		ed.Stdin, ed.Stdout, ed.Stderr = os.Stdin, os.Stdout, os.Stderr
 		if err := ed.Run(); err != nil {
 			return ui.ConfigReload{}, fmt.Errorf("editor: %w", err)
@@ -196,6 +192,20 @@ func editConfigFn(configPath string, pathErr error, accountID string, s *store.S
 		syncFn, warn := buildSyncFn(cfg.Server, s)
 		return ui.ConfigReload{Sync: syncFn, ColorMode: cfg.Appearance.ColorMode, Warning: warn}, nil
 	}
+}
+
+// editorCommand builds the command that opens path in the user's editor. $EDITOR
+// commonly carries arguments ("code --wait", "subl -w", "emacsclient -c",
+// "vim -f"); splitting on whitespace keeps those as arguments instead of folding
+// them into the binary name (which would fail with ENOENT). Defaults to vi when
+// $EDITOR is empty. (Whitespace-in-path editor values are not supported — rare,
+// and shelling out would cost portability on the Windows target.)
+func editorCommand(editorEnv, path string) *exec.Cmd {
+	fields := strings.Fields(editorEnv)
+	if len(fields) == 0 {
+		fields = []string{"vi"}
+	}
+	return exec.Command(fields[0], append(fields[1:], path)...)
 }
 
 // buildSyncFn returns the sync closure (nil = offline) and a warning describing

@@ -35,3 +35,27 @@ func TestPrintUsageListsSubcommands(t *testing.T) {
 		}
 	}
 }
+
+// TestEditorCommandSplitsArgs guards pass-10 MED #6: a flag-bearing $EDITOR must
+// split into command + args so it isn't treated as one (nonexistent) binary name.
+func TestEditorCommandSplitsArgs(t *testing.T) {
+	cases := map[string][]string{
+		"code --wait":    {"code", "--wait", "/cfg"},
+		"vim":            {"vim", "/cfg"},
+		"emacsclient -c": {"emacsclient", "-c", "/cfg"},
+		"":               {"vi", "/cfg"}, // default
+	}
+	for env, want := range cases {
+		got := editorCommand(env, "/cfg").Args
+		if len(got) != len(want) {
+			t.Errorf("editorCommand(%q).Args = %v, want %v", env, got, want)
+			continue
+		}
+		for i := range want {
+			if got[i] != want[i] {
+				t.Errorf("editorCommand(%q).Args = %v, want %v", env, got, want)
+				break
+			}
+		}
+	}
+}
