@@ -4,6 +4,17 @@
 
 ---
 
+## 2026-07-13 — Hardening pass 6: terminal/display robustness stress pass (no bug found; regression guards added)
+
+- Targeted the layer with the worst historical track record — the six custom-drawn widgets (`calendarView`, `timeGridView`, `agendaBoard`, `colorPicker`, the mode indicator, `caretForm`), which previously produced two freeze bugs (draw-deadlock and the tree infinite-loop). Method mirrors the fuzz passes: drive display-hostile content through every draw path across a matrix of terminal geometries and assert no `Draw` panics or hangs (a panic in a draw path crashes the live app).
+- **New stress tests** (`internal/ui/displaystress_test.go`), each drawing on a `SimulationScreen` with a panic-recover + 5s watchdog:
+  - `TestDisplayStress` — drives every mode/view (tasks, calendar month/week/day, drilled, agenda) with hostile content (3000-char titles; double-width CJK/emoji; zero-width combining marks; RTL; control chars; regional-indicator flag pairs; 150 same-day events; a 30-deep subtask chain; 300 flat tasks) and draws the whole layout at geometries from **1×1 to 400×150**.
+  - `TestMonthGridDrillScrollStress` / `TestTimeGridDrillScrollStress` — drive each grid's `InputHandler` directly (the real drill path, which the app forwards to the focused primitive) to the far index over 150 hostile items, then draw at 1–3-row heights — the scroll-window / "+N more" math at its extreme, including hour-zoom pushed to the max.
+  - `TestEditFormStress`, `TestColorPickerStress` — the popup draw paths over a 3000-char/emoji prefill.
+- **Result: no panic or hang found** — the custom widgets handle rune-width, clipping, and scroll boundaries correctly even at 1×1 with double-width content at the far scroll index. The value is the permanent regression guards: any future draw-path panic/hang (the historical freeze-bug classes) now fails the normal gate. Confirmed `SimulationScreen` honors 1×1 so the boundary math is genuinely exercised.
+- No product code changed; full gate (test/vet/staticcheck) passes.
+- Files: `internal/ui/displaystress_test.go` (new).
+
 ## 2026-07-13 — Hardening pass 5: batched bulk pull — initial sync/import now O(N), not O(N²)
 
 - A scale benchmark (`internal/sync/scale_bench_test.go`, `BenchmarkInitialSyncPull`) confirmed a **quadratic** first-time sync/import: n=100→9ms, n=400→89ms, n=1000→457ms. Cause: every pulled resource went through `writeResourceLocked`, which re-serialized and atomically rewrote the **whole** calendar's sidecar — so N pulls × O(N) sidecar each = O(N²) work and disk bytes (brutal on a Pi's SD card, where every write also fsyncs).
