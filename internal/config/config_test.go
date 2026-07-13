@@ -205,3 +205,28 @@ func TestLoadWarnsOnUnknownAppearance(t *testing.T) {
 		t.Errorf("warning = %q, want it to name the unknown default_view and time_format", warning)
 	}
 }
+
+// TestLoadMalformedTOMLIsActionableError guards M1: a malformed config.toml is a
+// fatal-by-design error (the account-keyed cache path is unknown without a
+// parseable config), and the message must name the file and be actionable.
+func TestLoadMalformedTOMLIsActionableError(t *testing.T) {
+	dir := withConfigDir(t)
+	if err := os.MkdirAll(dir, 0o700); err != nil {
+		t.Fatal(err)
+	}
+	// A stray unquoted value / dangling bracket — invalid TOML.
+	body := "[server\nurl = not valid = toml\n"
+	if err := os.WriteFile(filepath.Join(dir, configName), []byte(body), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	_, configured, _, err := Load()
+	if err == nil {
+		t.Fatal("Load() = nil error for malformed TOML, want a fatal error")
+	}
+	if configured {
+		t.Error("configured = true for malformed TOML")
+	}
+	if !strings.Contains(err.Error(), configName) {
+		t.Errorf("error %q does not name the config file", err)
+	}
+}

@@ -123,7 +123,12 @@ func Load() (cfg Config, configured bool, warning string, err error) {
 	}
 
 	if _, err := toml.DecodeFile(path, &cfg); err != nil {
-		return Config{}, false, strings.Join(warns, "; "), fmt.Errorf("parsing config %q: %w", path, err)
+		// Fatal by design: the local cache is namespaced by account (server URL +
+		// username), so an unparseable config leaves the account — and thus which
+		// cache to open — unknown. Degrading to defaults would open an empty/wrong
+		// account cache, which is more confusing than a clear, actionable error.
+		return Config{}, false, strings.Join(warns, "; "),
+			fmt.Errorf("config %q has a syntax error — fix it and run lazyplanner again: %w", path, err)
 	}
 	warns = append(warns, appearanceWarnings(cfg.Appearance)...)
 	return cfg, true, strings.Join(warns, "; "), nil

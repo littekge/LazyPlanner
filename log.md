@@ -4,6 +4,13 @@
 
 ---
 
+## 2026-07-13 — Hardening pass 9 (M1): actionable error on a malformed config.toml
+
+- Pre-1.0 audit finding (MED): a syntax error in `config.toml` aborted startup. Investigated the suggested "fall back to defaults" degradation and **rejected** it: the local cache is namespaced by account (server URL + username), so an unparseable config leaves the account — and thus which cache dir to open — unknown; defaulting would open an empty/wrong-account cache, more confusing than a clear failure. The fatal exit is correct here.
+- **Fix:** kept the fatal behavior but made the message actionable — `config %q has a syntax error — fix it and run lazyplanner again: <toml error>` (the toml error already carries line info), and documented the account-cache rationale in-code so it isn't "fixed" into a silent-degrade later.
+- Tests: `internal/config/config_test.go` `TestLoadMalformedTOMLIsActionableError` — malformed TOML returns a non-nil error, `configured=false`, and the message names the file. Full gate passes.
+- Files: `internal/config/config.go`, `internal/config/config_test.go`.
+
 ## 2026-07-13 — Hardening pass 9 (M4): all-day series cap writes a DATE UNTIL, not DATE-TIME
 
 - Pre-1.0 audit finding (MED, interop, confirmed): `CapSeries` set `roption.Until` and let rrule-go serialize it, which always emits a DATE-TIME (`UNTIL=…T235959Z`). For an all-day (`VALUE=DATE`) master this produced `RRULE:…;UNTIL=20260719T235959Z` against `DTSTART;VALUE=DATE:…`, violating RFC 5545 §3.3.10 (UNTIL's value type must match DTSTART). Expansion worked in-app, but a strict server or another client could reject/mishandle the object on push.
