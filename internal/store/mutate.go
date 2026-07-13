@@ -58,9 +58,10 @@ func (s *Store) writeResource(ctx context.Context, calID, name string, obj *mode
 // compare-and-set sync writers (CommitPush/PullRemote). The caller must hold
 // s.mu. build derives the new resource from the current one (nil if none); the
 // object persisted to disk is build's returned Object, so a build that inspects
-// the current resource can choose which content to keep under the lock. The
-// sidecar is persisted on every call, so a crash can never leave the .ics and
-// sidecar inconsistent for a single write.
+// the current resource can choose which content to keep under the lock. The .ics
+// and sidecar are two separate atomic renames; a crash in the window between them
+// is caught on reload by the sidecar's per-resource content hash (a mismatch
+// reloads the resource Dirty), so a stranded edit is never silently seen as synced.
 func (s *Store) writeResourceLocked(calID, name string, build func(prev *Resource) *Resource) (*Resource, error) {
 	cs, err := s.ensureCalendar(calID)
 	if err != nil {
@@ -102,6 +103,9 @@ func (s *Store) stageResourceLocked(cs *calState, calID, name string, build func
 	if err != nil {
 		return nil, nil, fmt.Errorf("encoding %s/%s: %w", calID, name, err)
 	}
+	// Record the fingerprint of exactly the bytes we write, so a reload can detect
+	// an .ics that was rewritten after the sidecar (a crash between the renames).
+	res.hash = contentHash(data)
 
 	if err := writeFileAtomic(filepath.Join(s.root, calID, name), data, filePerm); err != nil {
 		return nil, nil, fmt.Errorf("writing %s/%s: %w", calID, name, err)
@@ -349,6 +353,15 @@ func validCalendarID(id string) bool {
 		return false
 	}
 	return !strings.ContainsAny(id, "/\\\x00")
+}
+
+// contentHash is a fast non-cryptographic fingerprint of a resource's on-disk
+// bytes, recorded in the sidecar so a reload can detect an .ics rewritten after
+// the sidecar (a crash between the two atomic renames) and reload it dirty.
+func contentHash(data []byte) string {
+	h := fnv.New64a()
+	_, _ = h.Write(data)
+	return fmt.Sprintf("%016x", h.Sum64())
 }
 
 // writeFileAtomic writes data to a temp file in the destination directory,

@@ -34,6 +34,11 @@ type Resource struct {
 	Dirty      bool          // written locally, not yet pushed to the server
 	Conflicted bool          // local and server diverged; awaiting resolution
 	Object     *model.Parsed // parsed events/todos + the raw calendar for re-encode
+
+	// hash fingerprints the .ics bytes last written/loaded for this resource,
+	// persisted to the sidecar to detect a crash between the .ics and sidecar
+	// renames on reload (see resourceMeta.Hash). Unexported: internal bookkeeping.
+	hash string
 }
 
 // Calendar is an immutable snapshot of a cached collection: server-owned
@@ -229,13 +234,24 @@ func loadResource(dir, name string, sc *sidecar) (*Resource, error) {
 		return nil, err
 	}
 	meta := sc.Resources[name]
+	h := contentHash(data)
+	dirty := meta.Dirty
+	if meta.Hash != "" && meta.Hash != h {
+		// The .ics on disk differs from what the sidecar last recorded — it was
+		// rewritten after the sidecar (a crash between the two atomic renames). Treat
+		// it as the unsynced local edit it is, so sync pushes it instead of leaving
+		// it stranded as clean-but-diverged. (Empty meta.Hash = legacy/untracked;
+		// not enforced.)
+		dirty = true
+	}
 	return &Resource{
 		Name:       name,
 		ETag:       meta.ETag,
 		Href:       meta.Href,
-		Dirty:      meta.Dirty,
+		Dirty:      dirty,
 		Conflicted: meta.Conflict != nil,
 		Object:     obj,
+		hash:       h,
 	}, nil
 }
 

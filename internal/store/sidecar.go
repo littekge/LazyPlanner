@@ -52,6 +52,12 @@ type resourceMeta struct {
 	ETag  string `json:"etag,omitempty"`
 	Href  string `json:"href,omitempty"`
 	Dirty bool   `json:"dirty,omitempty"`
+	// Hash fingerprints the .ics bytes as of this sidecar write. On reload a
+	// mismatch means the .ics was rewritten after the sidecar (a crash in the
+	// window between the two atomic renames), so the resource is really an unsynced
+	// local edit and must load Dirty — otherwise the edit looks clean and never
+	// syncs. Empty on a legacy sidecar or an untracked resource (then not enforced).
+	Hash string `json:"hash,omitempty"`
 	// Conflict, when set, means the local resource and the server diverged (both
 	// edited between syncs). The local .ics stays as the working copy; the
 	// server's diverging version is stashed here losslessly until the user
@@ -119,7 +125,7 @@ func writeSidecar(root string, cs *calState) error {
 		ReadOnly:      cs.readOnly,
 	}
 	for name, r := range cs.resources {
-		m := resourceMeta{ETag: r.ETag, Href: r.Href, Dirty: r.Dirty}
+		m := resourceMeta{ETag: r.ETag, Href: r.Href, Dirty: r.Dirty, Hash: r.hash}
 		if cm, ok := cs.conflicts[name]; ok {
 			c := cm
 			m.Conflict = &c

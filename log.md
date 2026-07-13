@@ -4,6 +4,15 @@
 
 ---
 
+## 2026-07-13 — Pass 10 fix (MED): reconcile a crash between the .ics and sidecar renames
+
+- Fixes pass-10 MED #8 (edit half): `writeResourceLocked` renames the `.ics` durably, then writes the sidecar. A crash/power-loss in that window (a real Pi/SD-card risk) left the new `.ics` beside the old sidecar (`Dirty=false`, prior ETag), so on reload the offline edit looked clean-and-synced and sync **never pushed it** — silent data loss.
+- **Fix:** the sidecar now records a per-resource content hash (`resourceMeta.Hash`, fnv-64 of the exact bytes written, set in `stageResourceLocked`). On load, if the `.ics` hash differs from the sidecar's recorded hash, the `.ics` was rewritten after the sidecar (the crash window) → the resource loads **Dirty** so sync pushes it. Empty hash (legacy sidecar / untracked resource) is not enforced, so it's backward-compatible and doesn't disturb the pass-5 href-less pull-orphan clause (that path has no recorded hash).
+- **Delete half — deliberately not "healed":** the symmetric case (`.ics` removed before the tombstone) currently re-pulls on next sync, which is **safe and recoverable** (the item returns; no data lost). Synthesizing a tombstone from a missing-`.ics`-with-href would risk *deleting server data* whenever a `.ics` merely went missing for another reason, so the safe re-pull is kept. Documented.
+- Corrected the `writeResourceLocked` doc comment that overstated the guarantee ("a crash can never leave … inconsistent") to describe the hash-reconcile.
+- Tests: `internal/store/crashreload_test.go` — a synced resource whose `.ics` is overwritten (sidecar untouched) reloads Dirty and `HasPendingChanges` true; a clean reopen is not spuriously dirty. Full gate + `-race` on store/sync pass.
+- Files: `internal/store/{store,mutate,sidecar}.go`, `internal/store/crashreload_test.go`.
+
 ## 2026-07-13 — Pass 10 fix (MED): :config honors a flag-bearing $EDITOR
 
 - Fixes pass-10 MED #6: `:config` ran `exec.Command(editor, path)` with the whole `$EDITOR` string as the binary name, so any value carrying arguments — `code --wait`, `subl -w`, `emacsclient -c`, `vim -f` — failed with ENOENT and made `:config` unusable for those common editors.
