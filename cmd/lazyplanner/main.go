@@ -6,6 +6,7 @@ package main
 import (
 	"context"
 	"fmt"
+	"io"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -31,30 +32,60 @@ const (
 	appVersion = "0.0.1"
 )
 
-func main() {
-	// Subcommands stay minimal wiring; all logic lives in the internal packages.
-	if len(os.Args) > 1 {
-		switch os.Args[1] {
-		case "import":
-			exitOnError(runImport(os.Args[2:]))
-			return
-		case "sync":
-			exitOnError(runSync(os.Args[2:]))
-			return
-		case "calendar":
-			exitOnError(runCalendar(os.Args[2:]))
-			return
-		}
-	}
+func main() { os.Exit(run(os.Args[1:])) }
 
-	exitOnError(runTUI())
+// run dispatches the CLI and returns a process exit code. Kept separate from main
+// (which only wraps os.Exit) so the dispatch — unknown-command, help, version — is
+// testable without spawning a process. All real work lives in the internal packages.
+func run(args []string) int {
+	if len(args) == 0 {
+		return report(runTUI())
+	}
+	switch args[0] {
+	case "import":
+		return report(runImport(args[1:]))
+	case "sync":
+		return report(runSync(args[1:]))
+	case "calendar":
+		return report(runCalendar(args[1:]))
+	case "help", "-h", "--help":
+		printUsage(os.Stdout)
+		return 0
+	case "version", "-v", "--version":
+		fmt.Fprintf(os.Stdout, "%s %s\n", appName, appVersion)
+		return 0
+	default:
+		// An unrecognized first argument used to fall through and silently open the
+		// TUI, hiding a typo like "lazyplanner imprt". Report it and show usage.
+		fmt.Fprintf(os.Stderr, "lazyplanner: unknown command %q\n\n", args[0])
+		printUsage(os.Stderr)
+		return 2
+	}
 }
 
-func exitOnError(err error) {
+// report prints err (if any) and maps it to an exit code.
+func report(err error) int {
 	if err != nil {
 		fmt.Fprintln(os.Stderr, "lazyplanner:", err)
-		os.Exit(1)
+		return 1
 	}
+	return 0
+}
+
+// printUsage writes the top-level command summary.
+func printUsage(w io.Writer) {
+	fmt.Fprintf(w, `%s %s — terminal CalDAV todo & calendar manager
+
+Usage:
+  lazyplanner            open the TUI (default)
+  lazyplanner import     one-way pull (server → local cache)
+  lazyplanner sync       two-way sync of the local cache
+  lazyplanner calendar   manage calendars (list/create/delete)
+  lazyplanner version    print the version
+  lazyplanner help       show this help
+
+Run a subcommand with -h for its flags; see the README for configuration.
+`, appName, appVersion)
 }
 
 // runTUI loads the config, opens the account-namespaced local cache, and hands

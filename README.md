@@ -105,7 +105,11 @@ Once `[server]` is set, LazyPlanner syncs **both ways** on startup, **periodical
 ```sh
 lazyplanner sync      # two-way sync of the local cache against the server
 lazyplanner import    # one-way pull only (server → local), e.g. for a first seed
+lazyplanner version   # print the version
+lazyplanner help      # list the subcommands
 ```
+
+(An unrecognized subcommand is reported with a non-zero exit and the usage, rather than silently opening the TUI.)
 
 Both take the same connection flags as below (or the `LAZYPLANNER_CALDAV_URL` / `LAZYPLANNER_CALDAV_USERNAME` / `LAZYPLANNER_CALDAV_PASSWORD` environment variables), and honor `--data` to override the data directory:
 

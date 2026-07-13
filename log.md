@@ -4,6 +4,14 @@
 
 ---
 
+## 2026-07-13 — Hardening pass 9 (B1): CLI reports unknown commands + adds help/version
+
+- Pre-1.0 audit finding (LOW, CLI UX): an unrecognized first argument fell through to `runTUI()`, so a typo like `lazyplanner imprt` silently opened the TUI (exit 0) instead of reporting the mistake; there was also no `help`/`version`.
+- **Fix:** extracted the dispatch into a testable `run(args) int`; `main` is now just `os.Exit(run(...))`. Added `help`/`-h`/`--help` and `version`/`-v`/`--version`, and a default branch that prints `unknown command %q` + usage and exits 2. Replaced `exitOnError` with a code-returning `report`. Added `printUsage`.
+- **B3 (version string):** left `appVersion` as the owner's release decision (the project isn't released; per the branch rules I don't bump release identifiers), but `version` now makes it queryable.
+- Tests: `cmd/lazyplanner/main_test.go` (new — the package had none) — unknown command → exit 2; help/version → exit 0 without launching the TUI; usage lists every subcommand. README updated with the new subcommands. Full gate passes.
+- Files: `cmd/lazyplanner/main.go`, `cmd/lazyplanner/main_test.go`, `README.md`.
+
 ## 2026-07-13 — Hardening pass 9 (UI-1+UI-2): recurrence-edit UI robustness
 
 - Two LOW UI findings from the input-handler audit:
