@@ -4,6 +4,13 @@
 
 ---
 
+## 2026-07-13 — Hardening pass 9 (M2): store.Open degrades when the cache root is unreadable
+
+- Pre-1.0 audit finding (MED): `store.Open` returned a fatal error when `os.ReadDir(<dataDir>/calendars)` failed for any reason other than not-existing (root is a regular file, a symlink to a non-dir, or permission-denied) — locking the user out of the whole app, inconsistent with `loadCalendar`, which records a per-calendar `ReadDir` failure as a `LoadError` and continues.
+- **Fix:** a non-`NotExist` root `ReadDir` error is now recorded as a `LoadError` and `Open` returns an empty store (matching the per-calendar tolerance). The UI surfaces the error; a later sync can repopulate. Safe: an empty store carries no tombstones, so this never deletes server data.
+- Tests: `internal/store/openrobust_test.go` — opening a dataDir whose `calendars` entry is a regular file yields a non-fatal empty store with the failure in `LoadErrors`. Full gate passes.
+- Files: `internal/store/store.go`, `internal/store/openrobust_test.go`.
+
 ## 2026-07-13 — Hardening pass 9 (M1): actionable error on a malformed config.toml
 
 - Pre-1.0 audit finding (MED): a syntax error in `config.toml` aborted startup. Investigated the suggested "fall back to defaults" degradation and **rejected** it: the local cache is namespaced by account (server URL + username), so an unparseable config leaves the account — and thus which cache dir to open — unknown; defaulting would open an empty/wrong-account cache, more confusing than a clear failure. The fatal exit is correct here.

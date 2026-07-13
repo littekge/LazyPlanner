@@ -117,7 +117,14 @@ func Open(ctx context.Context, dataDir string) (*Store, error) {
 		return s, nil
 	}
 	if err != nil {
-		return nil, fmt.Errorf("reading cache root %q: %w", root, err)
+		// Degrade rather than abort: a cache root that is a regular file or is
+		// unreadable must not lock the user out of the whole app. Record it as a
+		// LoadError (mirroring the per-calendar ReadDir tolerance in loadCalendar)
+		// and return an empty store — the UI surfaces the error, and a later sync
+		// can repopulate. An empty store has no tombstones, so this never deletes
+		// server data.
+		s.loadErrors = append(s.loadErrors, LoadError{Err: fmt.Errorf("reading cache root %q: %w", root, err)})
+		return s, nil
 	}
 
 	for _, entry := range entries {
