@@ -4,6 +4,14 @@
 
 ---
 
+## 2026-07-13 — Hardening pass 9 (UI-1+UI-2): recurrence-edit UI robustness
+
+- Two LOW UI findings from the input-handler audit:
+  - **UI-1 — guard the split's empty result:** `grab.go` and `recur_edit.go` indexed `future.Events[0]` after `model.SplitEvent` without a length check. `SplitEvent` always yields one future event so it's currently unreachable, but the TUI must never index into an empty model result (crash-on-model-data rule). Both sites now flash an error and return if `future.Events` is empty. (Defensive guard; no injection seam for a dedicated test.)
+  - **UI-2 — keep the drill on delete-occurrence:** deleting/skipping one occurrence of a recurring item goes through the scope picker (a `pageConfirm`, no form), but the shared `commitMutation` still called `closeModal(pageForm)`. Since the picker's own close already restored focus, that second `restoreFocus` popped an empty focus stack and fell through to the Calendars overview — kicking focus off the drilled calendar day (inconsistent with Space-complete). Added `commitMutationKeepingDrill` (extracted `applyMutation` core, uses `refreshKeepingDrill`, no form close) and routed the three delete/skip/this-and-future-delete paths through it.
+- Tests: `internal/ui/recuruidrill_test.go` — deleting an occurrence from a drilled calendar grid keeps focus on the grid (not the Calendars overview) and preserves the drill. Full gate passes.
+- Files: `internal/ui/grab.go`, `internal/ui/recur_edit.go`, `internal/ui/edit.go`, `internal/ui/recuruidrill_test.go`.
+
 ## 2026-07-13 — Hardening pass 9 (L5+L6): store name-length cap and stale-temp sweep
 
 - Two LOW store-robustness findings, together:

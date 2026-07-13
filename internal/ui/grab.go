@@ -2,6 +2,7 @@ package ui
 
 import (
 	"context"
+	"errors"
 	"time"
 
 	"github.com/gdamore/tcell/v2"
@@ -99,6 +100,12 @@ func (a *app) beginGrabFuture(loc store.Located, t editTarget) {
 	capped, future, err := model.SplitEvent(loc.Object, t.uid, t.occStart, d, a.now, a.loc)
 	if err != nil {
 		a.flashErr("Grab", err)
+		return
+	}
+	if len(future.Events) == 0 {
+		// Defensive: SplitEvent always yields one future event, but the TUI must
+		// never index into an empty model result (crash-on-model-data rule).
+		a.flashErr("Grab", errors.New("split produced no event"))
 		return
 	}
 	newUID := future.Events[0].UID

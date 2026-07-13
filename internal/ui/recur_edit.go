@@ -2,6 +2,7 @@ package ui
 
 import (
 	"context"
+	"errors"
 	"time"
 
 	"github.com/gdamore/tcell/v2"
@@ -121,6 +122,11 @@ func (a *app) editEventScoped(loc store.Located, t editTarget, scope recurScope)
 				a.flashErr("Edit", err)
 				return
 			}
+			if len(future.Events) == 0 {
+				// Defensive: never index into an empty model result (crash-on-model-data rule).
+				a.flashErr("Edit", errors.New("split produced no event"))
+				return
+			}
 			a.commitSplit(loc, future.Events[0].UID, capped, future, "edit this & future", "Split series (u to undo)")
 		})
 	}
@@ -187,7 +193,7 @@ func (a *app) deleteRecurring(loc store.Located, t editTarget) {
 				a.flashErr("Delete", err)
 				return
 			}
-			a.commitMutation(loc.CalID, loc.Name, capped, loc.Prev, "delete this & future", t.uid, "Deleted this & future")
+			a.commitMutationKeepingDrill(loc.CalID, loc.Name, capped, loc.Prev, "delete this & future", t.uid, "Deleted this & future")
 		case scopeThis:
 			a.deleteOccurrence(loc, t)
 		}
@@ -204,7 +210,7 @@ func (a *app) deleteOccurrence(loc store.Located, t editTarget) {
 			a.flashErr("Delete", err)
 			return
 		}
-		a.commitMutation(loc.CalID, loc.Name, newObj, loc.Prev, "delete occurrence", t.uid, "Deleted this occurrence")
+		a.commitMutationKeepingDrill(loc.CalID, loc.Name, newObj, loc.Prev, "delete occurrence", t.uid, "Deleted this occurrence")
 		return
 	}
 	advanced, done, err := model.AdvanceRecurringTodo(loc.Object, t.uid, a.now, a.loc)
@@ -223,7 +229,7 @@ func (a *app) deleteOccurrence(loc store.Located, t editTarget) {
 		a.flash("Deleted (last occurrence)")
 		return
 	}
-	a.commitMutation(loc.CalID, loc.Name, advanced, loc.Prev, "skip occurrence", t.uid, "Skipped this occurrence")
+	a.commitMutationKeepingDrill(loc.CalID, loc.Name, advanced, loc.Prev, "skip occurrence", t.uid, "Skipped this occurrence")
 }
 
 // advanceRecurringTodo completes one occurrence of a recurring todo by rolling it

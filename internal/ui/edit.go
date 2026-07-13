@@ -894,18 +894,40 @@ func (a *app) showCreateEventForm(calID string, base time.Time) {
 	a.openModal(pageForm, f, 62, 21)
 }
 
+// applyMutation writes obj and records an undo step, flashing and returning false
+// on failure. Shared tail of the form-close and keep-drill commit variants.
+func (a *app) applyMutation(calID, name string, obj *model.Parsed, prev *store.Resource, label, selUID string) bool {
+	if _, err := a.store.Put(context.Background(), calID, name, obj); err != nil {
+		a.flashErr("Save", err)
+		return false
+	}
+	a.pushUndo(label, selUID, undoOp{calID: calID, name: name, prev: prev})
+	return true
+}
+
 // commitMutation writes obj, records undo, closes the form, refreshes, and
 // flashes — the shared tail of every form Save/Create. prev nil marks a creation.
 func (a *app) commitMutation(calID, name string, obj *model.Parsed, prev *store.Resource, label, selUID, done string) {
-	if _, err := a.store.Put(context.Background(), calID, name, obj); err != nil {
-		a.flashErr("Save", err)
+	if !a.applyMutation(calID, name, obj, prev, label, selUID) {
 		return
 	}
-	a.pushUndo(label, selUID, undoOp{calID: calID, name: name, prev: prev})
 	// Refresh first (rebuilds the calendar grid), then close — so restoreFocus
 	// can re-drill into the day the user was on.
 	a.refresh(selUID)
 	a.closeModal(pageForm)
+	a.flash(done + undoHint)
+}
+
+// commitMutationKeepingDrill is the commit tail for a mutation triggered from the
+// recurrence scope picker (a pageConfirm that already closed) rather than a form.
+// It must NOT close pageForm — no form is open, so that extra restoreFocus would
+// pop an empty focus stack and kick focus off the drilled calendar day. It keeps
+// the drill instead, mirroring Space-complete.
+func (a *app) commitMutationKeepingDrill(calID, name string, obj *model.Parsed, prev *store.Resource, label, selUID, done string) {
+	if !a.applyMutation(calID, name, obj, prev, label, selUID) {
+		return
+	}
+	a.refreshKeepingDrill(selUID)
 	a.flash(done + undoHint)
 }
 
