@@ -23,7 +23,7 @@ func addConnFlags(fs *flag.FlagSet) connFlags {
 		username: fs.String("username", os.Getenv("LAZYPLANNER_CALDAV_USERNAME"),
 			"CalDAV username (or $LAZYPLANNER_CALDAV_USERNAME)"),
 		password: fs.String("password", os.Getenv("LAZYPLANNER_CALDAV_PASSWORD"),
-			"CalDAV app password (or $LAZYPLANNER_CALDAV_PASSWORD)"),
+			"CalDAV app password; prefer $LAZYPLANNER_CALDAV_PASSWORD — a --password flag is visible in ps/shell history"),
 	}
 }
 

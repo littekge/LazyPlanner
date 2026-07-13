@@ -4,6 +4,13 @@
 
 ---
 
+## 2026-07-13 — Hardening pass 9 (B2/B4 + audit close-out): CLI password flag guidance
+
+- **B2 (LOW):** the `--password` CLI flag exposes the secret in `ps`/shell history. Kept the flag (dropping it would break documented scripting usage) but its help text now steers users to `$LAZYPLANNER_CALDAV_PASSWORD` and names the exposure. The env var and the config's `password_command` remain the non-exposing paths.
+- **B4 (LOW, accepted by design):** `calendar create` slugifies a name to a collection path, and two names differing only in punctuation can slug alike. Left as-is: the server is authoritative on collection paths and rejects a duplicate with a clear error, so no local uniqueness logic is added (which could diverge from the server's own path assumptions).
+- This closes out hardening pass 9 (the pre-1.0 audit). Audit items resolved: HIGH H1–H5, MED M1–M6, LOW L5/L6/L8/UI-1/UI-2/B1/B2 + local-read caps, plus the recurrence-mutation fuzz harness. Consciously not changed (documented): L7 (not a bug in practice), B3 (version number = owner's release call), B4 (server-authoritative), Audit-3 UI-3 (already correctly bounds-checked), the `password_command` output size cap (time-bounded; user-owned command).
+- Files: `cmd/lazyplanner/conn.go`.
+
 ## 2026-07-13 — Hardening pass 9 (L-caps): bound local file reads
 
 - Pre-1.0 audit finding (LOW): unlike the CalDAV response body (capped in pass 7), the local reads did an unbounded `os.ReadFile`/`toml.DecodeFile` — so a huge file, or a **symlink to an endless device** (`/dev/zero`) at any of those paths, could OOM or hang the app. Weaker threat model than the network (these are under the user's own dirs), but cheap symmetry.
