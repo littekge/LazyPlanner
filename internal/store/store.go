@@ -7,6 +7,7 @@ import (
 	"os"
 	"path/filepath"
 	"sort"
+	"strings"
 	"sync"
 	"time"
 
@@ -178,6 +179,13 @@ func (s *Store) loadCalendar(ctx context.Context, id string) (*calState, []LoadE
 			return cs, errs
 		}
 		name := entry.Name()
+		if !entry.IsDir() && isStaleTempName(name) {
+			// A leftover from a write interrupted before its atomic rename
+			// (writeFileAtomic). It's never loaded (not a .ics), so sweep it on open
+			// rather than let these accumulate across crashes — matters on a Pi's SD card.
+			_ = os.Remove(filepath.Join(dir, name))
+			continue
+		}
 		if entry.IsDir() || filepath.Ext(name) != icsExt {
 			continue
 		}
@@ -192,6 +200,14 @@ func (s *Store) loadCalendar(ctx context.Context, id string) (*calState, []LoadE
 		}
 	}
 	return cs, errs
+}
+
+// isStaleTempName reports whether name is a temp file writeFileAtomic left behind
+// when a write was interrupted before its rename. The pattern mirrors
+// os.CreateTemp(dir, "."+base+".tmp-*"): a dot-prefixed name containing ".tmp-".
+// Real cache files (.ics, the .lazyplanner.json sidecar) never contain ".tmp-".
+func isStaleTempName(name string) bool {
+	return strings.HasPrefix(name, ".") && strings.Contains(name, ".tmp-")
 }
 
 // loadResource reads and parses one .ics file, merging in the sync state the

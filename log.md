@@ -4,6 +4,14 @@
 
 ---
 
+## 2026-07-13 — Hardening pass 9 (L5+L6): store name-length cap and stale-temp sweep
+
+- Two LOW store-robustness findings, together:
+  - **L5 — `SafeName` length cap:** an over-long UID/href (from another client) produced a file name past the filesystem's per-name limit, so that resource silently failed to cache and was retried fruitlessly every sync. `SafeName` now caps the sanitized prefix at `maxSafeNameLen` (200) and appends a deterministic FNV-64 hash suffix — distinct long inputs stay distinct and stable across runs, and the later `.ics` still fits under the common 255-byte limit.
+  - **L6 — sweep stale temp files:** `writeFileAtomic` leaves a `.<base>.tmp-*` file if a write is interrupted before its rename. These are never loaded (not `.ics`) but accumulated across crashes (an SD-card concern on the Pi). `loadCalendar` now removes them on open (matched by `isStaleTempName`; real `.ics`/sidecar names never contain `.tmp-`).
+- Tests: `internal/store/housekeeping_test.go` — a 1000-char name caps under 255, stays deterministic, and doesn't collide with a different long input; a planted stale temp file is swept on `Open` while the real resource still loads. Full gate passes.
+- Files: `internal/store/mutate.go`, `internal/store/store.go`, `internal/store/housekeeping_test.go`.
+
 ## 2026-07-13 — Hardening pass 9 (L8): recurring-todo advance honors RDATE past COUNT=1
 
 - Pre-1.0 audit finding (LOW, edge correctness): `AdvanceRecurringTodo` short-circuited "exhausted" on `roption.Count == 1`, ignoring an RDATE. A COUNT=1 todo that also carries an RDATE has a further occurrence, so completing it marked the whole series done one occurrence early.

@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"hash/fnv"
 	"os"
 	"path/filepath"
 	"strings"
@@ -314,15 +315,29 @@ func SafeName(s string) string {
 			b.WriteRune('_')
 		}
 	}
+	out := b.String()
 	// "." and ".." are the two dot-only names the filesystem treats specially, so
 	// a name that sanitizes to either would be a path-traversal segment (e.g. a
 	// calendar id of ".." joined to the cache root escapes it). Neutralize them —
 	// legitimate names never sanitize to a bare "." or "..".
-	if out := b.String(); out == "." || out == ".." {
+	if out == "." || out == ".." {
 		return "unnamed"
 	}
-	return b.String()
+	// Cap the length so an over-long UID/href (from another client) still yields a
+	// writable file name under the filesystem's per-name limit; a deterministic hash
+	// suffix keeps distinct long inputs distinct and stable across runs. The ".ics"
+	// suffix a resource name later appends still fits under the common 255 limit.
+	if len(out) > maxSafeNameLen {
+		h := fnv.New64a()
+		_, _ = h.Write([]byte(s))
+		out = out[:maxSafeNameLen] + "-" + fmt.Sprintf("%016x", h.Sum64())
+	}
+	return out
 }
+
+// maxSafeNameLen caps the sanitized-name prefix; with the 17-char hash suffix and
+// a later ".ics" it stays well under the common 255-byte filesystem NAME_MAX.
+const maxSafeNameLen = 200
 
 // validCalendarID reports whether id is safe to join onto the cache root as a
 // calendar directory: non-empty, not a dot-traversal segment, and free of any
