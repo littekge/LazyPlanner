@@ -179,7 +179,7 @@ ExecStart=-/sbin/agetty --autologin pi --noclear %I $TERM
 
 Set `color_mode = "16"` in the config if the Pi console is a bare framebuffer TTY (no truecolor); on a desktop terminal emulator leave it `auto`. The periodic background sync keeps the display current without any interaction.
 
-**Performance.** The binary starts from the local cache instantly and syncs in the background, and the incremental CTag short-circuit keeps routine syncs cheap — both designed for modest hardware. On-hardware timing hasn't been benchmarked yet; measure `time lazyplanner sync` and startup on your Pi and tune `sync_interval_minutes` to taste.
+**Performance.** The binary starts from the local cache instantly and syncs in the background, and the incremental CTag short-circuit keeps routine syncs cheap — both designed for modest hardware. The core hot paths scale **linearly** with calendar/list size: a first-time sync or import of a large calendar writes each resource's cache entry once (not once per resource — it used to be quadratic), the task tree builds in linear time, and recurrence expansion is bounded so a pathological repeat rule can't stall the display. On-hardware timing hasn't been benchmarked yet; measure `time lazyplanner sync` and startup on your Pi and tune `sync_interval_minutes` to taste.
 
 ## Development
 

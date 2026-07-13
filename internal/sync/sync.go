@@ -370,9 +370,18 @@ func reconcileCalendar(ctx context.Context, client Syncer, st *store.Store, calI
 		}
 
 		switch {
-		case r.Href == "":
+		case r.Href == "" && r.Dirty:
 			// New local resource, never pushed → create it on the server.
 			pushCreate(ctx, client, st, calID, sc.Path, r, res)
+
+		case r.Href == "":
+			// Clean yet never pushed: not a genuine local create (those are always
+			// dirty) but a pull orphan — an interrupted bulk pull wrote this .ics
+			// before its batched sidecar flush, so it reloaded without a server
+			// identity. Don't upload it (that would create a server-side duplicate);
+			// leave it for step (B) to overwrite by re-pulling the server's copy into
+			// the same file. If the server no longer has it, it stays an inert
+			// local-only item rather than being wrongly resurrected on the server.
 
 		default:
 			serverObj, onServer := serverByHref[r.Href]
@@ -403,7 +412,12 @@ func reconcileCalendar(ctx context.Context, client Syncer, st *store.Store, calI
 	}
 
 	// (B) Pull resources that exist on the server but not locally (new remotely),
-	// skipping any with a pending local deletion (handled in step C).
+	// skipping any with a pending local deletion (handled in step C). These are
+	// applied in one batched write (PullRemoteBatch) so a first-time pull of a
+	// large calendar costs one sidecar write, not one per resource (O(N) not
+	// O(N²)); each pull here is a brand-new remote resource, so the batch's
+	// unconditional writes can't clobber a concurrent local edit.
+	var pulls []store.RemoteObject
 	for _, o := range serverObjs {
 		if o.Path == "" {
 			// A server response with an empty href can't be addressed for a later
@@ -416,7 +430,25 @@ func reconcileCalendar(ctx context.Context, client Syncer, st *store.Store, calI
 		if localByHref[o.Path] || tombstonedHref[o.Path] {
 			continue
 		}
-		pullInto(ctx, st, calID, resourceFileName(o.Path), o, nil, res)
+		parsed, perr := model.Parse(o.Data, time.Local)
+		if perr != nil {
+			recordSkip(res, calID, o.Path, perr)
+			continue
+		}
+		pulls = append(pulls, store.RemoteObject{Name: resourceFileName(o.Path), Object: parsed, ETag: o.ETag, Href: o.Path})
+	}
+	if len(pulls) > 0 {
+		results, err := st.PullRemoteBatch(ctx, calID, pulls)
+		if err != nil {
+			return err
+		}
+		for i, e := range results {
+			if e != nil {
+				recordSkip(res, calID, pulls[i].Name, e)
+			} else {
+				res.Pulled++
+			}
+		}
 	}
 
 	// (C) Push local deletions (tombstones) to the server.

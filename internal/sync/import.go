@@ -83,18 +83,27 @@ func Import(ctx context.Context, src Source, dst *store.Store) (ImportResult, er
 			res.Skipped = append(res.Skipped, ImportError{Calendar: id, Path: s.Ref, Err: s.Err})
 		}
 
+		// Batch the writes so importing a large calendar costs one sidecar write,
+		// not one per resource (O(N) not O(N²)).
+		var pulls []store.RemoteObject
 		for _, obj := range objs {
 			parsed, err := model.Parse(obj.Data, time.Local)
 			if err != nil {
 				res.Skipped = append(res.Skipped, ImportError{Calendar: id, Path: obj.Path, Err: err})
 				continue
 			}
-			name := resourceFileName(obj.Path)
-			if _, err := dst.PutRemote(ctx, id, name, parsed, obj.ETag, obj.Path); err != nil {
-				res.Skipped = append(res.Skipped, ImportError{Calendar: id, Path: obj.Path, Err: err})
-				continue
+			pulls = append(pulls, store.RemoteObject{Name: resourceFileName(obj.Path), Object: parsed, ETag: obj.ETag, Href: obj.Path})
+		}
+		results, err := dst.PullRemoteBatch(ctx, id, pulls)
+		if err != nil {
+			return res, fmt.Errorf("import: writing calendar %q: %w", id, err)
+		}
+		for i, e := range results {
+			if e != nil {
+				res.Skipped = append(res.Skipped, ImportError{Calendar: id, Path: pulls[i].Href, Err: e})
+			} else {
+				res.Objects++
 			}
-			res.Objects++
 		}
 	}
 	return res, nil

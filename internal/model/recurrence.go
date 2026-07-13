@@ -69,17 +69,49 @@ func (e *Event) Occurrences(from, to time.Time) ([]Occurrence, error) {
 	return out, nil
 }
 
-// safeBetween returns the recurrence-set instances in [from, to], containing any
-// panic rrule-go raises on a degenerate rule (ok=false) so callers can degrade
-// instead of crashing. Vendored code must not be hand-edited, so the guard lives
-// here at the call boundary.
+const (
+	// maxOccurrenceSteps bounds how many raw recurrence instances one event is
+	// stepped through when expanding a window, counting those skipped before the
+	// window as well as those collected. It stops a syntactically valid but
+	// pathological rule — FREQ=SECONDLY with no COUNT/UNTIL, or a rule anchored
+	// centuries before the query window — from iterating millions of times and
+	// freezing the UI or exhausting memory. This is a scale limit that doubles as
+	// a malformed-input safeguard; ~1M steps is far beyond any real calendar view.
+	maxOccurrenceSteps = 1 << 20
+
+	// maxOccurrencesPerEvent bounds how many in-window instances one event
+	// contributes, so a single high-frequency event can't flood a view. Far above
+	// any realistic count (a month of hourly instances is < 800).
+	maxOccurrencesPerEvent = 10000
+)
+
+// safeBetween returns the recurrence-set instances in [from, to], bounded so a
+// pathological rule can neither hang nor exhaust memory: iteration stops after
+// maxOccurrenceSteps raw steps or maxOccurrencesPerEvent collected instances. It
+// also contains any panic rrule-go raises on a degenerate rule (ok=false) so the
+// caller can degrade instead of crashing. Vendored code must not be hand-edited,
+// so both guards live here at the call boundary. Within the bounds the result is
+// identical to set.Between(from, to, true).
 func safeBetween(set *rrule.Set, from, to time.Time) (starts []time.Time, ok bool) {
 	defer func() {
 		if r := recover(); r != nil {
 			starts, ok = nil, false
 		}
 	}()
-	return set.Between(from, to, true), true
+	next := set.Iterator()
+	for steps := 0; steps < maxOccurrenceSteps; steps++ {
+		v, valid := next()
+		if !valid || v.After(to) {
+			return starts, true
+		}
+		if !v.Before(from) {
+			starts = append(starts, v)
+			if len(starts) >= maxOccurrencesPerEvent {
+				return starts, true
+			}
+		}
+	}
+	return starts, true
 }
 
 // baseInstance returns the event's single un-recurred instance if it overlaps

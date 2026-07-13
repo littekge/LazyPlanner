@@ -4,6 +4,28 @@
 
 ---
 
+## 2026-07-13 — Hardening pass 5: batched bulk pull — initial sync/import now O(N), not O(N²)
+
+- A scale benchmark (`internal/sync/scale_bench_test.go`, `BenchmarkInitialSyncPull`) confirmed a **quadratic** first-time sync/import: n=100→9ms, n=400→89ms, n=1000→457ms. Cause: every pulled resource went through `writeResourceLocked`, which re-serialized and atomically rewrote the **whole** calendar's sidecar — so N pulls × O(N) sidecar each = O(N²) work and disk bytes (brutal on a Pi's SD card, where every write also fsyncs).
+- **Fix:** new `store.PullRemoteBatch` writes each `.ics` atomically but the sidecar **once** per calendar. Sync's step (B) "new on server" loop and `Import` collect their pulls and apply them in one batch. After: n=100→3.4ms, n=400→12.4ms, n=1000→29.7ms — **linear** (~15× faster at n=1000). Refactored the write core into `stageResourceLocked` (write `.ics` + in-memory, defer sidecar) shared by the single-write path and the batch.
+- **Crash safety (the delicate part):** the batch is pull-only and holds `s.mu` for its whole duration, so a concurrent UI edit is fully serialized (never interleaved/lost — the pass-3 #3 hazard) and all writes are unconditional (no clobber). A crash mid-batch can leave an `.ics` whose sidecar entry wasn't flushed — a "pull orphan" that reloads clean and href-less. Reconcile step (A) now recognizes that state (`Href=="" && !Dirty`, which a genuine local create never is — those are dirty) and **does not re-upload it** (which would create a server-side duplicate); step (B) re-pulls the server's copy over it, healing it. If the server no longer has it, it stays an inert local item rather than being resurrected on the server.
+- Tests: `internal/sync/orphan_test.go` — a pull orphan is healed by re-pull with **0 PUTs** (no duplicate), and an orphan the server lacks is still never pushed. Full gate + `-race` on sync/store pass.
+- Files: `internal/store/{mutate,remote}.go`, `internal/sync/{sync,import}.go`, `internal/sync/{orphan,scale_bench}_test.go`.
+
+## 2026-07-13 — Hardening pass 5: BuildTree is now linear, not quadratic
+
+- `BenchmarkBuildTree` showed the subtask-forest build was **O(N²)**: n=100→36µs, n=1000→3.5ms, n=5000→**93ms** (per reload — and it runs on every tree reload). Cause: the per-insert `descends()` cycle guard walked the parent's entire current subtree, summing to O(N²) when many tasks share few parents.
+- **Fix:** replaced the subtree walk with `classifyByAncestry` — a memoized, iterative parent-chain classification that marks each UID as either reaching a real root or trapped in a cycle, in linear total time (iterative, so a deep chain can't overflow the stack either). Behavior is **unchanged**: nodes reachable only through a cycle are still dropped (per the `TestBuildTreeBreaksCycles`/`TestBuildTreeCycleWithExtraChild` contract), duplicates and UID-less todos handled as before. After: n=5000→**2.35ms** (~40× faster) and cleanly linear.
+- Tests: existing tree tests + `FuzzBuildTree` (re-fuzzed 40s clean) cover the preserved semantics; `internal/model/scale_test.go` adds the benchmark. Full gate passes.
+- Files: `internal/model/tree.go`, `internal/model/scale_test.go`.
+
+## 2026-07-13 — Hardening pass 5: bound recurrence expansion (scale + malformed-input safeguard)
+
+- Scale review found `Event.Occurrences` had **no cap** on how many instances it materialized, and it runs on the render path. A syntactically valid but pathological rule — `FREQ=SECONDLY` with no COUNT/UNTIL (≈2.6M instances over a month view), or a rule anchored centuries before the window (an unbounded skip-forward) — would freeze the UI or exhaust memory. Reachable from a malformed/adversarial `.ics`, so this is a robustness/DoS bug as much as a scale one; the pass-4 fuzz harness structurally couldn't catch it (a huge-but-successful expansion trips neither the no-error nor no-panic assertion).
+- **Fix:** `safeBetween` now iterates the rrule set manually (via `Set.Iterator()`) with two bounds — `maxOccurrenceSteps` (~1M raw steps, incl. skipped) and `maxOccurrencesPerEvent` (10000 collected) — so a pathological rule returns promptly with a bounded result instead of hanging. Within the bounds the output is identical to `set.Between`. (The existing panic-recover for degenerate rrule iteration is kept.)
+- Tests (`internal/model/scale_test.go`): a `FREQ=SECONDLY` event and a far-anchored `FREQ=MINUTELY` event both expand within a 10s watchdog and return a capped count; `FuzzEventOccurrences` re-fuzzed 45s clean. Full gate passes.
+- Files: `internal/model/recurrence.go`, `internal/model/scale_test.go`.
+
 ## 2026-07-13 — Hardening pass 4: fuzz the iCalendar ingest boundary — contain library panics
 
 - Started a **fuzz pass** over LazyPlanner's input trust boundary (the decision to address fuzzing now: the app ingests arbitrary iCalendar from any other CalDAV client and any server response, yet had **zero** fuzz tests — the single largest robustness surface, and pass-3 already proved it harbors real bugs). Added native Go fuzz targets in `internal/model/fuzz_test.go`: `FuzzDecode` (decode → Encode → re-decode round-trip), `FuzzEventOccurrences` (recurrence expansion), `FuzzBuildTree` (subtask forest from a fuzzed topology), `FuzzParseQuickAdd` (smart parser). `go test` runs the seed corpus (incl. every saved crasher) on the normal gate; `go test -fuzz` explores.

@@ -57,28 +57,50 @@ func (s *Store) writeResource(ctx context.Context, calID, name string, obj *mode
 // compare-and-set sync writers (CommitPush/PullRemote). The caller must hold
 // s.mu. build derives the new resource from the current one (nil if none); the
 // object persisted to disk is build's returned Object, so a build that inspects
-// the current resource can choose which content to keep under the lock.
+// the current resource can choose which content to keep under the lock. The
+// sidecar is persisted on every call, so a crash can never leave the .ics and
+// sidecar inconsistent for a single write.
 func (s *Store) writeResourceLocked(calID, name string, build func(prev *Resource) *Resource) (*Resource, error) {
 	cs, err := s.ensureCalendar(calID)
 	if err != nil {
 		return nil, err
 	}
+	res, revert, err := s.stageResourceLocked(cs, calID, name, build)
+	if err != nil {
+		return nil, err
+	}
+	if err := writeSidecar(s.root, cs); err != nil {
+		// The sidecar didn't persist — revert the .ics and in-memory state so the
+		// two on-disk files can't diverge (a stale sidecar could otherwise strand
+		// this edit or resurrect a deleted item after a restart).
+		revert()
+		return nil, fmt.Errorf("updating sidecar for %q: %w", calID, err)
+	}
+	return res, nil
+}
 
+// stageResourceLocked encodes and atomically writes a resource's .ics and applies
+// the in-memory change, but does NOT persist the sidecar — the caller does that.
+// It returns a revert closure that undoes the in-memory change (used when a
+// following sidecar write fails). Splitting the sidecar write out lets a bulk
+// pull (PullRemoteBatch) write many .ics files under one sidecar write instead of
+// re-serializing the whole calendar per resource. The caller must hold s.mu.
+func (s *Store) stageResourceLocked(cs *calState, calID, name string, build func(prev *Resource) *Resource) (*Resource, func(), error) {
 	prevRes := cs.resources[name]
 	prevConf, hadConf := cs.conflicts[name]
 	prevTomb, hadTomb := cs.tombstones[name]
 
 	res := build(prevRes)
 	if res == nil || res.Object == nil || res.Object.Calendar == nil {
-		return nil, errors.New("store: write requires a decoded object")
+		return nil, nil, errors.New("store: write requires a decoded object")
 	}
 	data, err := res.Object.Encode()
 	if err != nil {
-		return nil, fmt.Errorf("encoding %s/%s: %w", calID, name, err)
+		return nil, nil, fmt.Errorf("encoding %s/%s: %w", calID, name, err)
 	}
 
 	if err := writeFileAtomic(filepath.Join(s.root, calID, name), data, filePerm); err != nil {
-		return nil, fmt.Errorf("writing %s/%s: %w", calID, name, err)
+		return nil, nil, fmt.Errorf("writing %s/%s: %w", calID, name, err)
 	}
 
 	cs.resources[name] = res
@@ -88,14 +110,8 @@ func (s *Store) writeResourceLocked(calID, name string, build func(prev *Resourc
 	delete(cs.tombstones, name)
 	delete(cs.conflicts, name)
 
-	if err := writeSidecar(s.root, cs); err != nil {
-		// The sidecar didn't persist — revert the .ics and in-memory state so the
-		// two on-disk files can't diverge (a stale sidecar could otherwise strand
-		// this edit or resurrect a deleted item after a restart).
-		s.revertMutation(calID, name, prevRes, prevConf, hadConf, prevTomb, hadTomb)
-		return nil, fmt.Errorf("updating sidecar for %q: %w", calID, err)
-	}
-	return res, nil
+	revert := func() { s.revertMutation(calID, name, prevRes, prevConf, hadConf, prevTomb, hadTomb) }
+	return res, revert, nil
 }
 
 // ensureCalendar returns the calendar state for calID, creating the directory
