@@ -4,6 +4,13 @@
 
 ---
 
+## 2026-07-13 — Tooling: coverage-first hardening-audit workflow
+
+- Added a reusable multi-agent audit workflow that enforces the evidence-over-verdict protocol (motivated by a prior pass declaring "1.0-ready" while real HIGH bugs sat in un-audited surfaces). Phases: **Plan** (read the coverage ledger + repo, pick the *least-audited* surfaces) → **Audit** (one method per target: fuzz / fault-injection / race / data-loss / input-edge / spec-diff) → **Verify** (N skeptics refute each finding; survivors must carry a repro the verifier actually ran) → **Canary** (inject known bugs in isolated worktrees; the suite must catch them — tests the net, not the code) → **Report** (coverage-ledger update with explicit blind spots, findings with repros, convergence vs last pass, bounded residual risk). It structurally cannot return "clean" — the recommendation enum is `more_passes_recommended` | `residual_accepted_with_caveats` — and an enforcement gate flags a report missing a ledger, "confirmed" findings without an executed repro, or escaped canaries.
+- Read-only on the working tree: audits only read, canaries run in disposable git worktrees, only the final synthesis writes (ledger + `passes/PASS-N.md`).
+- Files: `.claude/workflows/hardening-audit.js` (JS workflow; syntax-checked wrapped as the runtime executes it), `docs/audit/PROTOCOL.md` (the rules + stop-rule + how to read output), `docs/audit/COVERAGE.md` (living ledger, seeded with the real pass-1..9 state + declared blind spots), `docs/audit/passes/README.md`.
+- Invoke: `Workflow({ name: 'hardening-audit' })` (opt into multi-agent first). Not run here — authored only.
+
 ## 2026-07-13 — Hardening pass 9 (B2/B4 + audit close-out): CLI password flag guidance
 
 - **B2 (LOW):** the `--password` CLI flag exposes the secret in `ps`/shell history. Kept the flag (dropping it would break documented scripting usage) but its help text now steers users to `$LAZYPLANNER_CALDAV_PASSWORD` and names the exposure. The env var and the config's `password_command` remain the non-exposing paths.
