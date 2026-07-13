@@ -489,16 +489,15 @@ func AdvanceRecurringTodo(obj *Parsed, uid string, now time.Time, loc *time.Loca
 	}
 
 	roption, _ := comp.Props.RecurrenceRule()
-	exhausted := roption != nil && roption.Count == 1 // last occurrence of a COUNT series
-	var next time.Time
-	if !exhausted {
-		next, err = nextInstantAfter(comp, anchor, anchor)
-		if err != nil {
-			return nil, false, err
-		}
-		exhausted = next.IsZero()
+	// Ask the full recurrence set (RRULE + RDATE - EXDATE) for the next instant
+	// rather than short-circuiting on COUNT==1: a COUNT=1 rule that also carries an
+	// RDATE still has a further occurrence, and marking it done on COUNT alone would
+	// complete it one occurrence early.
+	next, err := nextInstantAfter(comp, anchor, anchor)
+	if err != nil {
+		return nil, false, err
 	}
-	if exhausted {
+	if exhausted := next.IsZero(); exhausted {
 		setCompleted(comp, true, now)
 		touch(comp, now)
 		out, perr := Parse(clone.Calendar, loc)

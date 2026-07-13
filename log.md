@@ -4,6 +4,14 @@
 
 ---
 
+## 2026-07-13 — Hardening pass 9 (L8): recurring-todo advance honors RDATE past COUNT=1
+
+- Pre-1.0 audit finding (LOW, edge correctness): `AdvanceRecurringTodo` short-circuited "exhausted" on `roption.Count == 1`, ignoring an RDATE. A COUNT=1 todo that also carries an RDATE has a further occurrence, so completing it marked the whole series done one occurrence early.
+- **Fix:** dropped the COUNT-only shortcut and always ask the full recurrence set (RRULE + RDATE − EXDATE) for the next instant via `nextInstantAfter`; exhaustion is now "no next instant". A plain COUNT=1 todo still exhausts correctly (no instant after the anchor); COUNT>1 roll-forward is unchanged.
+- Tests: `internal/model/advancerdate_test.go` — a `COUNT=1` + `RDATE` todo advances to the RDATE occurrence instead of completing. Existing advance tests still pass. Full gate passes.
+- Files: `internal/model/recur_edit.go`, `internal/model/advancerdate_test.go`.
+- (Related audit item L7 — a `NewSeriesFrom` COUNT clamp "phantom occurrence" — was examined and found **not reachable**: the split point is always an actual occurrence, so the future half legitimately includes it; the clamp yields the correct count. No change.)
+
 ## 2026-07-13 — Hardening pass 9 (M6): harden password_command execution
 
 - Pre-1.0 audit findings (MED/LOW): (1) `ResolvePassword` bounded the command with a context timeout but didn't set `Cmd.WaitDelay`, so a command that leaves a grandchild holding stdout open (e.g. one that backgrounds a process) could make `Output`'s internal `Wait` block past the deadline. (2) A command that exited 0 with no output silently produced an **empty password**, surfacing later only as an opaque auth failure.
