@@ -4,6 +4,16 @@
 
 ---
 
+## 2026-07-13 — Hardening pass 10: stale-surface sweep (via the hardening-audit workflow) — findings pending fixes
+
+- First run of the new `hardening-audit` workflow (63 agents, ~2.5M tokens, ~22 min). It targeted the surfaces the ledger still marked **stale** after pass 9. **9 findings confirmed with executed, RED repros (5 HIGH, 4 MED)** + **3 escaped mutation canaries** (test-coverage holes). Full report: `docs/audit/passes/PASS-10.md`; ledger updated in `docs/audit/COVERAGE.md`.
+- **HIGH (all iron-rule / data-loss, reachable via a foreign/bundled `.ics` — LazyPlanner never writes these shapes itself):** four decode-but-unencodable go-ical shapes the pass-4 healers don't cover (VEVENT DTEND+DURATION, VTODO DUE+DURATION, VTODO DURATION-without-DTSTART, empty VTIMEZONE — incl. one `stripForbiddenNesting` self-inflicts), each poisoning a whole resource on every re-encode; and cross-list yank/paste **move** dragging co-resident todos out of a bundled resource + deleting the source.
+- **MED:** `:config` reload fails for a flag-bearing `$EDITOR` (`code --wait`) — `exec.Command` treats the whole string as one binary; VJOURNAL/VFREEBUSY nested-child unencodable; a crash between the `.ics` rename and the sidecar rename loses the Dirty flag (offline edit never synced / delete silently undone — a real Pi/SD-card risk); copy duplicates co-resident bundled todos with their original UIDs.
+- **Canary escapes (one test each closes them):** backward-search wrap (`searchNext(-1)`) untested; VTODO PRIORITY `>9` clamp untested; `HasPendingChanges`/`HasLocalChanges` href-less pull-orphan clause untested in the store package.
+- **Convergence:** total findings 18→9 (LOW 7→0, MED 6→4) but **HIGH held at 5** and opened a new iron-rule class — **not converged**; the prior "1.0-ready" framing was premature for foreign/bundled `.ics` inputs.
+- **Process notes:** the synthesis report over-claimed the repros were "committed" — verified false (they're untracked); corrected the wording. Cleaned up 3 stray canary git worktrees the run left behind. One canary was a no-signal false alarm (its worktree checked out a docs-only commit) — not counted. **No fixes applied yet** — the 5 repro test files are left untracked (they fail `make check`) pending a decision on the fix program; the committed tree stays green.
+- Files (committed): `docs/audit/COVERAGE.md`, `docs/audit/passes/PASS-10.md`. Untracked (evidence): `internal/model/{repro_duedur,repro_durnodtstart,emptyvtimezone_repro}_test.go`, `internal/ui/{repro_coresident_move,bundled_copy_repro}_test.go`.
+
 ## 2026-07-13 — Tooling: /audit slash-command wrapper for the hardening-audit workflow
 
 - Added `.claude/commands/audit.md` — a thin `/audit` slash command that launches the deterministic `hardening-audit` Workflow, giving the `/`-command ergonomics over the code-driven engine. It parses `$ARGUMENTS` into the workflow's `args` (empty = auto-pick least-audited surfaces; `surface [method]` = one explicit target; `key=value` for `maxTargets`/`maxCanaries`/`skeptics`), calls `Workflow({ name: "hardening-audit", args })`, and on completion relays the residual-risk recommendation, findings-with-repros, canary escapes, and any `ENFORCEMENT` warnings — never a bare "clean". Invoking the command is itself the multi-agent opt-in.

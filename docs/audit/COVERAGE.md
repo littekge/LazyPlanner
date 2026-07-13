@@ -25,10 +25,13 @@ not hidden. See `PROTOCOL.md`.
 | UI draw paths (custom widgets) | internal/ui | display stress | 6 | recent |
 | UI input handlers (keys/chords/commands) | internal/ui | deep audit | 9 | recent |
 | CLI wiring | cmd/lazyplanner | deep audit | 9 | recent |
-| Mouse handling | internal/ui | light (build step 10) | 10 | stale |
-| `:config` reload / $EDITOR flow | internal/ui, internal/config | light | 10 | stale |
+| Mouse handling | internal/ui | input-edge | 10 | recent |
+| `:config` reload / $EDITOR flow | internal/ui, internal/config | fault-injection | 10 | recent (open MED: EDITOR-with-args) |
+| Store write pipeline atomicity (.ics + sidecar temp/rename) under disk fault | internal/store | fault-injection | 10 | recent (open MED: crash-between-renames loses Dirty) |
+| Yank/paste cross-list move & copy rollback | internal/ui | data-loss | 10 | recent (open HIGH+MED: co-resident bundle drag/dup) |
+| Feature-promise conformance vs main.md/CLAUDE.md | (whole app) | spec-diff | 10 | recent |
 | Full `sync-collection` incremental (token delta) | internal/sync | — (deliberately deferred) | — | never |
-| go-ical semantic encoder constraints (DUE+DURATION, empty VCALENDAR, VTIMEZONE child) | internal/model | not auto-healed | 4 | stale |
+| go-ical semantic encoder constraints (DTEND/DUE+DURATION, empty VTIMEZONE, VJOURNAL/VFREEBUSY nesting) | internal/model | fuzz (re-encode round-trip) | 10 | recent (open: 4 HIGH + 1 MED heal gaps) |
 | Raspberry Pi target (on-device timing / kiosk) | (hardware) | — | — | never |
 
 ## Declared blind spots (not covered by any pass)
@@ -37,7 +40,22 @@ not hidden. See `PROTOCOL.md`.
   color. Needs a physical Pi; the sole known-never surface with product risk.
 - **Full `sync-collection` incremental sync** — a deliberate feature deferral, not a
   bug (the CTag short-circuit is in place); audit once implemented.
-- **go-ical semantic encoder healing** — very low reachability; documented, not fixed.
+- **go-ical semantic encoder healing** — pass 10 upgraded this from "documented"
+  to CONFIRMED-with-repros: five decode-but-unencodable classes (VEVENT DTEND+DURATION,
+  VTODO DUE+DURATION, VTODO DURATION-without-DTSTART, empty VTIMEZONE incl. one
+  `stripForbiddenNesting` self-inflicts, VJOURNAL/VFREEBUSY nesting) each poison a
+  whole resource. Healers still not written; the iron-rule promise is broken for
+  these inputs until they are.
+- **Backward search cycling (`N` key / `searchNext(-1)`)** — mutation canary escaped:
+  the negative-index wrap path in `internal/ui/search.go` has no test; a `+len(matches)`
+  regression would panic at runtime undetected. (New this pass.)
+- **VTODO PRIORITY upper-bound clamp (>9)** — mutation canary escaped: `internal/model`
+  `priority()` clamps to 0–9 but no test exercises an out-of-range value, so dropping
+  the `> 9` clamp ships silently and corrupts smart-sort. (New this pass.)
+- **`HasPendingChanges`/`HasLocalChanges` pull-orphan (href-less clean) clause** —
+  mutation canary escaped: no store-package test seeds a clean, href-less resource, so
+  removing the `|| r.Href == ""` clause (which re-pulls a batched pull orphan) is
+  undetected by `go test ./internal/store/`. (New this pass.)
 
 > The workflow updates this table and this list at the end of each pass. Hand-edits
 > are welcome — it's a plain table on purpose.
