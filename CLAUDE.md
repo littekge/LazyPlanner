@@ -7,7 +7,7 @@
 
 ## Project Context
 
-- **Phase**: all 13 build steps are done; the project is in a **continuous hardening & audit phase** (2026-07-12) — bug-hunting, resilience, and consistency, not new features. Default to deep audits + adversarially-verified fixes, each with a regression test and its own commit. See the "Hardening & audit phase" note in `main.md`.
+- **Phase**: all 13 build steps are done; the project is in a **continuous hardening & audit phase** (2026-07-12) — bug-hunting, resilience, and consistency, not new features. Default to deep audits + adversarially-verified fixes, each with a regression test and its own commit. See the "Hardening & audit phase" note in `main.md`. **Audit tooling**: a reusable coverage-first workflow (`.claude/workflows/hardening-audit.js`, run via the `/audit` command) drives audits — it picks the least-audited surfaces from `docs/audit/COVERAGE.md`, verifies each finding with a runnable repro, runs mutation canaries, and reports residual risk (never "clean"). Keep the ledger (`docs/audit/COVERAGE.md`) current and read `docs/audit/PROTOCOL.md` before an audit; treat a workflow's summary as unverified until checked (its pass-10 run over-claimed "committed" repros).
 - **Spec**: `main.md` — the single source of truth for what to build.
 - **Change Log**: `log.md` — append an entry every time you make a change.
 - **README**: `README.md` — user-facing docs (what it does, usage, build/install for Linux and Windows). **Update it whenever user-visible behavior, usage, or build steps change.**

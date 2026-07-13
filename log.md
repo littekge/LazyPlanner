@@ -4,6 +4,11 @@
 
 ---
 
+## 2026-07-13 — Docs: record pass 10 + the audit workflow across main/README/CLAUDE
+
+- End-of-session doc refresh (no code change). `main.md`: added the Pass 10 entry and an "Audit tooling" note, corrected the "Not yet audited" section (the go-ical encoder healing it listed as unfixed is now done; added the stale surfaces — grab-mode, sync concurrency/TOCTOU — as the next targets). `README.md`: nine→ten hardening passes, softened "1.0-ready" to "hardening-ongoing, not yet 1.0-blessed" (pass 10 did not converge), added a "Hardening audits" subsection pointing at `/audit` and `docs/audit/`. `CLAUDE.md`: added the audit-tooling note to the Phase line (run `/audit`, keep `docs/audit/COVERAGE.md` current, treat a workflow summary as unverified until checked).
+- Files: `main.md`, `README.md`, `CLAUDE.md`, `log.md`.
+
 ## 2026-07-13 — Pass 10 fix: close the 3 mutation-canary test-coverage holes
 
 - Adds the missing regression tests the pass-10 canaries exposed (the code was already correct; the *tests* didn't cover these paths, so a future regression would ship silently):

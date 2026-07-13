@@ -2,7 +2,7 @@
 
 A terminal-based todo-list and calendar manager with offline-first CalDAV sync — a full-screen interactive TUI in the style of [lazygit](https://github.com/jesseduffield/lazygit), written in Go.
 
-> **Status: feature-complete, hardened, approaching 1.0.** All 13 build steps in [`main.md`](main.md) are implemented: offline-first **two-way CalDAV sync** (ETag-based, never silently overwrites; startup/periodic/debounced/on-quit triggers plus an incremental CTag short-circuit), deep **subtask trees**, **month/week/day** calendar views, **recurring** events and tasks with per-occurrence editing, a **vim-style chorded keymap** with a which-key popup, a `:` command line, a `?` help overlay, interactive **conflict resolution**, in-app **calendar management**, mouse support, and the **Raspberry Pi** cross-build. Since the feature set landed, the project has been through nine adversarial **hardening passes** — spec/consistency/deep-debugging audits, an iCalendar-ingest **fuzz** pass, a **scale-performance** pass, a **terminal-display** stress pass, **network fault-injection**, an exhaustive **timezone/DST** sweep, and a final **pre-1.0 unhardened-areas audit** (local-disk/config boundaries, filesystem robustness, the UI input surface, and the recurrence write-side — including a path-traversal and several recurrence-edit data-loss fixes) — each fix carrying a regression test and a full-gate commit. It's considered **1.0-ready pending an on-hardware Raspberry Pi smoke-test**. See [`log.md`](log.md) for the full history.
+> **Status: feature-complete, hardened, approaching 1.0.** All 13 build steps in [`main.md`](main.md) are implemented: offline-first **two-way CalDAV sync** (ETag-based, never silently overwrites; startup/periodic/debounced/on-quit triggers plus an incremental CTag short-circuit), deep **subtask trees**, **month/week/day** calendar views, **recurring** events and tasks with per-occurrence editing, a **vim-style chorded keymap** with a which-key popup, a `:` command line, a `?` help overlay, interactive **conflict resolution**, in-app **calendar management**, mouse support, and the **Raspberry Pi** cross-build. Since the feature set landed, the project has been through ten adversarial **hardening passes** — spec/consistency/deep-debugging audits, an iCalendar-ingest **fuzz** pass, a **scale-performance** pass, a **terminal-display** stress pass, **network fault-injection**, an exhaustive **timezone/DST** sweep, a **pre-1.0 unhardened-areas audit**, and a **coverage-first stale-surface sweep** (run via the reusable `hardening-audit` workflow — see below) that fixed a further data-loss class (foreign/bundled `.ics` handling, a `.ics`↔sidecar crash-consistency gap, and more) — each fix carrying a regression test and a full-gate commit. The most recent pass **did not converge** (fresh methods on previously-skipped surfaces still found real bugs), so it's treated as **hardening-ongoing, not yet 1.0-blessed**: an on-hardware Raspberry Pi smoke-test and a re-audit of the surfaces the coverage ledger still marks *stale* remain. See [`log.md`](log.md) and [`docs/audit/`](docs/audit/) for the full history.
 
 ## What it does
 
@@ -190,6 +190,19 @@ Set `color_mode = "16"` in the config if the Pi console is a bare framebuffer TT
 - [`main.md`](main.md) — the build specification (single source of truth)
 - [`CLAUDE.md`](CLAUDE.md) — project rules and coding standards
 - [`log.md`](log.md) — the change log; every change gets an entry
+- [`docs/audit/`](docs/audit/) — the hardening-audit protocol, the living coverage
+  ledger, and per-pass reports
+
+### Hardening audits
+
+Ongoing hardening runs through a reusable, coverage-first audit workflow
+(`.claude/workflows/hardening-audit.js`, launched with the `/audit` command in
+Claude Code). It picks the least-audited surfaces from the coverage ledger, fans
+out method-diverse audits, verifies each finding adversarially with a runnable
+repro, runs mutation canaries that test whether the suite actually catches
+injected bugs, and reports bounded *residual risk* rather than a "clean" verdict.
+The rules and how to read a run are in [`docs/audit/PROTOCOL.md`](docs/audit/PROTOCOL.md);
+the coverage state is in [`docs/audit/COVERAGE.md`](docs/audit/COVERAGE.md).
 
 `make check` runs the offline suite. The iCalendar parser and quick-add parser
 also have **fuzz targets** (`internal/model/fuzz_test.go`); their seed corpus
