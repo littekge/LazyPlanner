@@ -4,6 +4,13 @@
 
 ---
 
+## 2026-07-13 — Hardening pass 9 (M4): all-day series cap writes a DATE UNTIL, not DATE-TIME
+
+- Pre-1.0 audit finding (MED, interop, confirmed): `CapSeries` set `roption.Until` and let rrule-go serialize it, which always emits a DATE-TIME (`UNTIL=…T235959Z`). For an all-day (`VALUE=DATE`) master this produced `RRULE:…;UNTIL=20260719T235959Z` against `DTSTART;VALUE=DATE:…`, violating RFC 5545 §3.3.10 (UNTIL's value type must match DTSTART). Expansion worked in-app, but a strict server or another client could reject/mishandle the object on push.
+- **Fix:** after `SetRecurrenceRule`, when the master's DTSTART is date-only, rewrite the RRULE's UNTIL token to a DATE via the new `dateOnlyUntil` helper. Timed series are unaffected (still DATE-TIME).
+- Tests: `internal/model/recuruntil_test.go` — an all-day series caps to `UNTIL=20260719` (no `T`); a timed series keeps its DATE-TIME UNTIL. Full gate passes.
+- Files: `internal/model/recur_edit.go`, `internal/model/recuruntil_test.go`.
+
 ## 2026-07-13 — Hardening pass 9: fuzz the recurrence write-side (guards the H2–H5 class)
 
 - The decode-only fuzzers (pass 4) structurally couldn't reach the recurrence *mutation* primitives, which is exactly where pass-9 H2–H5 lived. Added `FuzzRecurrenceMutations` (extending `internal/model/fuzz_test.go` per the "extend, don't fork" rule): for any body that decodes, it drives `AddOccurrenceOverride`, `AddException`, `SplitEvent`, and `AdvanceRecurringTodo`, asserting each (a) never panics and (b) yields an object that re-encodes — so a degenerate rule can't crash the app (H2) and a mutation can't produce an unsaveable object.

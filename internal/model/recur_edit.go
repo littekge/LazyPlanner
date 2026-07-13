@@ -2,6 +2,7 @@ package model
 
 import (
 	"fmt"
+	"strings"
 	"time"
 
 	"github.com/emersion/go-ical"
@@ -261,6 +262,23 @@ func AddException(obj *Parsed, uid string, occ time.Time, allDay bool, now time.
 	return Parse(clone.Calendar, loc)
 }
 
+// dateOnlyUntil rewrites an RRULE string's UNTIL value from a DATE-TIME
+// (YYYYMMDDThhmmssZ) to a DATE (YYYYMMDD) — used when capping an all-day series,
+// where RFC 5545 requires UNTIL to match the date-only DTSTART value type.
+func dateOnlyUntil(rule string) string {
+	parts := strings.Split(rule, ";")
+	for i, part := range parts {
+		if !strings.HasPrefix(part, "UNTIL=") {
+			continue
+		}
+		val := part[len("UNTIL="):]
+		if idx := strings.IndexByte(val, 'T'); idx == 8 { // YYYYMMDD then 'T'
+			parts[i] = "UNTIL=" + val[:idx]
+		}
+	}
+	return strings.Join(parts, ";")
+}
+
 // CapSeries caps the master's recurrence at `until` (inclusive), so the series
 // ends there — the master half of a this-and-future split, and the whole of a
 // this-and-future delete. Any COUNT is dropped (UNTIL replaces it) and overrides
@@ -284,6 +302,14 @@ func CapSeries(obj *Parsed, uid string, until time.Time, now time.Time, loc *tim
 	roption.Until = until.UTC().Truncate(time.Second)
 	roption.Count = 0 // UNTIL and COUNT are mutually exclusive
 	master.Props.SetRecurrenceRule(roption)
+	// rrule-go always renders UNTIL as a DATE-TIME, but RFC 5545 §3.3.10 requires
+	// UNTIL's value type to match DTSTART — so an all-day (VALUE=DATE) master needs
+	// a DATE UNTIL, else a strict server or another client may reject the object.
+	if dtstart := master.Props.Get(ical.PropDateTimeStart); dtstart != nil && isDateOnly(dtstart) {
+		if rp := master.Props.Get(ical.PropRecurrenceRule); rp != nil {
+			rp.Value = dateOnlyUntil(rp.Value)
+		}
+	}
 	touch(master, now)
 
 	kept := clone.Calendar.Children[:0]
