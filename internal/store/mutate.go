@@ -215,14 +215,33 @@ func (s *Store) Locate(uid string) (Located, bool) {
 }
 
 // Restore writes a prior resource snapshot back to calID/name exactly, keeping
-// its sync state (ETag/Href/Dirty). It is the inverse of an edit or delete for
-// the session undo stack: pair it with a snapshot captured before the change.
+// its sync state (ETag/Href/Dirty). Used by the multi-write rollback paths
+// (a failed split/detach/grab), where the server was never touched so the clean
+// snapshot is still accurate. For the session undo stack, use RestoreDirty.
 func (s *Store) Restore(ctx context.Context, calID, name string, res *Resource) (*Resource, error) {
 	if res == nil || res.Object == nil {
 		return nil, errors.New("store: restore requires a resource snapshot")
 	}
 	return s.writeResource(ctx, calID, name, res.Object, func(*Resource) *Resource {
 		return &Resource{Name: name, ETag: res.ETag, Href: res.Href, Dirty: res.Dirty, Object: res.Object}
+	})
+}
+
+// RestoreDirty writes a prior snapshot back like Restore but marks it Dirty
+// (keeping the snapshot's Href/ETag as the sync baseline), so the next sync treats
+// the resurrection/revert as a pending local change. This is the session-undo
+// path: undoing an edit or delete that ALREADY synced must not replay clean — a
+// clean, stale snapshot is pulled back over on the next reconcile (an undone edit
+// whose ETag is older than the server's) or Forgotten as a server-absent orphan
+// (an undone delete whose tombstone already pushed), silently losing the undo.
+// Marking it Dirty makes sync push the revert or raise a keep-both conflict
+// instead of dropping it — consistent with the never-silently-overwrite model.
+func (s *Store) RestoreDirty(ctx context.Context, calID, name string, res *Resource) (*Resource, error) {
+	if res == nil || res.Object == nil {
+		return nil, errors.New("store: restore requires a resource snapshot")
+	}
+	return s.writeResource(ctx, calID, name, res.Object, func(*Resource) *Resource {
+		return &Resource{Name: name, ETag: res.ETag, Href: res.Href, Dirty: true, Object: res.Object}
 	})
 }
 

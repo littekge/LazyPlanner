@@ -947,7 +947,10 @@ func (a *app) undoLast() {
 		if op.prev == nil {
 			err = a.store.Delete(ctx, op.calID, op.name) // undo a creation
 		} else {
-			_, err = a.store.Restore(ctx, op.calID, op.name, op.prev)
+			// RestoreDirty (not Restore): an undo is a fresh local change to push. A
+			// clean replay of a snapshot whose edit/delete already synced would be
+			// silently pulled back over / Forgotten on the next reconcile.
+			_, err = a.store.RestoreDirty(ctx, op.calID, op.name, op.prev)
 		}
 		if err != nil {
 			a.flash("Undo failed: " + err.Error())

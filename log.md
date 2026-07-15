@@ -4,6 +4,15 @@
 
 ---
 
+## 2026-07-15 — Pass 12 fix (HIGH + MED): undo of a synced edit/delete survives the next sync
+
+- Fixes pass-12 HIGH #2 and MED #6 (`internal/store/mutate.go` + `internal/ui/edit.go` `undoLast`) — one root cause: `store.Restore` replays the undo snapshot **clean** (`Dirty=false`) with its old Href/ETag, but an undo is a fresh local change that must sync. So:
+  - **HIGH — undo of a synced *delete*:** after the delete's tombstone had pushed, `Restore` brought the item back clean with an Href the server no longer has → next reconcile hit `case !onServer:` and `Forget` — the explicitly-restored item **vanished permanently** from store and server.
+  - **MED — undo of a synced *edit*:** after the edit pushed (server at a newer ETag), `Restore` wrote the pre-edit content back with the **old** ETag + clean → next reconcile hit `case serverObj.ETag != r.ETag:` and **pulled the server copy back over the undo** (silent revert of the revert).
+- **Fix:** new `store.RestoreDirty` writes the snapshot back marked `Dirty=true` (keeping the Href/ETag baseline); `undoLast` uses it. Now the resurrection/revert is a pending local change → sync **pushes it or raises a keep-both conflict** rather than dropping it, consistent with the never-silently-overwrite model. The verbatim `Restore` is unchanged and still used by the multi-write **rollback** paths (failed split/detach/grab), where the server was never touched so the clean snapshot is still accurate.
+- Tests: `internal/sync/undo_after_delete_sync_test.go` (new, HIGH — resurrected item survives as a conflict, not Forgotten) and `internal/sync/undo_after_edit_sync_test.go` (the pass-12 repro, adapted to `RestoreDirty` — the revert sticks). Both verified red when `RestoreDirty` is neutered to replay clean, green with the fix. Full gate + `-race` on store/sync/ui pass.
+- Files: `internal/store/mutate.go`, `internal/ui/edit.go`, `internal/sync/undo_after_delete_sync_test.go`, `internal/sync/undo_after_edit_sync_test.go`.
+
 ## 2026-07-15 — Pass 12 fix (HIGH + MED): EditTodo preserves completion state it isn't changing
 
 - Fixes pass-12 HIGH #1 and MED #3 (`internal/model/edit.go` `EditTodo`) — one root cause. `TodoDraft.Completed` is a single bool, but VTODO STATUS is quad-state (NEEDS-ACTION / IN-PROCESS / COMPLETED / CANCELLED). A quick field-set (`sp`/`sd`) carries `Completed = td.Completed()` unchanged, and `EditTodo` unconditionally called `setCompleted(comp, d.Completed, now)`, which: (HIGH) flattened a foreign client's **IN-PROCESS/CANCELLED** task to `NEEDS-ACTION` and **dropped PERCENT-COMPLETE** on a routine priority/due bump; and (MED) **restamped an already-COMPLETED task's `COMPLETED` timestamp to now** — both silent, pushed to the server, and iron-rule breaches of the quick-set "change one field, leave the rest intact" contract.
