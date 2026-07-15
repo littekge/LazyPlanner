@@ -4,6 +4,14 @@
 
 ---
 
+## 2026-07-15 — Pass 11: close the 2 escaped mutation-canary coverage holes
+
+- Adds the regression tests the pass-11 canaries exposed (the code is correct today; the *tests* didn't cover these boundaries, so a future off-by-one would ship silently):
+  - **`clampIndex` upper bound** (`internal/ui/canary_boundaries_test.go` `TestClampIndexBoundaries`): table over `{i<0, 0, n-1, i==n, i>n, i==n with n=1}` — guards the `i >= n` clamp that backs vim-count nav and drilled-event selection (a count landing exactly on the list length hits `i == n`). The escaped mutation was `i >= n` → `i > n`.
+  - **Month-grid event-drill j/k boundaries** (`TestCalendarViewEventDrillJKBoundaries`): drills into a 3-item day and steps down/up past both ends via **both** the `j`/`k` (KeyRune) and Down/Up (arrow) paths, asserting `eventIndex` stops at `len-1`/`0`. The escaped mutation was the down guard `< len(items)-1` → `<= len(items)-1`.
+- Verified the net now has teeth: re-applied each mutation and confirmed the matching test **fails** (`clampIndex(1,1)=1` and `eventIndex=3` past the end), then reverted and confirmed green. Full gate + `-race` on store/sync/ui pass.
+- Files: `internal/ui/canary_boundaries_test.go` (test-only).
+
 ## 2026-07-15 — Pass 11 fix (LOW): todo grab nudge re-checks HasDue after re-locate
 
 - Fixes pass-11 LOW #7 (`internal/ui/grab.go` `grabNudge`): `startGrab` gates a todo grab on `HasDue`, but that snapshot goes stale — a concurrent sync can clear the due date mid-grab. The nudge's todo branch re-located the task but didn't re-check `HasDue`, so `draftFromTodo`'s zero `Due` was shifted by `AddDate` into a year-1 date, `EditTodo` wrote `HasDue=false` (nothing persisted), and the flash read a nonsensical "due Jan 1, year 1" — a confusing no-op that looked like a move.
