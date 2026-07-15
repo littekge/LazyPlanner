@@ -4,6 +4,11 @@
 
 ---
 
+## 2026-07-15 — Docs: record passes 11 + 12 across main.md and README
+
+- End-of-session doc refresh (no code change). `main.md`: added the Pass 11 and Pass 12 entries to the "Hardening & audit phase" section and rewrote "Not yet audited (next)" — the pass-11/12 stale surfaces (grab-mode, recurrence-edit UI, sync concurrency/CTag/background goroutines, undo stack, quick-field/completion write paths, color/privilege PROPFIND decode) are now *recent*, the two recurring data-loss classes (`Locate→Put` no-version-check, `Restore`-replays-clean-and-stale) are structurally closed, and a whole-app spec-diff re-run is named as the next target. `README.md`: ten→twelve hardening passes, with the recent sweeps described as the two data-loss-class fixes (multi-write-without-rollback, read-modify-write-without-version-check) plus the STATUS-flatten and read-only fail-open.
+- Files: `main.md`, `README.md`, `log.md`. (The session's `project-status` memory was also updated to pass 12 — outside the repo.)
+
 ## 2026-07-15 — Pass 12: close the 3 escaped mutation-canary coverage holes
 
 - Adds the regression tests the pass-12 canaries exposed (all three escaped; the code is correct today but each path was unguarded against a plausible regression):
