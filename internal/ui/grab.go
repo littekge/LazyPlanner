@@ -202,6 +202,15 @@ func (a *app) grabNudge(r rune) {
 			a.cancelGrab()
 			return
 		}
+		if !td.HasDue {
+			// startGrab gated on HasDue, but that was a stale snapshot: a concurrent
+			// sync can clear the due date mid-grab. Nudging draftFromTodo's zero Due
+			// would fabricate a year-1 date and flash it as a move. Refuse and end the
+			// grab without reverting (reverting would re-add the due, clobbering the
+			// server's clear) — same handling as any concurrent change underneath.
+			a.abortGrabStale()
+			return
+		}
 		days := map[rune]int{'j': 1, 'k': -1, 'l': 7, 'h': -7}[r]
 		if days == 0 {
 			return

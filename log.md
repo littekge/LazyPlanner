@@ -4,6 +4,13 @@
 
 ---
 
+## 2026-07-15 — Pass 11 fix (LOW): todo grab nudge re-checks HasDue after re-locate
+
+- Fixes pass-11 LOW #7 (`internal/ui/grab.go` `grabNudge`): `startGrab` gates a todo grab on `HasDue`, but that snapshot goes stale — a concurrent sync can clear the due date mid-grab. The nudge's todo branch re-located the task but didn't re-check `HasDue`, so `draftFromTodo`'s zero `Due` was shifted by `AddDate` into a year-1 date, `EditTodo` wrote `HasDue=false` (nothing persisted), and the flash read a nonsensical "due Jan 1, year 1" — a confusing no-op that looked like a move.
+- **Fix:** the todo branch now aborts via `abortGrabStale` when `!td.HasDue` (the due was cleared underneath) — refusing to fabricate a date and ending the grab *without* reverting (reverting would re-add the due and clobber the server's clear).
+- Tests: `internal/ui/grab_duecleared_test.go` (`TestGrabTodoDueClearedMidGrab`) — the pass-11 repro, adapted to assert the post-fix invariants (no fabricated due persisted; grab ends). Verified red without the guard (still grabbing, bogus "due 01/01" flash), green with it. Full gate on ui passes.
+- Files: `internal/ui/grab.go`, `internal/ui/grab_duecleared_test.go`.
+
 ## 2026-07-15 — Pass 11 fix (LOW): grab nudge uses a version-checked write (no concurrent-pull clobber)
 
 - Fixes pass-11 LOW #6 (`internal/ui/grab.go` `grabNudge`): the nudge did Locate → derive `newObj` from that snapshot → `store.Put`, with no unchanged-check. A background sync that pulled a remote edit into the same resource in that window was clobbered — `Put`'s `build(prev)` adopted the pulled ETag while persisting the stale-derived content and marked it Dirty, so the next push's ETag CAS matched the server and overwrote the remote edit.
