@@ -23,6 +23,12 @@ not hidden. See `PROTOCOL.md`.
 | Background sync goroutines (startPeriodicSync timer + flushOnQuit quit push) | internal/ui, internal/sync | race | 11 | recent (no deadlock/race found) |
 | Store filesystem robustness | internal/store | deep audit (paths, revert, rollback) | 9 | recent |
 | Local disk / config input boundaries | internal/config, internal/state, internal/store | deep audit, size caps | 9 | recent |
+| State-file load/parse (widths/hidden-cals/hour-zoom) | internal/state | fuzz (adversarial values), deep audit, size cap | 9,12 | recent (no parse finding; canary hole CLOSED: Save() temp+rename atomicity now tested) |
+| Quick-field edits (sp/sd) — Locate→Put write | internal/ui, internal/model | data-loss | 12 | recent (HIGH STATUS-flatten + MED COMPLETED-restamp + MED TOCTOU all fixed) |
+| Completion toggle (Space) + recurring-todo advance — Locate→Put | internal/ui | data-loss | 12 | recent (MED TOCTOU fixed: PutIfUnchanged) |
+| Session undo stack (pushUndo / prev-snapshot restore replay) | internal/ui, internal/store | data-loss | 12 | recent (HIGH undo-of-synced-delete + MED undo-of-synced-edit fixed: RestoreDirty) |
+| Calendar-color + display-name PROPFIND parsing (discoverColors/SyncCalendarName) | internal/caldav | fault-injection | 12 | recent (MED href-key encoding mismatch fixed: hrefKey decodes; also fixed the privileges fail-open + CTag miss) |
+| `:calendar` command argument parsing (rename/color/hide/show) | internal/ui | input-edge | 12 | recent (no new finding) |
 | Bulk-pull batching / scale | internal/store, internal/sync | benchmarks, data-loss | 5,11 | recent (HIGH fixed: PullRemoteBatch no longer clobbers a href-less pull-orphan's local edit) |
 | Grab-mode temporal-manipulation state machine (per-nudge commit, snapshot/2-resource revert) | internal/ui | data-loss, input-edge | 11 | recent (MED+LOW x2 fixed: cancelGrab surfaces revert errors; PutIfUnchanged version-check; HasDue re-check) |
 | Recurrence-edit UI orchestration (scope picker + this-&-future split/detach) | internal/ui | data-loss | 11 | recent (HIGH x2 + MED fixed: commitSplit/commitDetach rollback; DetachTodoOccurrence preserves props) |
@@ -73,13 +79,43 @@ its own commit; the full gate + `-race` on store/sync/ui pass. See `log.md`.
   under its mutation. (The both-sides-changed conflict-comparison canary in
   `internal/sync/sync.go` was already caught by 5 tests.)
 
-## Systemic follow-up (next pass) — the Locate→Put no-version-check pattern
+## Pass 12 — RESOLVED (all 7 findings + all 3 canary holes fixed 2026-07-15)
 
-Pass 11 fixed the version-check gap in the **grab** path only. The same
-read-modify-write shape (Locate a snapshot → derive → `store.Put`) is shared with
-**quick-field edits** (`sp`/`sd`) and **completion toggles** (`Space`), which were
-NOT audited for the same concurrent-pull clobber. `store.PutIfUnchanged` now exists;
-audit those paths and route them through it (or confirm they're safe) next pass.
+Pass 12 audited the pass-11 named follow-up (the Locate→Put no-version-check pattern
+outside grab) plus the session undo stack, the calendar color/name PROPFIND decode,
+and (fuzz/edge) the state-file parse and `:calendar` arg parsing. 7 findings (2 HIGH,
+5 MED) were confirmed with executed repros; **all are now fixed**, each adversarially
+verified with a regression test and its own commit; full gate + `-race` on
+caldav/state/store/sync/ui pass. See `log.md`.
+
+- **HIGH — quick sp/sd flattened STATUS + dropped PERCENT-COMPLETE / restamped COMPLETED
+  (MED):** `EditTodo` now calls `setCompleted` only when completed-ness actually changes
+  (`isCompletedStatus`), preserving a foreign client's IN-PROCESS/CANCELLED status,
+  PERCENT-COMPLETE, and the original COMPLETED timestamp.
+- **HIGH — undo of a synced delete lost the item / MED — undo of a synced edit didn't
+  stick:** new `store.RestoreDirty` marks the resurrection/revert Dirty; `undoLast` uses
+  it, so sync pushes it or raises a keep-both conflict instead of Forgetting/pulling-back.
+  Verbatim `Restore` stays for the rollback paths.
+- **MED x2 — the systemic Locate→Put:** `applyTodoField` (sp/sd), `toggleComplete` (Space),
+  and `advanceRecurringTodo` now commit via `store.PutIfUnchanged(loc.Prev)`, aborting on
+  `applied==false`. All three of the systemic sites the pass-11/12 reports named are closed.
+- **MED — raw-href keying:** new `caldav.hrefKey` decodes the href like go-webdav derives
+  `Calendar.Path`; the color, privilege (discover + reactive re-check), and CTag maps plus
+  the lookup key all use it. This also fixed the privileges **fail-open** (read-only shares
+  looked writable) and the CTag miss.
+
+No parse-level finding on the state file or `:calendar` arg parsing.
+
+**All 3 escaped mutation canaries → closed** (code was correct; tests added, each verified
+to fail under its mutation): `privileges.go` `writable()` per-grant table (write /
+write-content / bind / all independently); `state.go` `Save` temp+rename atomicity; `grab.go`
+K-resize rejecting a zero-duration event.
+
+## Systemic follow-up — the Locate→Put no-version-check pattern (RESOLVED)
+
+Pass 11 fixed grab; pass 12 fixed the remaining three sites (quick-field `sp`/`sd`,
+`Space` completion, recurring-todo advance) via `store.PutIfUnchanged`. No known
+Locate→Put clobber sites remain; a future pass could sweep for any new ones.
 
 ## Delete-half of the write-atomicity finding (intentionally not "healed")
 
