@@ -4,6 +4,13 @@
 
 ---
 
+## 2026-07-15 — Pass 11 fix (MED): detached recurring-todo occurrence preserves unmodeled iCal props
+
+- Fixes pass-11 MED #5 (iron-rule violation, `internal/ui/recur_edit.go`): "edit this occurrence" for a recurring todo built the standalone one-off via `model.NewTodoObject(draft)` — from the form's modeled fields only — so every unmodeled property (VALARM, ATTACH, URL, GEO, X-, non-PARENT RELATED-TO) was dropped from the detached task. The parallel *event* path already clones (`AddOccurrenceOverride`/`cloneOverrideComponent`); the todo path didn't.
+- **Fix:** new `model.DetachTodoOccurrence` clones the original component (preserving all props + children), strips the recurrence props (RRULE/RDATE/EXDATE/RECURRENCE-ID) so it's a plain one-off, assigns a fresh UID, and applies the edited draft — the todo analogue of the event override's clone-and-mutate. `editTodoDetachForm` now uses it instead of `NewTodoObject`.
+- Tests: `internal/model/detach_test.go` (`TestDetachOccurrencePreservesUnmodeledProps`) — the pass-11 repro, rewritten to exercise `DetachTodoOccurrence`: asserts the detached standalone keeps `X-APPLE-SORT-ORDER` + the full `VALARM`/`TRIGGER` block, carries a fresh UID, and drops the RRULE. Full gate on model/ui passes.
+- Files: `internal/model/recur_edit.go`, `internal/model/detach_test.go`, `internal/ui/recur_edit.go`.
+
 ## 2026-07-15 — Pass 11 fix (HIGH): detaching a recurring-todo occurrence rolls back on a failed standalone write
 
 - Fixes pass-11 HIGH #3 (`internal/ui/recur_edit.go` `editTodoDetachForm`): "edit this occurrence" for a recurring todo Puts the advanced series first (`AdvanceRecurringTodo` consumes the current occurrence), then Puts the detached standalone one-off carrying the edits. If the second Put failed there was no rollback and no undo — the occurrence was gone from the series and never became a one-off task, contradicting the confirm dialog's promise ("it becomes a separate one-off task"). Silent data loss on ENOSPC/permission/crash.

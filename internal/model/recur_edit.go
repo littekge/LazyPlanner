@@ -529,3 +529,56 @@ func AdvanceRecurringTodo(obj *Parsed, uid string, now time.Time, loc *time.Loca
 	out, perr := Parse(clone.Calendar, loc)
 	return out, false, perr
 }
+
+// DetachTodoOccurrence builds a standalone one-off task from the current instance
+// of the recurring todo carrying uid: it clones the original component so every
+// unmodeled property is preserved (VALARM, ATTACH, URL, X-, non-PARENT
+// RELATED-TO — the iron rule), strips the recurrence properties (RRULE / RDATE /
+// EXDATE / RECURRENCE-ID) so it is a plain task, assigns a fresh UID, and applies
+// the edited fields d. It returns the new standalone object and its UID; obj and
+// the series are untouched (the caller advances the series separately). This is
+// the todo analogue of the event override's clone-and-mutate — building from
+// NewTodoObject instead would drop everything the form doesn't model.
+func DetachTodoOccurrence(obj *Parsed, uid string, d TodoDraft, now time.Time, loc *time.Location) (*Parsed, string, error) {
+	if loc == nil {
+		loc = time.Local
+	}
+	src, err := obj.clone(loc)
+	if err != nil {
+		return nil, "", err
+	}
+	master := findComponent(src.Calendar, uid)
+	if master == nil {
+		return nil, "", fmt.Errorf("model: no todo with UID %q", uid)
+	}
+
+	cal := ical.NewCalendar()
+	cal.Props.SetText(ical.PropVersion, icalVersion)
+	cal.Props.SetText(ical.PropProductID, ProductID)
+
+	one := ical.NewComponent(master.Name)
+	for name, props := range master.Props {
+		switch name {
+		case ical.PropRecurrenceRule, ical.PropRecurrenceDates, ical.PropExceptionDates, ical.PropRecurrenceID:
+			continue
+		}
+		cp := make([]ical.Prop, 0, len(props))
+		for _, p := range props {
+			cp = append(cp, cloneProp(p))
+		}
+		one.Props[name] = cp
+	}
+	one.Children = cloneChildren(master)
+	newUID := NewUID()
+	one.Props.SetText(ical.PropUID, newUID)
+	setDateTimeUTC(one, ical.PropCreated, now)
+	setCompleted(one, d.Completed, now)
+	applyTodo(one, d, now)
+	cal.Children = append(cal.Children, one)
+
+	out, err := Parse(cal, loc)
+	if err != nil {
+		return nil, "", err
+	}
+	return out, newUID, nil
+}

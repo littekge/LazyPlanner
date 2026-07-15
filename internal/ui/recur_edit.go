@@ -157,8 +157,14 @@ func (a *app) editTodoDetachForm(loc store.Located, uid string, td *model.Todo) 
 			a.flashErr("Edit", err)
 			return
 		}
-		standalone := model.NewTodoObject(d, a.now)
-		newUID := standalone.Todos[0].UID
+		// Clone the original occurrence into the standalone so unmodeled props
+		// (VALARM, X-, ATTACH, …) survive — NewTodoObject would rebuild from the
+		// form's modeled fields alone and drop them (iron rule).
+		standalone, newUID, err := model.DetachTodoOccurrence(loc.Object, uid, d, a.now, a.loc)
+		if err != nil {
+			a.flashErr("Edit", err)
+			return
+		}
 		a.commitDetach(loc, newUID, advanced, standalone)
 	})
 }
