@@ -4,6 +4,13 @@
 
 ---
 
+## 2026-07-15 — Pass 11 fix (HIGH): detaching a recurring-todo occurrence rolls back on a failed standalone write
+
+- Fixes pass-11 HIGH #3 (`internal/ui/recur_edit.go` `editTodoDetachForm`): "edit this occurrence" for a recurring todo Puts the advanced series first (`AdvanceRecurringTodo` consumes the current occurrence), then Puts the detached standalone one-off carrying the edits. If the second Put failed there was no rollback and no undo — the occurrence was gone from the series and never became a one-off task, contradicting the confirm dialog's promise ("it becomes a separate one-off task"). Silent data loss on ENOSPC/permission/crash.
+- **Fix:** extracted the store side into `commitDetach` (mirroring `commitSplit`), which on a failed standalone write `Restore`s the series from `loc.Prev` so the detach is atomic (both writes land or neither).
+- Tests: `internal/ui/detach_rollback_test.go` (`TestCommitDetachRollsBackSeriesOnStandaloneWriteFailure`) — forces the standalone Put to fail (directory planted at its path) and asserts the series' due is unchanged (not advanced) and the standalone wasn't left behind. Verified red without the rollback (series advanced a week), green with it. Full gate on ui passes.
+- Files: `internal/ui/recur_edit.go`, `internal/ui/detach_rollback_test.go`.
+
 ## 2026-07-15 — Pass 11 fix (HIGH): commitSplit rolls back the capped master when the future write fails
 
 - Fixes pass-11 HIGH #2 (`internal/ui/recur_edit.go` `commitSplit`): an "edit this & future" event split does `model.SplitEvent` → `Put(capped master)` → `Put(future series)`. The capped Put truncates the master's RRULE (UNTIL just before the occurrence); if the future Put then fails (ENOSPC / permission / sidecar-write), the function returned early on a flash and `pushUndo` was never reached — the master was left **permanently truncated** and the future tail **never created**, unrecoverable from the UI. The sibling grab path (`beginGrabFuture`) already had this rollback; `commitSplit` was left unguarded.

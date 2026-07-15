@@ -159,22 +159,35 @@ func (a *app) editTodoDetachForm(loc store.Located, uid string, td *model.Todo) 
 		}
 		standalone := model.NewTodoObject(d, a.now)
 		newUID := standalone.Todos[0].UID
-		newName := store.ResourceName(newUID)
-		if _, err := a.store.Put(context.Background(), loc.CalID, loc.Name, advanced); err != nil {
-			a.flash("Save failed: " + err.Error())
-			return
-		}
-		if _, err := a.store.Put(context.Background(), loc.CalID, newName, standalone); err != nil {
-			a.flash("Save failed: " + err.Error())
-			return
-		}
-		a.pushUndo("edit occurrence", newUID,
-			undoOp{calID: loc.CalID, name: loc.Name, prev: loc.Prev},
-			undoOp{calID: loc.CalID, name: newName, prev: nil})
-		a.refresh(newUID)
-		a.closeModal(pageForm)
-		a.flash("Detached this occurrence (u to undo)")
+		a.commitDetach(loc, newUID, advanced, standalone)
 	})
+}
+
+// commitDetach writes the advanced series (same resource) and the detached
+// standalone one-off (new resource) as one undo step — the store side of a
+// this-occurrence todo detach. If the standalone write fails, the series is
+// rolled back so the detach is atomic: the occurrence is never lost (gone from
+// the series yet never a one-off), mirroring commitSplit/beginGrabFuture.
+func (a *app) commitDetach(loc store.Located, newUID string, advanced, standalone *model.Parsed) {
+	newName := store.ResourceName(newUID)
+	if _, err := a.store.Put(context.Background(), loc.CalID, loc.Name, advanced); err != nil {
+		a.flash("Save failed: " + err.Error())
+		return
+	}
+	if _, err := a.store.Put(context.Background(), loc.CalID, newName, standalone); err != nil {
+		// The series was already advanced (this occurrence consumed) above. Roll it
+		// back so a failed standalone write can't lose the occurrence — it would be
+		// gone from the series and never the one-off task the confirm promised.
+		_, _ = a.store.Restore(context.Background(), loc.CalID, loc.Name, loc.Prev)
+		a.flash("Save failed: " + err.Error())
+		return
+	}
+	a.pushUndo("edit occurrence", newUID,
+		undoOp{calID: loc.CalID, name: loc.Name, prev: loc.Prev},
+		undoOp{calID: loc.CalID, name: newName, prev: nil})
+	a.refresh(newUID)
+	a.closeModal(pageForm)
+	a.flash("Detached this occurrence (u to undo)")
 }
 
 // deleteRecurring routes a delete of a recurring item through the scope picker.
