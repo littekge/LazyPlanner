@@ -288,12 +288,32 @@ func (a *app) grabNudge(r rune) {
 		a.flashErr("Grab", err)
 		return
 	}
-	if _, err := a.store.Put(context.Background(), a.grabCalID, a.grabName, newObj); err != nil {
+	// Version-checked write: newObj was derived from loc's snapshot, so if a
+	// background sync pulled a newer version of this resource since the Locate
+	// above, committing would clobber it (adopt the pulled ETag while persisting
+	// stale content). Skip and abort instead of overwriting the server's edit.
+	applied, err := a.store.PutIfUnchanged(context.Background(), a.grabCalID, a.grabName, newObj, loc.Prev)
+	if err != nil {
 		a.flash("Grab failed: " + err.Error())
+		return
+	}
+	if !applied {
+		a.abortGrabStale()
 		return
 	}
 	a.focusGrabbed()
 	a.flash(label + "  ·  Enter keep · Esc cancel")
+}
+
+// abortGrabStale ends grab mode without reverting, used when a nudge detects the
+// grabbed item changed underneath (a background sync pulled a newer version).
+// Reverting to the pre-grab snapshot would re-clobber that pulled edit, so keep
+// the server's version, drop the grab, and refresh onto the item.
+func (a *app) abortGrabStale() {
+	uid := a.grabUID
+	a.endGrab()
+	a.refresh(uid)
+	a.flash("Item changed on the server — grab ended (move not applied)")
 }
 
 // grabEventLabel formats the grabbed event's new time for the flash line.

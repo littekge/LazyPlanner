@@ -34,6 +34,49 @@ func (s *Store) Put(ctx context.Context, calID, name string, obj *model.Parsed) 
 	})
 }
 
+// PutIfUnchanged writes obj to calID/name only if the current cached resource is
+// still expectedPrev (pointer identity) — the write guard PullRemote applies to a
+// pull, but for a local edit. A read-modify-write built from a snapshot (grab's
+// Locate→edit→Put) can otherwise clobber a background sync pull that landed in the
+// window: the write's build(prev) reads the freshly-pulled resource and adopts
+// its ETag while persisting the stale-derived content, so the next push's ETag
+// CAS matches the server and overwrites the remote edit. When the resource
+// changed underneath, the write is skipped (applied=false) so the caller can
+// abort rather than clobber. A nil expectedPrev is an unconditional Put.
+func (s *Store) PutIfUnchanged(ctx context.Context, calID, name string, obj *model.Parsed, expectedPrev *Resource) (applied bool, err error) {
+	if err := ctx.Err(); err != nil {
+		return false, err
+	}
+	if calID == "" || name == "" {
+		return false, errors.New("store: write requires a calendar id and resource name")
+	}
+	if obj == nil || obj.Calendar == nil {
+		return false, errors.New("store: write requires a decoded object")
+	}
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	if expectedPrev != nil {
+		var cur *Resource
+		if cs := s.cals[calID]; cs != nil {
+			cur = cs.resources[name]
+		}
+		if cur != expectedPrev {
+			return false, nil // a concurrent change (e.g. a sync pull) landed
+		}
+	}
+	if _, err := s.writeResourceLocked(calID, name, func(prev *Resource) *Resource {
+		res := &Resource{Name: name, Object: obj, Dirty: true}
+		if prev != nil {
+			res.ETag = prev.ETag
+			res.Href = prev.Href
+		}
+		return res
+	}); err != nil {
+		return false, err
+	}
+	return true, nil
+}
+
 // writeResource is the shared write path for Put and PutRemote: encode, write
 // the .ics atomically, then update the index and sidecar. build produces the
 // new resource snapshot from the previous one (nil if new), letting callers set

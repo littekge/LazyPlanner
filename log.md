@@ -4,6 +4,14 @@
 
 ---
 
+## 2026-07-15 — Pass 11 fix (LOW): grab nudge uses a version-checked write (no concurrent-pull clobber)
+
+- Fixes pass-11 LOW #6 (`internal/ui/grab.go` `grabNudge`): the nudge did Locate → derive `newObj` from that snapshot → `store.Put`, with no unchanged-check. A background sync that pulled a remote edit into the same resource in that window was clobbered — `Put`'s `build(prev)` adopted the pulled ETag while persisting the stale-derived content and marked it Dirty, so the next push's ETag CAS matched the server and overwrote the remote edit.
+- **Fix:** new `store.PutIfUnchanged(ctx, calID, name, obj, expectedPrev)` (the write-side analogue of `PullRemote`'s pointer-identity guard) writes only if the cached resource is still the located snapshot; otherwise it returns `applied=false`. `grabNudge` passes `loc.Prev` and, on `!applied`, ends the grab via the new `abortGrabStale` — which does **not** revert (reverting would re-clobber the pulled edit), keeps the server's version, and tells the user the move wasn't applied.
+- Scope note: this fixes the grab path. The same Locate→Put pattern is shared with quick-field edits and completion toggles; per the pass-11 report those remain a **systemic re-audit** target (logged in `docs/audit/COVERAGE.md` blind spots), not fixed here.
+- Tests: `internal/store/grabclobber_test.go` (`TestGrabNudgeDoesNotClobberConcurrentPull`) — the pass-11 repro, rewritten to drive `PutIfUnchanged`: asserts the write is skipped and the pulled server edit survives intact/clean. Existing grab UI tests still pass. Full gate on store/ui passes.
+- Files: `internal/store/mutate.go`, `internal/ui/grab.go`, `internal/store/grabclobber_test.go`.
+
 ## 2026-07-15 — Pass 11 fix (MED): cancelGrab surfaces revert failures instead of reporting a clean cancel
 
 - Fixes pass-11 MED #4 (`internal/ui/grab.go` `cancelGrab`): the function discarded the error returns of `store.Delete`/`store.Restore` (`_, _ =` / `_ =`) and unconditionally flashed "Grab cancelled". On a this-&-future grab cancel, if the master un-cap `Restore` failed (ENOSPC/permission), the grabbed occurrence **and** all future occurrences were gone while the user was told the series was intact — silent data loss.
