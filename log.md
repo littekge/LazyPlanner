@@ -4,6 +4,13 @@
 
 ---
 
+## 2026-07-15 — Pass 12 fix (MED): Space-complete + recurring-todo advance route through PutIfUnchanged
+
+- Fixes pass-12 MED #5 (`internal/ui/edit.go` `toggleComplete`, `internal/ui/recur_edit.go` `advanceRecurringTodo`): both did Locate → build-from-stale-snapshot → `store.Put` with no version guard, so a concurrent sync pull landing in the window was clobbered (adopt pulled ETag onto stale content; next push CAS-matches and overwrites the server edit).
+- **Fix:** both commit via `store.PutIfUnchanged(loc.Prev)` and, on `!applied`, `refreshKeepingDrill` + flash "Task changed on the server — not applied; retry". This closes the last two of the three systemic Locate→Put sites the pass-11/12 reports named (grab was fixed in pass 11; quick-field earlier this pass).
+- Tests: `internal/store/complete_noclobber_test.go` (`TestSpaceCompleteDoesNotClobberConcurrentPull`) — the pass-12 repro, rewritten to drive `PutIfUnchanged`: the write is skipped and the pulled remote DESCRIPTION survives intact/clean. Existing complete/advance UI tests still pass. Full gate on ui/store passes.
+- Files: `internal/ui/edit.go`, `internal/ui/recur_edit.go`, `internal/store/complete_noclobber_test.go`.
+
 ## 2026-07-15 — Pass 12 fix (MED): quick sp/sd routes through PutIfUnchanged
 
 - Fixes pass-12 MED #4 (`internal/ui/quickfield.go` `applyTodoField`): the quick field-set (`sp`/`sd`) did Locate → `EditTodo` → `store.Put` with no version guard, so a background sync pull landing in that window was clobbered (Put's `build(prev)` adopts the pulled ETag onto stale-derived content; the next push's CAS matches the server and overwrites the remote edit). The grab path already uses `PutIfUnchanged`; quick-field didn't.

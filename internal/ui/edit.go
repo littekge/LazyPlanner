@@ -322,8 +322,16 @@ func (a *app) toggleComplete() {
 		a.flashErr("Complete", err)
 		return
 	}
-	if _, err := a.store.Put(context.Background(), loc.CalID, loc.Name, newObj); err != nil {
+	// Version-checked write (newObj derived from loc's snapshot): a background sync
+	// pull landing since the Locate above must not be clobbered by the toggle.
+	applied, err := a.store.PutIfUnchanged(context.Background(), loc.CalID, loc.Name, newObj, loc.Prev)
+	if err != nil {
 		a.flashErr("Complete", err)
+		return
+	}
+	if !applied {
+		a.refreshKeepingDrill(t.uid)
+		a.flash("Task changed on the server — not applied; retry")
 		return
 	}
 	// Keep a just-completed task visible until the view is left, in any view now

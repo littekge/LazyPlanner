@@ -259,8 +259,16 @@ func (a *app) advanceRecurringTodo(loc store.Located, uid string) {
 		a.flashErr("Complete", err)
 		return
 	}
-	if _, err := a.store.Put(context.Background(), loc.CalID, loc.Name, advanced); err != nil {
+	// Version-checked write (advanced derived from loc's snapshot): don't clobber a
+	// background sync pull that landed since the Locate.
+	applied, err := a.store.PutIfUnchanged(context.Background(), loc.CalID, loc.Name, advanced, loc.Prev)
+	if err != nil {
 		a.flash("Update failed: " + err.Error())
+		return
+	}
+	if !applied {
+		a.refreshKeepingDrill(uid)
+		a.flash("Task changed on the server — not applied; retry")
 		return
 	}
 	// When the series finishes, the todo is now completed — keep it visible until
