@@ -4,6 +4,15 @@
 
 ---
 
+## 2026-07-15 — Pass 12: close the 3 escaped mutation-canary coverage holes
+
+- Adds the regression tests the pass-12 canaries exposed (all three escaped; the code is correct today but each path was unguarded against a plausible regression):
+  - **Privilege write-content term** (`internal/caldav/privileges_writable_test.go` `TestPrivilegeWritableEachGrant`): the only writability fixture granted both `write` AND `write-content`, so dropping either term from `writable()`'s OR-chain escaped. New table asserts each of `write` / `write-content` / `bind` / `all` **independently** yields writable, and no-grant is read-only — so a write-content-only or bind-only NextCloud share can't silently be misclassified read-only.
+  - **State `Save` atomicity** (`internal/state/state_atomic_test.go` `TestSaveWritesViaTempFile`): the doc promises a crash-atomic temp+rename but nothing asserted it, so replacing it with a direct `os.WriteFile` escaped. The test points `Save` at a directory path: temp+rename writes `path+".tmp"` then fails at the rename (leaving the temp file), whereas a direct in-place write fails immediately with no temp — root/platform-independent.
+  - **Grab K-resize min-duration** (`internal/ui/grab_resize_min_test.go` `TestGrabResizeRejectsZeroDuration`): the only resize test grows the end (`J`), never shrinks to the equal boundary, so weakening `!End.After(Start)` → `End.Before(Start)` (allowing a zero-duration `end==start`) escaped. The test shrinks a 1-hour event by an hour and asserts the guard rejects it (end unchanged, strictly after start).
+- Verified the net now has teeth: re-applied each mutation and confirmed the matching test **fails**, then reverted and confirmed green. Full gate + `-race` on caldav/state/ui pass.
+- Files: `internal/caldav/privileges_writable_test.go`, `internal/state/state_atomic_test.go`, `internal/ui/grab_resize_min_test.go` (all test-only).
+
 ## 2026-07-15 — Pass 12 fix (MED): decode the href before keying the color/privilege/CTag maps
 
 - Fixes pass-12 MED #7 (`internal/caldav/colors.go`, `privileges.go`, `ctag.go`): the PROPFIND side-channel maps were keyed by the **raw** `<href>` from the multistatus response, but `DiscoverCalendars` looks them up by `Calendar.Path`, which go-webdav produces by URL-**decoding** the href (`url.Parse(href).Path`). A percent-encoded segment (Google `user%40gmail.com`, a NextCloud `%20`) or an absolute-URL href (proxy-rewritten `https://host/…`) yielded a key that could never match → the calendar's **color was silently dropped**, and — worse — `privileges.go`'s read-only detection **failed open** (a genuinely read-only share looked writable, so the app would attempt writes the server rejects), and the CTag short-circuit missed (harmless, just a full re-download).
