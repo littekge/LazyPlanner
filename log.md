@@ -4,6 +4,13 @@
 
 ---
 
+## 2026-07-15 — Pass 12 fix (MED): decode the href before keying the color/privilege/CTag maps
+
+- Fixes pass-12 MED #7 (`internal/caldav/colors.go`, `privileges.go`, `ctag.go`): the PROPFIND side-channel maps were keyed by the **raw** `<href>` from the multistatus response, but `DiscoverCalendars` looks them up by `Calendar.Path`, which go-webdav produces by URL-**decoding** the href (`url.Parse(href).Path`). A percent-encoded segment (Google `user%40gmail.com`, a NextCloud `%20`) or an absolute-URL href (proxy-rewritten `https://host/…`) yielded a key that could never match → the calendar's **color was silently dropped**, and — worse — `privileges.go`'s read-only detection **failed open** (a genuinely read-only share looked writable, so the app would attempt writes the server rejects), and the CTag short-circuit missed (harmless, just a full re-download).
+- **Fix:** new shared `hrefKey` (in `client.go`) normalizes a response href the same way go-webdav derives `Calendar.Path` — decode via `url.Parse().Path`, trailing slash trimmed — with a raw-href fallback if parsing fails. All four keying sites (color, privilege discover + reactive re-check, CTag) and the lookup key now use it, so both sides land in the same key space.
+- Tests: `internal/caldav/colors_test.go` — `TestDiscoverColorsDecodesHrefKey` (percent-encoded + absolute hrefs resolve to decoded-path keys; the pass-12 repro re-created) and `TestHrefKey` (unit table, which backs all three sites). Verified red on the old raw-href keying, green with the fix. Full caldav gate + vet/staticcheck pass.
+- Files: `internal/caldav/client.go`, `internal/caldav/colors.go`, `internal/caldav/privileges.go`, `internal/caldav/ctag.go`, `internal/caldav/colors_test.go`.
+
 ## 2026-07-15 — Pass 12 fix (MED): Space-complete + recurring-todo advance route through PutIfUnchanged
 
 - Fixes pass-12 MED #5 (`internal/ui/edit.go` `toggleComplete`, `internal/ui/recur_edit.go` `advanceRecurringTodo`): both did Locate → build-from-stale-snapshot → `store.Put` with no version guard, so a concurrent sync pull landing in the window was clobbered (adopt pulled ETag onto stale content; next push CAS-matches and overwrites the server edit).

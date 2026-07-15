@@ -50,7 +50,7 @@ func (c *Client) discoverColors(ctx context.Context, homeSet string) (map[string
 	out := make(map[string]string, len(ms.Responses))
 	for _, r := range ms.Responses {
 		if color := r.color(); color != "" {
-			out[strings.TrimRight(r.Href, "/")] = color
+			out[hrefKey(r.Href)] = color
 		}
 	}
 	return out, nil

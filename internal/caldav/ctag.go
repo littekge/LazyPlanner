@@ -50,7 +50,7 @@ func (c *Client) discoverCTags(ctx context.Context, homeSet string) (map[string]
 	out := make(map[string]string, len(ms.Responses))
 	for _, r := range ms.Responses {
 		if ct := r.ctag(); ct != "" {
-			out[strings.TrimRight(r.Href, "/")] = ct
+			out[hrefKey(r.Href)] = ct
 		}
 	}
 	return out, nil

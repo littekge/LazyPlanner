@@ -6,7 +6,6 @@ import (
 	"encoding/xml"
 	"fmt"
 	"net/http"
-	"strings"
 )
 
 // discoverWritable issues a Depth-1 PROPFIND for current-user-privilege-set
@@ -50,7 +49,7 @@ func (c *Client) discoverWritable(ctx context.Context, homeSet string) (map[stri
 
 	out := make(map[string]bool, len(ms.Responses))
 	for _, r := range ms.Responses {
-		key := strings.TrimRight(r.Href, "/")
+		key := hrefKey(r.Href)
 		out[key] = r.writable()
 	}
 	return out, nil
@@ -91,9 +90,9 @@ func (c *Client) CalendarWritable(ctx context.Context, calPath string) (bool, er
 	if len(ms.Responses) == 0 {
 		return true, nil // ambiguous → fail open (keep the edit)
 	}
-	want := strings.TrimRight(calPath, "/")
+	want := hrefKey(calPath)
 	for _, r := range ms.Responses {
-		if strings.TrimRight(r.Href, "/") == want {
+		if hrefKey(r.Href) == want {
 			return r.writable(), nil
 		}
 	}

@@ -178,6 +178,20 @@ func (c *Client) CalendarHomeSet(ctx context.Context) (string, error) {
 	return homeSet, nil
 }
 
+// hrefKey normalizes a WebDAV <href> from a multistatus response into the key
+// space go-webdav's FindCalendars uses for Calendar.Path: the URL-decoded path,
+// trailing slash trimmed. A response href may be percent-encoded (%40 for @, %20
+// for a space) or an absolute URL (a proxy-rewritten host), while go-webdav
+// derives Calendar.Path via url.Parse(href).Path. Keying our side-channel maps
+// (color / privilege / CTag) by the raw href would then never match the decoded
+// lookup key, silently dropping the value; mirror the same decode on both sides.
+func hrefKey(href string) string {
+	if u, err := url.Parse(href); err == nil && u.Path != "" {
+		href = u.Path
+	}
+	return strings.TrimRight(href, "/")
+}
+
 // DiscoverCalendars walks current-user-principal → calendar-home-set →
 // calendars and returns the account's collections.
 func (c *Client) DiscoverCalendars(ctx context.Context) ([]Calendar, error) {
@@ -203,7 +217,7 @@ func (c *Client) DiscoverCalendars(ctx context.Context) ([]Calendar, error) {
 
 	cals := make([]Calendar, 0, len(davCals))
 	for _, dc := range davCals {
-		key := strings.TrimRight(dc.Path, "/")
+		key := hrefKey(dc.Path)
 		readOnly := false
 		if writable != nil {
 			if w, ok := writable[key]; ok && !w {
