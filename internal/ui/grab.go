@@ -373,19 +373,38 @@ func (a *app) commitGrab() {
 }
 
 // cancelGrab reverts and ends grab mode. A this-and-future grab undoes the split
-// (delete the new series, restore the master); a normal grab restores the single
-// pre-grab snapshot.
+// (restore the master, then delete the new series); a normal grab restores the
+// single pre-grab snapshot. A revert write can fail (ENOSPC / permission), which
+// must be surfaced rather than reported as a clean cancel — otherwise the user is
+// told the series is intact while data was silently lost.
 func (a *app) cancelGrab() {
+	var revertErr error
 	if a.grabSplitMaster != "" {
-		_ = a.store.Delete(context.Background(), a.grabCalID, a.grabName)
+		// Restore the master (un-cap) first, and only drop the new tail series if
+		// that succeeded — so a failed un-cap never leaves the future occurrences
+		// held by neither the master nor the tail (both copies gone).
+		restored := true
 		if a.grabSplitMasterPrev != nil {
-			_, _ = a.store.Restore(context.Background(), a.grabCalID, a.grabSplitMaster, a.grabSplitMasterPrev)
+			if _, err := a.store.Restore(context.Background(), a.grabCalID, a.grabSplitMaster, a.grabSplitMasterPrev); err != nil {
+				revertErr, restored = err, false
+			}
+		}
+		if restored {
+			if err := a.store.Delete(context.Background(), a.grabCalID, a.grabName); err != nil {
+				revertErr = errors.Join(revertErr, err)
+			}
 		}
 	} else if a.grabPrev != nil {
-		_, _ = a.store.Restore(context.Background(), a.grabCalID, a.grabName, a.grabPrev)
+		if _, err := a.store.Restore(context.Background(), a.grabCalID, a.grabName, a.grabPrev); err != nil {
+			revertErr = err
+		}
 	}
 	a.focusGrabbed()
 	a.endGrab()
+	if revertErr != nil {
+		a.flashErr("Grab cancel", revertErr)
+		return
+	}
 	a.flash("Grab cancelled")
 }
 

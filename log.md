@@ -4,6 +4,13 @@
 
 ---
 
+## 2026-07-15 — Pass 11 fix (MED): cancelGrab surfaces revert failures instead of reporting a clean cancel
+
+- Fixes pass-11 MED #4 (`internal/ui/grab.go` `cancelGrab`): the function discarded the error returns of `store.Delete`/`store.Restore` (`_, _ =` / `_ =`) and unconditionally flashed "Grab cancelled". On a this-&-future grab cancel, if the master un-cap `Restore` failed (ENOSPC/permission), the grabbed occurrence **and** all future occurrences were gone while the user was told the series was intact — silent data loss.
+- **Fix:** capture the revert errors (`errors.Join` for the split case) and `flashErr` when any fail. Also **reordered** the split revert to restore the master *first* and delete the new tail series only if that succeeded — so a failed un-cap leaves the tail in place (a recoverable duplicate) rather than compounding into "both copies gone".
+- Tests: `internal/ui/grab_cancel_error_test.go` (`TestGrabFutureCancelSurfacesRestoreFailure`) — forces the master un-cap to fail (directory planted over the master `.ics`) and asserts the flash surfaces the failure and the new tail was not deleted. Verified red on the old behavior (flashed "Grab cancelled"; tail deleted), green on the fix. The happy-path `TestGrabFutureCancelRestores` still passes. Full gate on ui passes.
+- Files: `internal/ui/grab.go`, `internal/ui/grab_cancel_error_test.go`.
+
 ## 2026-07-15 — Pass 11 fix (MED): detached recurring-todo occurrence preserves unmodeled iCal props
 
 - Fixes pass-11 MED #5 (iron-rule violation, `internal/ui/recur_edit.go`): "edit this occurrence" for a recurring todo built the standalone one-off via `model.NewTodoObject(draft)` — from the form's modeled fields only — so every unmodeled property (VALARM, ATTACH, URL, GEO, X-, non-PARENT RELATED-TO) was dropped from the detached task. The parallel *event* path already clones (`AddOccurrenceOverride`/`cloneOverrideComponent`); the todo path didn't.
