@@ -52,8 +52,18 @@ func (a *app) applyTodoField(uid, label string, mut func(*model.TodoDraft)) {
 		a.flashErr("Set", err)
 		return
 	}
-	if _, err := a.store.Put(context.Background(), loc.CalID, loc.Name, obj); err != nil {
+	// Version-checked write: obj was derived from loc's snapshot, so if a background
+	// sync pulled a newer version of this resource since the Locate above,
+	// committing with a plain Put would clobber it (adopt the pulled ETag while
+	// persisting stale content). Skip and abort instead — same guard as grabNudge.
+	applied, err := a.store.PutIfUnchanged(context.Background(), loc.CalID, loc.Name, obj, loc.Prev)
+	if err != nil {
 		a.flash("Save failed: " + err.Error())
+		return
+	}
+	if !applied {
+		a.refresh(uid)
+		a.flash("Task changed on the server — not applied; retry")
 		return
 	}
 	a.pushUndo(label, uid, undoOp{calID: loc.CalID, name: loc.Name, prev: loc.Prev})

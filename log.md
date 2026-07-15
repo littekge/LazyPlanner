@@ -4,6 +4,13 @@
 
 ---
 
+## 2026-07-15 — Pass 12 fix (MED): quick sp/sd routes through PutIfUnchanged
+
+- Fixes pass-12 MED #4 (`internal/ui/quickfield.go` `applyTodoField`): the quick field-set (`sp`/`sd`) did Locate → `EditTodo` → `store.Put` with no version guard, so a background sync pull landing in that window was clobbered (Put's `build(prev)` adopts the pulled ETag onto stale-derived content; the next push's CAS matches the server and overwrites the remote edit). The grab path already uses `PutIfUnchanged`; quick-field didn't.
+- **Fix:** `applyTodoField` commits via `store.PutIfUnchanged(loc.Prev)` and, on `!applied`, refreshes and flashes "Task changed on the server — not applied; retry" rather than clobbering. (One of the three systemic Locate→Put sites the pass-11/12 reports flagged.)
+- Tests: `internal/store/quickfield_noclobber_test.go` (`TestQuickFieldSetDoesNotClobberConcurrentPull`) — the pass-12 repro, rewritten to drive `PutIfUnchanged`: the write is skipped and the pulled server edit survives intact/clean. Full gate on ui/store passes.
+- Files: `internal/ui/quickfield.go`, `internal/store/quickfield_noclobber_test.go`.
+
 ## 2026-07-15 — Pass 12 fix (HIGH + MED): undo of a synced edit/delete survives the next sync
 
 - Fixes pass-12 HIGH #2 and MED #6 (`internal/store/mutate.go` + `internal/ui/edit.go` `undoLast`) — one root cause: `store.Restore` replays the undo snapshot **clean** (`Dirty=false`) with its old Href/ETag, but an undo is a fresh local change that must sync. So:
