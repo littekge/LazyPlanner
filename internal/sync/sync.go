@@ -415,8 +415,10 @@ func reconcileCalendar(ctx context.Context, client Syncer, st *store.Store, calI
 	// skipping any with a pending local deletion (handled in step C). These are
 	// applied in one batched write (PullRemoteBatch) so a first-time pull of a
 	// large calendar costs one sidecar write, not one per resource (O(N) not
-	// O(N²)); each pull here is a brand-new remote resource, so the batch's
-	// unconditional writes can't clobber a concurrent local edit.
+	// O(N²)). The pull list is built from the pre-lock snapshot, so an edit that
+	// landed during step (A)'s network I/O may target a name we're about to pull
+	// (notably a crash-orphan the user just re-edited); the batch guards against
+	// that by skipping a Dirty resource (ErrKeptLocalEdit) rather than clobbering it.
 	var pulls []store.RemoteObject
 	for _, o := range serverObjs {
 		if o.Path == "" {
@@ -443,10 +445,14 @@ func reconcileCalendar(ctx context.Context, client Syncer, st *store.Store, calI
 			return err
 		}
 		for i, e := range results {
-			if e != nil {
-				recordSkip(res, calID, pulls[i].Name, e)
-			} else {
+			switch {
+			case e == nil:
 				res.Pulled++
+			case errors.Is(e, store.ErrKeptLocalEdit):
+				// A concurrent local edit was preserved instead of pulled; not a
+				// failure — the next sync reconciles it. Don't count or flag it.
+			default:
+				recordSkip(res, calID, pulls[i].Name, e)
 			}
 		}
 	}

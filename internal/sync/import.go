@@ -2,6 +2,7 @@ package sync
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"path"
 	"strings"
@@ -99,10 +100,13 @@ func Import(ctx context.Context, src Source, dst *store.Store) (ImportResult, er
 			return res, fmt.Errorf("import: writing calendar %q: %w", id, err)
 		}
 		for i, e := range results {
-			if e != nil {
-				res.Skipped = append(res.Skipped, ImportError{Calendar: id, Path: pulls[i].Href, Err: e})
-			} else {
+			switch {
+			case e == nil:
 				res.Objects++
+			case errors.Is(e, store.ErrKeptLocalEdit):
+				// A concurrent local edit was preserved; not an import failure.
+			default:
+				res.Skipped = append(res.Skipped, ImportError{Calendar: id, Path: pulls[i].Href, Err: e})
 			}
 		}
 	}

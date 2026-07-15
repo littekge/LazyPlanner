@@ -4,6 +4,14 @@
 
 ---
 
+## 2026-07-15 — Pass 11 fix (HIGH): PullRemoteBatch no longer clobbers a concurrent local edit
+
+- Fixes pass-11 HIGH #1 (`internal/store/remote.go`): `PullRemoteBatch`'s per-resource `stageResourceLocked` write was unconditional (`Dirty:false`, no dirty/version check, unlike single-resource `PullRemote`). Sync builds its "new on server" pull list from a **pre-lock snapshot**, so a local edit that lands during step (A)'s network I/O — notably a crash-orphan (clean, href-less `.ics`) the user just re-edited — is invisible to the include-in-batch decision, and the batch write overwrote it and marked it clean. Silent data loss: the edit was gone in memory and on disk and never pushed. The pass-5 comment claiming these writes "can't clobber a concurrent local edit" was **false** for this case.
+- **Fix:** each stage now skips a resource that already exists locally and is **Dirty** (a pending local edit), reporting the new sentinel `store.ErrKeptLocalEdit`; the edit survives and the next sync reconciles it (a href-less dirty resource is then a "new local resource, never pushed" → `pushCreate`). A **clean** local resource is still overwritten — that's the intended pass-5 crash-orphan self-heal (re-pull a clean, href-less `.ics`), so `Dirty` is the exact discriminator. Both callers (`sync.reconcileCalendar`, `sync.Import`) treat `ErrKeptLocalEdit` distinctly — neither count it as pulled/imported nor record it as a skipped failure (mirroring single-resource `PullRemote`'s silent `!applied`).
+- Corrected the false pass-5 comment and the `PullRemoteBatch` doc comment to describe the guard.
+- Tests: `internal/sync/pullbatch_clobber_test.go` (`TestReproPullBatchClobbersConcurrentEditToOrphan`) — the pass-11 repro, now green: an orphan edited during a sibling's in-flight PUT keeps its `"user-edit"` content and stays Dirty. Was red pre-fix. Full gate + `-race` on store/sync pass.
+- Files: `internal/store/remote.go`, `internal/sync/sync.go`, `internal/sync/import.go`, `internal/sync/pullbatch_clobber_test.go`.
+
 ## 2026-07-13 — Docs: record pass 10 + the audit workflow across main/README/CLAUDE
 
 - End-of-session doc refresh (no code change). `main.md`: added the Pass 10 entry and an "Audit tooling" note, corrected the "Not yet audited" section (the go-ical encoder healing it listed as unfixed is now done; added the stale surfaces — grab-mode, sync concurrency/TOCTOU — as the next targets). `README.md`: nine→ten hardening passes, softened "1.0-ready" to "hardening-ongoing, not yet 1.0-blessed" (pass 10 did not converge), added a "Hardening audits" subsection pointing at `/audit` and `docs/audit/`. `CLAUDE.md`: added the audit-tooling note to the Phase line (run `/audit`, keep `docs/audit/COVERAGE.md` current, treat a workflow summary as unverified until checked).

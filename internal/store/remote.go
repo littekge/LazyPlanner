@@ -131,6 +131,13 @@ type RemoteObject struct {
 	Href   string
 }
 
+// ErrKeptLocalEdit is the per-resource result PullRemoteBatch reports when it
+// skipped a pull because a concurrent local edit was pending on that name. It is
+// not a failure: the local edit survives and the next sync reconciles it. Callers
+// must treat it distinctly from a real per-resource error — neither counting it
+// as pulled nor recording it as a skipped failure.
+var ErrKeptLocalEdit = errors.New("store: kept a concurrent local edit; pull skipped")
+
 // PullRemoteBatch writes many server objects into one calendar as clean
 // resources — each .ics atomically, but the sidecar only once at the end. It
 // turns a bulk pull's O(N) per-resource sidecar rewrites (which are O(N) each, so
@@ -139,13 +146,20 @@ type RemoteObject struct {
 // objs[i], so the caller can skip-and-continue per resource as the one-at-a-time
 // path did; a non-nil error is a fatal per-calendar failure (context/sidecar).
 //
-// All writes are unconditional, so this is for pull-only phases where no
-// concurrent local edit can be clobbered (import; sync's "new on server" step —
-// never for pushes). Because it holds s.mu for the whole batch, a concurrent UI
-// edit is fully serialized before or after it (never interleaved and lost). A
+// This is a pull-only phase (import; sync's "new on server" step — never for
+// pushes). It holds s.mu for the whole batch, so a concurrent UI edit is fully
+// serialized before or after it (never interleaved). But "serialized" is not
+// "safe to overwrite": sync builds the pull list from a pre-lock snapshot, so an
+// edit that lands after that snapshot but before the batch runs is invisible to
+// the include-in-batch decision. A brand-new remote resource has no local
+// counterpart, so its write can't lose anything; but a name that already exists
+// locally and is Dirty carries a pending local edit (a race, or a crash-orphan
+// the user just re-edited) — overwriting it would silently discard that edit. So
+// each stage skips a currently-Dirty resource (reporting ErrKeptLocalEdit) and
+// leaves it for the next sync; a clean local resource is still overwritten, which
+// is the pass-5 crash-orphan self-heal (a clean, href-less .ics re-pulls). A
 // crash mid-batch leaves .ics files whose sidecar entry wasn't flushed; sync
-// re-pulls those cleanly — reconcile treats a clean, href-less local resource as
-// a pull orphan — so a crash never yields a server-side duplicate.
+// re-pulls those cleanly, so a crash never yields a server-side duplicate.
 func (s *Store) PullRemoteBatch(ctx context.Context, calID string, objs []RemoteObject) (results []error, err error) {
 	if err := ctx.Err(); err != nil {
 		return nil, err
@@ -169,6 +183,14 @@ func (s *Store) PullRemoteBatch(ctx context.Context, calID string, objs []Remote
 		}
 		if o.Name == "" || o.Object == nil || o.Object.Calendar == nil {
 			results[i] = errors.New("store: PullRemoteBatch requires a named, decoded object")
+			continue
+		}
+		if cur := cs.resources[o.Name]; cur != nil && cur.Dirty {
+			// A concurrent local edit is pending on this name (a race with the UI, or
+			// a crash-orphan the user just re-edited). The write below is
+			// unconditional, so applying it would silently overwrite that edit; keep
+			// the edit and let the next sync reconcile it.
+			results[i] = ErrKeptLocalEdit
 			continue
 		}
 		o := o // capture for the closure
