@@ -274,6 +274,11 @@ func (a *app) commitSplit(loc store.Located, futureUID string, capped, future *m
 		return
 	}
 	if _, err := a.store.Put(context.Background(), loc.CalID, newName, future); err != nil {
+		// The master was already capped (its RRULE truncated) above. Roll it back so
+		// a failed second write can't half-complete the split — permanently dropping
+		// the series' tail occurrences with no undo step to recover from. Mirrors
+		// beginGrabFuture's rollback.
+		_, _ = a.store.Restore(context.Background(), loc.CalID, loc.Name, loc.Prev)
 		a.flash("Save failed: " + err.Error())
 		return
 	}

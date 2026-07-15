@@ -4,6 +4,13 @@
 
 ---
 
+## 2026-07-15 — Pass 11 fix (HIGH): commitSplit rolls back the capped master when the future write fails
+
+- Fixes pass-11 HIGH #2 (`internal/ui/recur_edit.go` `commitSplit`): an "edit this & future" event split does `model.SplitEvent` → `Put(capped master)` → `Put(future series)`. The capped Put truncates the master's RRULE (UNTIL just before the occurrence); if the future Put then fails (ENOSPC / permission / sidecar-write), the function returned early on a flash and `pushUndo` was never reached — the master was left **permanently truncated** and the future tail **never created**, unrecoverable from the UI. The sibling grab path (`beginGrabFuture`) already had this rollback; `commitSplit` was left unguarded.
+- **Fix:** on a failed future Put, `Restore` the master from `loc.Prev` before returning, so the split is atomic (both writes land or neither), mirroring `beginGrabFuture`.
+- Tests: `internal/ui/commitsplit_rollback_test.go` (`TestCommitSplitRollsBackMasterOnFutureWriteFailure`) — the pass-11 repro, adapted to assert recovery: it forces the second Put to fail (a directory planted at the future resource's path) and asserts the master is restored to its full 4 occurrences. Red pre-fix (master stuck at 2), green post-fix. Full gate on ui passes.
+- Files: `internal/ui/recur_edit.go`, `internal/ui/commitsplit_rollback_test.go`.
+
 ## 2026-07-15 — Pass 11 fix (HIGH): PullRemoteBatch no longer clobbers a concurrent local edit
 
 - Fixes pass-11 HIGH #1 (`internal/store/remote.go`): `PullRemoteBatch`'s per-resource `stageResourceLocked` write was unconditional (`Dirty:false`, no dirty/version check, unlike single-resource `PullRemote`). Sync builds its "new on server" pull list from a **pre-lock snapshot**, so a local edit that lands during step (A)'s network I/O — notably a crash-orphan (clean, href-less `.ics`) the user just re-edited — is invisible to the include-in-batch decision, and the batch write overwrote it and marked it clean. Silent data loss: the edit was gone in memory and on disk and never pushed. The pass-5 comment claiming these writes "can't clobber a concurrent local edit" was **false** for this case.
