@@ -4,6 +4,13 @@
 
 ---
 
+## 2026-07-15 — Pass 12 fix (HIGH + MED): EditTodo preserves completion state it isn't changing
+
+- Fixes pass-12 HIGH #1 and MED #3 (`internal/model/edit.go` `EditTodo`) — one root cause. `TodoDraft.Completed` is a single bool, but VTODO STATUS is quad-state (NEEDS-ACTION / IN-PROCESS / COMPLETED / CANCELLED). A quick field-set (`sp`/`sd`) carries `Completed = td.Completed()` unchanged, and `EditTodo` unconditionally called `setCompleted(comp, d.Completed, now)`, which: (HIGH) flattened a foreign client's **IN-PROCESS/CANCELLED** task to `NEEDS-ACTION` and **dropped PERCENT-COMPLETE** on a routine priority/due bump; and (MED) **restamped an already-COMPLETED task's `COMPLETED` timestamp to now** — both silent, pushed to the server, and iron-rule breaches of the quick-set "change one field, leave the rest intact" contract.
+- **Fix:** `EditTodo` now calls `setCompleted` only when the completed-ness actually changes (`d.Completed != isCompletedStatus(comp)`), so an edit that doesn't touch completion preserves the existing STATUS / PERCENT-COMPLETE / COMPLETED exactly. New helper `isCompletedStatus`. `NewTodoObject`, `SetTodoCompleted`, and the recurrence advance/detach paths still call `setCompleted` directly (they intend to set state), so their behavior is unchanged. The full edit form still flips state correctly (an explicit check/uncheck differs from the current status).
+- Tests: `internal/model/edittodo_status_preserve_test.go` (IN-PROCESS + PERCENT-COMPLETE:50 survive an `sp`) and `internal/model/edittodo_completed_preserve_test.go` (COMPLETED timestamp not restamped) — the pass-12 repros, now green; both red pre-fix. Removed a stale hallucinated repro (`zz_completed_test.go`, wrong `Parse`/`Encode` API) the audit left behind. Full gate on model/ui passes.
+- Files: `internal/model/edit.go`, `internal/model/edittodo_status_preserve_test.go`, `internal/model/edittodo_completed_preserve_test.go`.
+
 ## 2026-07-15 — Pass 11: close the 2 escaped mutation-canary coverage holes
 
 - Adds the regression tests the pass-11 canaries exposed (the code is correct today; the *tests* didn't cover these boundaries, so a future off-by-one would ship silently):

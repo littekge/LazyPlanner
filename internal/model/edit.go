@@ -77,7 +77,17 @@ func NewEventObject(d EventDraft, now time.Time) (*Parsed, error) {
 // leaving every other property (and every other component) untouched.
 func EditTodo(obj *Parsed, uid string, d TodoDraft, now time.Time, loc *time.Location) (*Parsed, error) {
 	return editComponent(obj, uid, loc, func(comp *ical.Component) {
-		setCompleted(comp, d.Completed, now)
+		// Only rewrite the completion trio when the completed-ness actually changes.
+		// TodoDraft.Completed is a single bool, but VTODO STATUS is quad-state
+		// (NEEDS-ACTION / IN-PROCESS / COMPLETED / CANCELLED). A quick field-set
+		// (sp/sd) or any edit that doesn't touch completion carries Completed =
+		// td.Completed() unchanged; calling setCompleted then would flatten a foreign
+		// client's IN-PROCESS/CANCELLED status to NEEDS-ACTION (dropping
+		// PERCENT-COMPLETE) or restamp COMPLETED to now — an iron-rule breach. Skip it
+		// when nothing changed so the existing status/percent/timestamp are preserved.
+		if d.Completed != isCompletedStatus(comp) {
+			setCompleted(comp, d.Completed, now)
+		}
 		applyTodo(comp, d, now)
 	})
 }
@@ -282,6 +292,13 @@ func applyEvent(comp *ical.Component, d EventDraft, now time.Time) {
 
 	bumpSequence(comp)
 	touch(comp, now)
+}
+
+// isCompletedStatus reports whether comp currently carries STATUS:COMPLETED — the
+// completed-ness that TodoDraft.Completed round-trips. Any other status (including
+// IN-PROCESS, CANCELLED, a missing STATUS, or NEEDS-ACTION) is not completed.
+func isCompletedStatus(comp *ical.Component) bool {
+	return strings.EqualFold(text(comp.Props, ical.PropStatus), string(StatusCompleted))
 }
 
 // setCompleted writes the RFC 5545 completion trio (STATUS/PERCENT-COMPLETE/
