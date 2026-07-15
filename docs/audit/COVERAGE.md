@@ -17,11 +17,15 @@ not hidden. See `PROTOCOL.md`.
 | Quick-add parser | internal/model | fuzz | 4 | recent |
 | Timezone / DST | internal/model | exhaustive sweep | 8 | recent |
 | CalDAV network boundary | internal/caldav | fault-injection, panic-guard | 4,7 | recent |
-| Sync engine (data-loss / TOCTOU) | internal/sync | deep audit | 3 | recent |
-| Sync concurrency | internal/sync | -race stress | 3 | recent |
+| Sync engine (data-loss / TOCTOU) | internal/sync | deep audit | 3,11 | recent (HIGH fixed: PullRemoteBatch skips a Dirty resource via store.ErrKeptLocalEdit) |
+| Sync concurrency | internal/sync | -race stress | 3,11 | recent (re-run post batching/CTag; no new race; the store-level clobber finding is fixed) |
+| CTag incremental short-circuit (skip DownloadAll) | internal/sync | data-loss | 11 | recent (no data-loss found in the skip decision itself) |
+| Background sync goroutines (startPeriodicSync timer + flushOnQuit quit push) | internal/ui, internal/sync | race | 11 | recent (no deadlock/race found) |
 | Store filesystem robustness | internal/store | deep audit (paths, revert, rollback) | 9 | recent |
 | Local disk / config input boundaries | internal/config, internal/state, internal/store | deep audit, size caps | 9 | recent |
-| Bulk-pull batching / scale | internal/store, internal/sync | benchmarks | 5 | recent |
+| Bulk-pull batching / scale | internal/store, internal/sync | benchmarks, data-loss | 5,11 | recent (HIGH fixed: PullRemoteBatch no longer clobbers a href-less pull-orphan's local edit) |
+| Grab-mode temporal-manipulation state machine (per-nudge commit, snapshot/2-resource revert) | internal/ui | data-loss, input-edge | 11 | recent (MED+LOW x2 fixed: cancelGrab surfaces revert errors; PutIfUnchanged version-check; HasDue re-check) |
+| Recurrence-edit UI orchestration (scope picker + this-&-future split/detach) | internal/ui | data-loss | 11 | recent (HIGH x2 + MED fixed: commitSplit/commitDetach rollback; DetachTodoOccurrence preserves props) |
 | UI draw paths (custom widgets) | internal/ui | display stress | 6 | recent |
 | UI input handlers (keys/chords/commands) | internal/ui | deep audit | 9 | recent |
 | CLI wiring | cmd/lazyplanner | deep audit | 9 | recent |
@@ -45,13 +49,37 @@ not hidden. See `PROTOCOL.md`.
   DURATION-without-DTSTART, empty VTIMEZONE incl. the `stripForbiddenNesting` self-
   inflict, VJOURNAL/VFREEBUSY nesting) are now healed on ingest with regression tests.
 
-## Resolved this pass (were blind spots / open findings)
+## Pass 11 — RESOLVED (all 7 findings + both canary holes fixed 2026-07-15)
 
-- **All 9 pass-10 findings fixed** (5 HIGH, 4 MED), each with a green regression test.
-- **The 3 mutation-canary escapes are closed** with a test apiece — backward search
-  wrap (`searchNext(-1)`), PRIORITY `>9` clamp, and the href-less pull-orphan
-  `HasPendingChanges`/`HasLocalChanges` clause. The priority test was mutation-verified
-  (fails under the canary's mutation, passes on correct code).
+Every pass-11 finding was fixed with an adversarially-verified regression test and
+its own commit; the full gate + `-race` on store/sync/ui pass. See `log.md`.
+
+- **3 HIGH data-loss** (the shared "multi-write op with no rollback" class):
+  `PullRemoteBatch` now skips a Dirty resource (`store.ErrKeptLocalEdit`) instead of
+  clobbering a concurrent local edit; `commitSplit` restores the master when the
+  future write fails; `commitDetach` (extracted from `editTodoDetachForm`) restores
+  the series when the standalone write fails. All three now match the sibling
+  `beginGrabFuture` rollback.
+- **2 MED:** `cancelGrab` captures and surfaces revert errors (and restores before
+  deleting so a failed un-cap can't compound); the todo detach uses the new
+  `model.DetachTodoOccurrence`, which clones the original component so unmodeled iCal
+  props (VALARM/X-/etc.) survive (iron rule).
+- **2 LOW:** `grabNudge` commits via the new `store.PutIfUnchanged` (version-checked
+  write; aborts without reverting on a concurrent pull); the todo nudge re-checks
+  `HasDue` after re-locate.
+- **2 escaped mutation canaries → closed:** boundary tests added for the month-grid
+  event-drill `j`/`k` guard (`internal/ui/calendarview.go`, both KeyRune + arrow
+  paths) and `clampIndex` at `i == n` (`internal/ui/edit.go`); each verified to fail
+  under its mutation. (The both-sides-changed conflict-comparison canary in
+  `internal/sync/sync.go` was already caught by 5 tests.)
+
+## Systemic follow-up (next pass) — the Locate→Put no-version-check pattern
+
+Pass 11 fixed the version-check gap in the **grab** path only. The same
+read-modify-write shape (Locate a snapshot → derive → `store.Put`) is shared with
+**quick-field edits** (`sp`/`sd`) and **completion toggles** (`Space`), which were
+NOT audited for the same concurrent-pull clobber. `store.PutIfUnchanged` now exists;
+audit those paths and route them through it (or confirm they're safe) next pass.
 
 ## Delete-half of the write-atomicity finding (intentionally not "healed")
 
