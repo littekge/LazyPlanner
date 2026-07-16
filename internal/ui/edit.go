@@ -522,8 +522,18 @@ func (a *app) reparentSelected(dir reparentDir) {
 		a.flashErr("Move", err)
 		return
 	}
-	if _, err := a.store.Put(context.Background(), loc.CalID, loc.Name, newObj); err != nil {
+	// Version-checked against loc.Prev: a background sync pull landing between the
+	// Locate above and this write must not be clobbered (the write would otherwise
+	// adopt the pulled ETag while persisting content derived from the now-stale
+	// snapshot, and the next push's CAS would overwrite the server edit).
+	applied, err := a.store.PutIfUnchanged(context.Background(), loc.CalID, loc.Name, newObj, loc.Prev)
+	if err != nil {
 		a.flash("Move failed: " + err.Error())
+		return
+	}
+	if !applied {
+		a.refresh(td.UID)
+		a.flash("Task changed on the server — move not applied; retry")
 		return
 	}
 	a.pushUndo("re-parent", td.UID, undoOp{calID: loc.CalID, name: loc.Name, prev: loc.Prev})
