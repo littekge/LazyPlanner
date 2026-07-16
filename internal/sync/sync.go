@@ -290,44 +290,51 @@ type downloadSkip struct {
 // note that the bulk path failed (so the slower degraded path isn't invisible)
 // plus any per-resource fetch failures. A non-nil error means even the fallback
 // listing failed — a genuine per-calendar abort.
-func downloadResilient(ctx context.Context, d downloader, calPath string) ([]caldav.Object, []downloadSkip, error) {
+//
+// The third return is the set of hrefs the server LISTED but whose individual
+// fetch failed (populated only on the degraded path). Reconcile must not mistake
+// these for remote deletions: the listing proves the resource still exists on the
+// server, so an absent-from-objs href that is in this set is unfetched, not gone.
+func downloadResilient(ctx context.Context, d downloader, calPath string) ([]caldav.Object, []downloadSkip, map[string]bool, error) {
 	objs, err := d.DownloadAll(ctx, calPath)
 	if err == nil {
-		return objs, nil, nil
+		return objs, nil, nil, nil // bulk succeeded → complete view, nothing unfetched
 	}
 	refs, lerr := d.ListObjectHrefs(ctx, calPath)
 	if lerr != nil {
-		return nil, nil, fmt.Errorf("bulk download failed: %v; fallback listing failed: %w", err, lerr)
+		return nil, nil, nil, fmt.Errorf("bulk download failed: %v; fallback listing failed: %w", err, lerr)
 	}
 	skips := []downloadSkip{{Ref: "(bulk download)", Err: fmt.Errorf("bulk download failed, fetching resources individually: %w", err)}}
+	unfetched := map[string]bool{}
 	out := make([]caldav.Object, 0, len(refs))
 	for _, ref := range refs {
 		if cerr := ctx.Err(); cerr != nil {
-			return nil, nil, cerr
+			return nil, nil, nil, cerr
 		}
 		o, gerr := d.GetObject(ctx, ref.Href)
 		if gerr != nil {
 			skips = append(skips, downloadSkip{Ref: ref.Href, Err: gerr}) // skip just this resource
+			unfetched[ref.Href] = true                                    // listed on the server, just couldn't fetch it now
 			continue
 		}
 		out = append(out, o)
 	}
-	return out, skips, nil
+	return out, skips, unfetched, nil
 }
 
-func downloadCalendar(ctx context.Context, client Syncer, calID, calPath string, res *SyncResult) ([]caldav.Object, error) {
-	objs, skips, err := downloadResilient(ctx, client, calPath)
+func downloadCalendar(ctx context.Context, client Syncer, calID, calPath string, res *SyncResult) ([]caldav.Object, map[string]bool, error) {
+	objs, skips, unfetched, err := downloadResilient(ctx, client, calPath)
 	if err != nil {
-		return nil, fmt.Errorf("sync: downloading calendar %q: %w", calID, err)
+		return nil, nil, fmt.Errorf("sync: downloading calendar %q: %w", calID, err)
 	}
 	for _, s := range skips {
 		recordSkip(res, calID, s.Ref, s.Err)
 	}
-	return objs, nil
+	return objs, unfetched, nil
 }
 
 func reconcileCalendar(ctx context.Context, client Syncer, st *store.Store, calID string, sc caldav.Calendar, res *SyncResult) error {
-	serverObjs, err := downloadCalendar(ctx, client, calID, sc.Path, res)
+	serverObjs, unfetched, err := downloadCalendar(ctx, client, calID, sc.Path, res)
 	if err != nil {
 		return err
 	}
@@ -339,7 +346,7 @@ func reconcileCalendar(ctx context.Context, client Syncer, st *store.Store, calI
 	if sc.ReadOnly {
 		// Read-only calendar (e.g. NextCloud's generated birthdays): never write
 		// to the server. Mirror it one-way and discard any stuck local changes.
-		return reconcileReadOnly(ctx, st, calID, serverObjs, serverByHref, res)
+		return reconcileReadOnly(ctx, st, calID, serverObjs, serverByHref, unfetched, res)
 	}
 
 	cal, ok := st.Calendar(calID)
@@ -386,6 +393,14 @@ func reconcileCalendar(ctx context.Context, client Syncer, st *store.Store, calI
 		default:
 			serverObj, onServer := serverByHref[r.Href]
 			switch {
+			case !onServer && unfetched[r.Href]:
+				// Absent from the downloaded objects only because its individual
+				// fetch failed this pass (degraded download); the server's listing
+				// still includes it, so it was NOT deleted. Leave the local copy
+				// untouched — treating an unfetchable-but-existing resource as a
+				// deletion would Forget a clean item / raise a false ServerDeleted
+				// conflict. The failed GET is already recorded as a skip upstream,
+				// so the CTag isn't cached and the next sync retries it.
 			case !onServer && r.Dirty:
 				// Edited locally, deleted on the server → conflict; keep the
 				// local edit (no server version survives to stash). Flag it as a
@@ -474,7 +489,7 @@ func reconcileCalendar(ctx context.Context, client Syncer, st *store.Store, calI
 // local change that can never be pushed is discarded: dirty or never-synced
 // resources are dropped, and local deletions (tombstones) are reverted by
 // re-pulling the server's copy. Clean resources track the server as usual.
-func reconcileReadOnly(ctx context.Context, st *store.Store, calID string, serverObjs []caldav.Object, serverByHref map[string]caldav.Object, res *SyncResult) error {
+func reconcileReadOnly(ctx context.Context, st *store.Store, calID string, serverObjs []caldav.Object, serverByHref map[string]caldav.Object, unfetched map[string]bool, res *SyncResult) error {
 	cal, ok := st.Calendar(calID)
 	if !ok {
 		return nil
@@ -496,6 +511,10 @@ func reconcileReadOnly(ctx context.Context, st *store.Store, calID string, serve
 		localByHref[r.Href] = true
 		serverObj, onServer := serverByHref[r.Href]
 		switch {
+		case !onServer && unfetched[r.Href]:
+			// Listed on the server but its fetch failed this pass (degraded
+			// download) — not a deletion. Leave the mirrored copy untouched;
+			// the recorded skip keeps the CTag uncached so the next sync retries.
 		case !onServer:
 			if err := st.Forget(ctx, calID, r.Name); err != nil {
 				recordSkip(res, calID, r.Name, err)

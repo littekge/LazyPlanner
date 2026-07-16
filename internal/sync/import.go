@@ -76,7 +76,10 @@ func Import(ctx context.Context, src Source, dst *store.Store) (ImportResult, er
 		}
 		res.Calendars++
 
-		objs, skips, err := downloadResilient(ctx, src, cal.Path)
+		// Import only ever adds resources (it never reconciles deletions), so the
+		// listed-but-unfetched set is irrelevant here — a failed fetch is recorded
+		// as a skip below and simply not imported.
+		objs, skips, _, err := downloadResilient(ctx, src, cal.Path)
 		if err != nil {
 			return res, fmt.Errorf("import: downloading calendar %q: %w", id, err)
 		}
