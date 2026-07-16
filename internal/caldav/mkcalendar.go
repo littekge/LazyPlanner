@@ -65,8 +65,12 @@ func (c *Client) CreateCalendar(ctx context.Context, path string, spec CalendarS
 	}
 	defer resp.Body.Close()
 
-	// RFC 4791: success is 201 Created.
-	if resp.StatusCode != http.StatusCreated {
+	// RFC 4791 §5.3.1: success is 201 Created; MKCALENDAR is refused with 405 on a
+	// URL that is already mapped. Treat 405 as success so a create is idempotent —
+	// if a previous attempt's 201 was lost in transit the server already made the
+	// collection, and a retry (or a create racing another client) must adopt it
+	// rather than wedging the calendar permanently pending-create.
+	if resp.StatusCode != http.StatusCreated && resp.StatusCode != http.StatusMethodNotAllowed {
 		return fmt.Errorf("caldav: MKCALENDAR %q: %s%s", path, resp.Status, responseHint(resp.Body))
 	}
 	return nil
@@ -90,11 +94,17 @@ func (c *Client) DeleteCalendar(ctx context.Context, path string) error {
 	}
 	defer resp.Body.Close()
 
-	// 204 No Content is the usual success; 200 is also acceptable.
-	if resp.StatusCode != http.StatusNoContent && resp.StatusCode != http.StatusOK {
+	// 204 No Content is the usual success; 200 is also acceptable. 404/410 mean the
+	// collection is already gone — the desired end state — so treat them as success
+	// too, making DELETE idempotent: a retry after a lost success response (or a
+	// delete of something another client already removed) must not wedge the
+	// calendar permanently pending-delete.
+	switch resp.StatusCode {
+	case http.StatusNoContent, http.StatusOK, http.StatusNotFound, http.StatusGone:
+		return nil
+	default:
 		return fmt.Errorf("caldav: DELETE %q: %s%s", path, resp.Status, responseHint(resp.Body))
 	}
-	return nil
 }
 
 // resolve turns a server path (or absolute URL) into an absolute URL string
