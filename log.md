@@ -4,6 +4,13 @@
 
 ---
 
+## 2026-07-16 — Docs: restore the two facts the doc-refactor verification found lost
+
+- An independent verification agent traced every fact deleted by the three spec-doc refactor commits (`ad1f777`/`da47b23`/`417be1a`) through the current main.md / CLAUDE.md / README.md / log.md / docs/audit/. Verdict: everything survived — every design decision, rejected-alternative rationale, safety warning, named test, and guardrail — except two minor items, both restored:
+  - The **fan-out sizes of passes 11–13** (51/48/44 agents) existed only in the deleted main.md pass narrative (pass 10's "63 agents" survives in log.md). Added a `Run size:` header line to `docs/audit/passes/PASS-{11,12,13}.md`, the natural home for run statistics.
+  - Pass 9's explicit **"UI input surface and sidecar-corruption path audited and found already sound"** verdict had become implicit (ledger rows only). Restored the sentence to main.md's pass-9 ledger line — a "no bug found" verdict is coverage information, same as passes 6/8.
+- Files: `docs/audit/passes/PASS-11.md`, `PASS-12.md`, `PASS-13.md`, `main.md`, `log.md`.
+
 ## 2026-07-16 — Docs: trim README.md to an end-user guide and reorder to the first-run flow
 
 - Third of three spec-doc refactors. The README is now purely for the end user (summary, build/install, configuration, usage + keybindings); a curious user reads main.md for the development process.

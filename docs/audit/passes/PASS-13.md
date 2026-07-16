@@ -1,6 +1,7 @@
 # Pass 13 — spec-diff reopens Locate→Put + reconcile degraded-download data loss + CalDAV request-side idempotency
 
 - **Date:** 2026-07-16
+- **Run size:** 44 agents
 - **Prior pass:** Pass 12 (Locate→Put systemic follow-up + undo replay + color/name PROPFIND) — HIGH 2 · MED 5 · LOW 0
 - **This pass:** HIGH 1 · MED 4 · LOW 0 (all 5 confirmed with runnable failing-test repros executed and observed red)
 - **Status (2026-07-16): ALL RESOLVED.** All 5 confirmed findings and all 4 escaped

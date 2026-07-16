@@ -1,6 +1,7 @@
 # Pass 12 — the Locate→Put systemic follow-up + undo replay + color/name PROPFIND parse
 
 - **Date:** 2026-07-15
+- **Run size:** 48 agents
 - **Prior pass:** Pass 11 (never/stale sweep: grab + recurrence-edit UI + sync concurrency) — HIGH 3 · MED 2 · LOW 2
 - **This pass:** HIGH 2 · MED 5 · LOW 0 (all 7 confirmed with runnable repros executed and observed red)
 - **Status:** NONE fixed yet. Every repro was written, run, and observed to fail against

@@ -1,6 +1,7 @@
 # Pass 11 — never/stale sweep: grab-mode, recurrence-edit UI orchestration, sync concurrency + CTag + background goroutines
 
 - **Date:** 2026-07-15
+- **Run size:** 51 agents
 - **Prior pass:** Pass 10 (stale-surface sweep) — HIGH 5 · MED 4 · LOW 0
 - **This pass:** HIGH 3 · MED 2 · LOW 2 (all confirmed with runnable, executed repros)
 - **Resolution (2026-07-15):** ALL 7 findings + both escaped canaries fixed, each
