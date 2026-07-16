@@ -4,6 +4,13 @@
 
 ---
 
+## 2026-07-16 — Refactor: split edit.go — extract item form builders to itemforms.go
+
+- Codebase-tidiness pass (no behavior change), post-pass-13 health review. `internal/ui/edit.go` had grown to 1312 lines (the largest file); extracted the cohesive **item-form-construction** concern — the `todoFields`/`eventFields` types and the ten form builders/readers (`newTodoForm`/`readTodoDraft`/`showTodoForm`/`presentTodoForm`/`showCreateTodoForm` and the event equivalents) — verbatim into a new `internal/ui/itemforms.go`. edit.go now holds the mutation *actions* (create/complete/delete/reparent/edit-orchestration/undo/refresh/modal plumbing); itemforms.go holds the form widgets they open. The generic `caretForm` widget stays in the pre-existing `forms.go`.
+- **Pure move, verified:** the combined top-level symbol set of `edit.go`+`itemforms.go` is byte-identical to the original edit.go's (62 symbols, diff empty), so no logic changed and no hardening was touched — no coverage-map update needed. edit.go 1312→1014, itemforms.go 309.
+- Full gate + vet + staticcheck on `internal/ui` pass.
+- Files: `internal/ui/edit.go`, `internal/ui/itemforms.go`.
+
 ## 2026-07-16 — Docs: record pass 13 across the ledger, pass report, main.md, README
 
 - End-of-pass doc refresh (no code change). `docs/audit/COVERAGE.md`: flipped the three pass-13 OPEN inventory rows (reconcile HIGH, CalDAV-idempotency 2×MED, spec-diff 2×MED) to *fixed*, marked all 4 escaped mutation canaries CLOSED with their regression-test names, and re-marked the `Locate→Put` systemic section RESOLVED (now naming the exhaustive-sweep lesson). `docs/audit/passes/PASS-13.md`: added an "ALL RESOLVED (2026-07-16)" status header over the point-in-time audit record. `main.md`: added the Pass 13 entry to the Hardening & audit phase and rewrote "Not yet audited (next)" — the reconcile case-matrix (beyond the fixed degraded-download cell), timezone/DST, UI draw widgets, and non-command input-edge are the stale surfaces; noted the CalDAV test server is offline as of 2026-07-16 (live suite can't run). `README.md`: twelve→thirteen hardening passes, folded the pass-13 fixes (edit-form/reparent clobber, degraded-download false-deletion, MKCALENDAR/DELETE idempotency) into the data-loss-class summary.
