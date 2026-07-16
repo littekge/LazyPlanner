@@ -111,6 +111,31 @@ func TestDeleteObject(t *testing.T) {
 	}
 }
 
+func TestDeleteObjectEmptyETagSendsIfMatchStar(t *testing.T) {
+	// Closes pass-13 canary escape #3: a delete with no stored ETag must still be
+	// conditional (If-Match:*) so it can't blindly remove a resource the server
+	// changed since we last saw it. Nothing inspected this header before.
+	var gotIfMatch string
+	present := false
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		gotIfMatch = r.Header.Get("If-Match")
+		_, present = r.Header["If-Match"]
+		w.WriteHeader(http.StatusNoContent)
+	}))
+	defer srv.Close()
+
+	c, _ := caldav.NewClient(caldav.Config{Endpoint: srv.URL})
+	if err := c.DeleteObject(context.Background(), "/dav/cal/e1.ics", ""); err != nil {
+		t.Fatal(err)
+	}
+	if !present {
+		t.Fatal("no If-Match header sent on an empty-ETag delete; a blind unconditional DELETE can remove a server-changed resource")
+	}
+	if gotIfMatch != "*" {
+		t.Errorf("If-Match = %q, want \"*\" for an empty stored ETag", gotIfMatch)
+	}
+}
+
 func TestDeleteObjectPreconditionFailed(t *testing.T) {
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
 		w.WriteHeader(http.StatusPreconditionFailed)

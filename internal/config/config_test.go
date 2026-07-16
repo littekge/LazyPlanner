@@ -92,6 +92,37 @@ time_format = "24h"
 	}
 }
 
+// TestLoadCapsReadSize closes pass-13 canary escape #4: the config read is bounded
+// by io.LimitReader(maxConfigBytes) so a huge/endless file can't exhaust memory or
+// hang startup. It's crafted so the bytes before the cap are valid TOML and the
+// bytes after it are NOT — a capped read parses cleanly, but dropping the cap reads
+// the whole file and hits the trailing garbage, turning Load into a syntax error.
+func TestLoadCapsReadSize(t *testing.T) {
+	dir := withConfigDir(t)
+	if err := os.MkdirAll(dir, 0o700); err != nil {
+		t.Fatal(err)
+	}
+	var b strings.Builder
+	b.WriteString("[server]\nurl = \"https://nc.example.com\"\nusername = \"u\"\n")
+	// One long comment line that runs past the cap; a TOML comment needs no closing
+	// newline, so a read truncated mid-comment is still valid.
+	b.WriteString("# ")
+	b.WriteString(strings.Repeat("x", maxConfigBytes))
+	// Beyond the cap: a bare line that is invalid TOML if it is ever read.
+	b.WriteString("\n!!! this line is not valid toml !!!\n")
+	if err := os.WriteFile(filepath.Join(dir, configName), []byte(b.String()), 0o600); err != nil {
+		t.Fatal(err)
+	}
+
+	cfg, configured, _, err := Load()
+	if err != nil {
+		t.Fatalf("Load failed on an oversized file; the read cap should have truncated before the trailing garbage: %v", err)
+	}
+	if !configured || cfg.Server.Username != "u" {
+		t.Errorf("expected the pre-cap [server] block to parse, got configured=%v server=%+v", configured, cfg.Server)
+	}
+}
+
 func TestLoadWarnsOnLoosePermissions(t *testing.T) {
 	if runtime.GOOS == "windows" {
 		t.Skip("permission bits are POSIX-only")
