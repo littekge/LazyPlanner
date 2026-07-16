@@ -4,6 +4,11 @@
 
 ---
 
+## 2026-07-16 — Docs: record pass 13 across the ledger, pass report, main.md, README
+
+- End-of-pass doc refresh (no code change). `docs/audit/COVERAGE.md`: flipped the three pass-13 OPEN inventory rows (reconcile HIGH, CalDAV-idempotency 2×MED, spec-diff 2×MED) to *fixed*, marked all 4 escaped mutation canaries CLOSED with their regression-test names, and re-marked the `Locate→Put` systemic section RESOLVED (now naming the exhaustive-sweep lesson). `docs/audit/passes/PASS-13.md`: added an "ALL RESOLVED (2026-07-16)" status header over the point-in-time audit record. `main.md`: added the Pass 13 entry to the Hardening & audit phase and rewrote "Not yet audited (next)" — the reconcile case-matrix (beyond the fixed degraded-download cell), timezone/DST, UI draw widgets, and non-command input-edge are the stale surfaces; noted the CalDAV test server is offline as of 2026-07-16 (live suite can't run). `README.md`: twelve→thirteen hardening passes, folded the pass-13 fixes (edit-form/reparent clobber, degraded-download false-deletion, MKCALENDAR/DELETE idempotency) into the data-loss-class summary.
+- Files: `docs/audit/COVERAGE.md`, `docs/audit/passes/PASS-13.md`, `main.md`, `README.md`, `log.md`. (Also pruned the four leftover canary git worktrees under `.claude/worktrees/`.)
+
 ## 2026-07-16 — Pass 13 fix (HIGH): a degraded download no longer looks like a remote deletion
 
 - Fixes pass-13 HIGH #1 (`internal/sync/sync.go`). When the bulk calendar-query (`DownloadAll`) fails, sync falls back to enumerating hrefs + a per-resource `GetObject`. A resource whose individual GET failed transiently (timeout/5xx) was **omitted from `serverObjs`**, so `reconcileCalendar` saw it as absent-from-server and treated it as a **remote deletion** — a clean local item was `Forget`-ten (`PulledDeletes++`) and a dirty one raised a **false `ServerDeleted` conflict**, even though the server's listing still contained it. Silent data loss on any flaky-network sync. `reconcileReadOnly` had the identical twin bug.
