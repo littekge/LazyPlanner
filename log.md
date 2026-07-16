@@ -4,6 +4,15 @@
 
 ---
 
+## 2026-07-16 — Docs: restructure main.md — versioned Build Plan, prose sections, in-place decisions
+
+- First of three spec-doc refactors (doc-role cleanup: main.md = WHAT, CLAUDE.md = HOW, README = end-user guide). main.md restructured to short prose paragraphs under finer headings, no content dropped:
+  - **Versioned Build Plan**: the 13 steps now live under `### v1.0.0 — complete (2026-07-12)`; the pass-by-pass hardening narrative (≈10 dense paragraphs) is compressed into a `### v1.0.x — hardening & audit (ongoing)` one-line-per-pass ledger (method/surface → headline result → infrastructure added, "no bug found" passes included) + a residual-targets paragraph; a `### Future versions` note records the convention (new features planned as `### v1.x.0` subsections before implementation). The detailed pass records remain in `log.md` + `docs/audit/passes/` — verified present there before condensing.
+  - **Absorbed design decisions that previously lived only in CLAUDE.md**: the recurring-todo single-live-instance model incl. the rejected occurrence-expansion (new Settled Decision + UI Design "Recurring items"), COUNT preservation across a series split, yank/paste move semantics (same-list re-parent vs cross-list recreate+delete, all-or-nothing with rollback, `CopyTodo` UID remap), grab-mode commit/revert semantics incl. the this-and-future split-on-grab-start two-resource revert, the Calendars-row `●` color bullet (hidden drops it), Space-on-a-drilled-event flashes, search scope, and the incremental-CTag skip rule + the `sync-collection` deliberate-deferral rationale.
+  - **In-place updates** (history lives in log.md): merged the duplicate Status blockquote/Current State into one Current State section (v1.0.0 complete, hardening phase, server-offline note), Version 0.0.1 → 1.0.0, removed the keymap-history aside and the Open Decisions resolved-history sentence, folded the step-10-finale/step-11 landings into their steps' own descriptions.
+- No code touched; no coverage-map change needed (all audit content relocated/condensed, none removed from the record).
+- Files: `main.md`, `log.md`.
+
 ## 2026-07-16 — Refactor: rename lingering *_repro_test.go regression tests to permanent names
 
 - Tidiness pass (test-only, no behavior change). Five regression tests still carried the interim `*_repro_test.go` filename + `TestRepro*` function name from passes 9–10, which misleadingly reads as "throwaway repro" — they are permanent regression guards. Renamed via `git mv` + a function-name rename (dropping `Repro`/`REPRO`):
