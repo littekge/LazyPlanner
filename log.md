@@ -4,6 +4,18 @@
 
 ---
 
+## 2026-07-16 — Docs: rewrite CLAUDE.md as a timeless HOW-only agent orientation
+
+- Second of three spec-doc refactors. CLAUDE.md now contains no build-state — every sentence stays true regardless of project phase, so it only changes when the way of working fundamentally changes. New structure:
+  - **What This Project Is** — one timeless paragraph (identity, libraries, platform) and a hard stop pointing at main.md.
+  - **Session Startup** (new) — agents must read `main.md` + `log.md` and confirm the `ai-workspace` branch before any task.
+  - **The Documents** (new — the anti-drift core) — one subsection per doc with its role + maintenance rule: main.md = WHAT (update in place, no nullified decisions, features planned as `v1.x.0` Build Plan subsections first), CLAUDE.md = HOW (never project state), README = end-user guide only, log.md (the Log Format section moved here whole), `docs/audit/` (protocol/ledger/pass reports), `examples/spec_examples/` (reference only).
+  - **Hardening Audits** — the `/audit` workflow how-to kept, rephrased timelessly (dates, "default to audits" phase statement, and the pass-10 anecdote moved to main.md/log.md; the "treat workflow summaries as unverified" lesson kept as the rule it produced).
+  - **Architecture Rules** — hard rules kept verbatim; new **Hard invariants** list (iron rule, `.ics` = source of truth, no silent overwrite, app never writes config, read-only never written) extracted from the deleted Project Context bullets; **Hard-won guardrails** kept with fix-dates/pass-numbers stripped, plus a new fourth guardrail naming the `PutIfUnchanged`/rollback write-path pattern.
+  - Workflow / Git Branching Rules / Coding Standards kept essentially verbatim.
+- Deleted: the Project Context section (the ~1500-word UI bullet and the Local cache / Data model / Sync / Config bullets) — verified duplicated in main.md before deletion; the handful of orphaned design decisions were ported to main.md in the previous increment. No coverage-map change needed (guardrail content relocated within CLAUDE.md, none weakened).
+- Files: `CLAUDE.md`, `log.md`.
+
 ## 2026-07-16 — Docs: restructure main.md — versioned Build Plan, prose sections, in-place decisions
 
 - First of three spec-doc refactors (doc-role cleanup: main.md = WHAT, CLAUDE.md = HOW, README = end-user guide). main.md restructured to short prose paragraphs under finer headings, no content dropped:
