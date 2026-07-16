@@ -4,6 +4,16 @@
 
 ---
 
+## 2026-07-16 — Docs: trim README.md to an end-user guide and reorder to the first-run flow
+
+- Third of three spec-doc refactors. The README is now purely for the end user (summary, build/install, configuration, usage + keybindings); a curious user reads main.md for the development process.
+  - **Deleted the Status blockquote** (build-step history, the thirteen-pass hardening narrative, the data-loss-class taxonomy, "approaching 1.0" framing) — all recorded in main.md's Build Plan ledger, `log.md`, and `docs/audit/`.
+  - **Deleted the Hardening audits subsection** (audit-workflow description, fuzz + live-suite instructions) — verified duplicated in CLAUDE.md's Coding Standards/Hardening Audits and `docs/audit/PROTOCOL.md` before deletion, incl. the test-account-only warning.
+  - **Development section** shrunk to a two-line pointer at main.md / log.md / docs/audit / CLAUDE.md; dropped `make check` from Build & Install (dev task; lives in CLAUDE.md).
+  - **Reordered to the first-run flow**: What it does → Build & Install → Configuration → Usage (key table promoted to a `### Keybindings` heading) → Syncing → Managing calendars → Raspberry Pi → Development → License (previously Build & Install sat after 120 lines of usage).
+  - Rephrased status-flavored wording in the Pi Performance paragraph ("used to be quadratic", "hasn't been benchmarked yet") as present-tense guidance; user-facing content otherwise verbatim.
+- Files: `README.md`, `log.md`.
+
 ## 2026-07-16 — Docs: rewrite CLAUDE.md as a timeless HOW-only agent orientation
 
 - Second of three spec-doc refactors. CLAUDE.md now contains no build-state — every sentence stays true regardless of project phase, so it only changes when the way of working fundamentally changes. New structure:
