@@ -902,21 +902,47 @@ func (a *app) showCreateEventForm(calID string, base time.Time) {
 	a.openModal(pageForm, f, 62, 21)
 }
 
-// applyMutation writes obj and records an undo step, flashing and returning false
-// on failure. Shared tail of the form-close and keep-drill commit variants.
-func (a *app) applyMutation(calID, name string, obj *model.Parsed, prev *store.Resource, label, selUID string) bool {
-	if _, err := a.store.Put(context.Background(), calID, name, obj); err != nil {
+// staleWriteMsg is flashed when a version-checked edit is skipped because the
+// resource changed on the server (a concurrent background pull) after it was
+// located — the edit is not applied rather than clobbering the pulled change.
+const staleWriteMsg = "Changed on the server — not applied; reopen and retry"
+
+// applyMutation writes obj and records an undo step. For an edit (prev != nil) the
+// write is version-checked against prev via PutIfUnchanged: if the resource
+// changed on the server since it was located (a concurrent pull), the write is
+// skipped so the pulled edit isn't clobbered, and stale=true is returned. A
+// creation (prev == nil) has no prior version to guard and always writes. Returns
+// ok=false on a write error or a stale skip; flashes on a hard error only.
+func (a *app) applyMutation(calID, name string, obj *model.Parsed, prev *store.Resource, label, selUID string) (ok, stale bool) {
+	if prev != nil {
+		applied, err := a.store.PutIfUnchanged(context.Background(), calID, name, obj, prev)
+		if err != nil {
+			a.flashErr("Save", err)
+			return false, false
+		}
+		if !applied {
+			return false, true
+		}
+	} else if _, err := a.store.Put(context.Background(), calID, name, obj); err != nil {
 		a.flashErr("Save", err)
-		return false
+		return false, false
 	}
 	a.pushUndo(label, selUID, undoOp{calID: calID, name: name, prev: prev})
-	return true
+	return true, false
 }
 
 // commitMutation writes obj, records undo, closes the form, refreshes, and
 // flashes — the shared tail of every form Save/Create. prev nil marks a creation.
 func (a *app) commitMutation(calID, name string, obj *model.Parsed, prev *store.Resource, label, selUID, done string) {
-	if !a.applyMutation(calID, name, obj, prev, label, selUID) {
+	ok, stale := a.applyMutation(calID, name, obj, prev, label, selUID)
+	if !ok {
+		if stale {
+			// The resource changed underneath: show the server's version and tell
+			// the user, instead of leaving the form open over stale content.
+			a.refresh(selUID)
+			a.closeModal(pageForm)
+			a.flash(staleWriteMsg)
+		}
 		return
 	}
 	// Refresh first (rebuilds the calendar grid), then close — so restoreFocus
@@ -932,7 +958,12 @@ func (a *app) commitMutation(calID, name string, obj *model.Parsed, prev *store.
 // pop an empty focus stack and kick focus off the drilled calendar day. It keeps
 // the drill instead, mirroring Space-complete.
 func (a *app) commitMutationKeepingDrill(calID, name string, obj *model.Parsed, prev *store.Resource, label, selUID, done string) {
-	if !a.applyMutation(calID, name, obj, prev, label, selUID) {
+	ok, stale := a.applyMutation(calID, name, obj, prev, label, selUID)
+	if !ok {
+		if stale {
+			a.refreshKeepingDrill(selUID)
+			a.flash(staleWriteMsg)
+		}
 		return
 	}
 	a.refreshKeepingDrill(selUID)
