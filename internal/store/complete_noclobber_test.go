@@ -10,31 +10,6 @@ import (
 	"github.com/littekge/LazyPlanner/internal/store"
 )
 
-// todoICS builds a single-VTODO calendar object with a summary and a DESCRIPTION
-// (a field completion does not touch — stands in for a note/priority edited on
-// another device).
-func todoWithDescICS(t *testing.T, uid, summary, description string) *model.Parsed {
-	t.Helper()
-	ics := "BEGIN:VCALENDAR\r\nVERSION:2.0\r\nPRODID:-//LazyPlanner//Test//EN\r\n" +
-		"BEGIN:VTODO\r\nUID:" + uid + "\r\nDTSTAMP:20260701T120000Z\r\n" +
-		"SUMMARY:" + summary + "\r\nDESCRIPTION:" + description + "\r\n" +
-		"END:VTODO\r\nEND:VCALENDAR\r\n"
-	obj, err := model.Decode([]byte(ics), time.UTC)
-	if err != nil {
-		t.Fatalf("decoding %q: %v", uid, err)
-	}
-	return obj
-}
-
-func findTdDesc(obj *model.Parsed, uid string) *model.Todo {
-	for _, td := range obj.Todos {
-		if td.UID == uid {
-			return td
-		}
-	}
-	return nil
-}
-
 // TestSpaceCompleteDoesNotClobberConcurrentPull guards pass-12 MED #5: the UI's
 // toggleComplete (and advanceRecurringTodo) did Locate -> SetTodoCompleted(stale
 // object) -> store.Put(unguarded), so a sync pull landing between Locate and Put
@@ -103,7 +78,7 @@ func TestSpaceCompleteDoesNotClobberConcurrentPull(t *testing.T) {
 	if res == nil {
 		t.Fatal("resource missing")
 	}
-	got := findTdDesc(res.Object, uid)
+	got := findTd(res.Object, uid)
 	if got == nil {
 		t.Fatal("todo missing")
 	}

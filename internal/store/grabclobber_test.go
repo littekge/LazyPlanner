@@ -10,31 +10,6 @@ import (
 	"github.com/littekge/LazyPlanner/internal/store"
 )
 
-// eventICS builds a single-VEVENT calendar object with a summary and start.
-func eventICS(t *testing.T, uid, summary string, startHour int) *model.Parsed {
-	t.Helper()
-	start := time.Date(2026, 7, 4, startHour, 0, 0, 0, time.UTC).Format("20060102T150405Z")
-	end := time.Date(2026, 7, 4, startHour+1, 0, 0, 0, time.UTC).Format("20060102T150405Z")
-	ics := "BEGIN:VCALENDAR\r\nVERSION:2.0\r\nPRODID:-//LazyPlanner//Test//EN\r\n" +
-		"BEGIN:VEVENT\r\nUID:" + uid + "\r\nDTSTAMP:20260701T120000Z\r\n" +
-		"DTSTART:" + start + "\r\nDTEND:" + end + "\r\n" +
-		"SUMMARY:" + summary + "\r\nEND:VEVENT\r\nEND:VCALENDAR\r\n"
-	obj, err := model.Decode([]byte(ics), time.UTC)
-	if err != nil {
-		t.Fatalf("decoding %q: %v", uid, err)
-	}
-	return obj
-}
-
-func findEvt(obj *model.Parsed, uid string) *model.Event {
-	for _, e := range obj.Events {
-		if e.UID == uid {
-			return e
-		}
-	}
-	return nil
-}
-
 // TestGrabNudgeDoesNotClobberConcurrentPull guards pass-11 LOW #6: the grab path's
 // Locate-then-Put had no version check, so a sync pull that landed between Locate
 // and Put was silently clobbered — the pulled ETag was adopted while the written

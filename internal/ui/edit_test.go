@@ -8,7 +8,6 @@ import (
 	"testing"
 	"time"
 
-	"github.com/littekge/LazyPlanner/internal/model"
 	"github.com/littekge/LazyPlanner/internal/store"
 )
 
@@ -51,15 +50,6 @@ func copyTree(t *testing.T, src, dst string) {
 	if err != nil {
 		t.Fatalf("copy fixture: %v", err)
 	}
-}
-
-func todoBySummary(s *store.Store, summary string) *model.Todo {
-	for _, td := range s.Todos() {
-		if td.Summary == summary {
-			return td
-		}
-	}
-	return nil
 }
 
 func TestCreateTaskAndUndo(t *testing.T) {

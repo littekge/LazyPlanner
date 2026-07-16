@@ -9,22 +9,6 @@ import (
 	"github.com/littekge/LazyPlanner/internal/model"
 )
 
-// todoDescObj builds a single-VTODO parsed object with a fixed UID + DESCRIPTION,
-// so a test can control the resource identity and simulate a note edited on
-// another device (a field the summary edit below does not touch).
-func todoDescObj(t *testing.T, uid, summary, description string) *model.Parsed {
-	t.Helper()
-	ics := "BEGIN:VCALENDAR\r\nVERSION:2.0\r\nPRODID:-//LazyPlanner//Test//EN\r\n" +
-		"BEGIN:VTODO\r\nUID:" + uid + "\r\nDTSTAMP:20260701T120000Z\r\n" +
-		"SUMMARY:" + summary + "\r\nDESCRIPTION:" + description + "\r\n" +
-		"END:VTODO\r\nEND:VCALENDAR\r\n"
-	obj, err := model.Decode([]byte(ics), time.UTC)
-	if err != nil {
-		t.Fatalf("decode %q: %v", uid, err)
-	}
-	return obj
-}
-
 // TestApplyMutationDoesNotClobberConcurrentPull guards pass-13 MED #2: the edit
 // form (and every recurrence-scoped save) commit through applyMutation, which used
 // the UNGUARDED store.Put. A background sync pull landing while the form was open
@@ -97,14 +81,4 @@ func TestApplyMutationDoesNotClobberConcurrentPull(t *testing.T) {
 	if !strings.Contains(got.Description, "REMOTE EDIT") {
 		t.Errorf("CLOBBER: remote DESCRIPTION overwritten by the stale edit-form Save (got %q)", got.Description)
 	}
-}
-
-// findTdDesc returns the todo with the given UID from a parsed object.
-func findTdDesc(obj *model.Parsed, uid string) *model.Todo {
-	for _, td := range obj.Todos {
-		if td.UID == uid {
-			return td
-		}
-	}
-	return nil
 }

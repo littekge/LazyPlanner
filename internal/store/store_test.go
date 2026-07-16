@@ -8,31 +8,8 @@ import (
 	"testing"
 	"time"
 
-	"github.com/littekge/LazyPlanner/internal/model"
 	"github.com/littekge/LazyPlanner/internal/store"
 )
-
-func mustDecode(t *testing.T, uid, summary string) *model.Parsed {
-	t.Helper()
-	ics := "BEGIN:VCALENDAR\r\nVERSION:2.0\r\nPRODID:-//LazyPlanner//Test//EN\r\n" +
-		"BEGIN:VEVENT\r\nUID:" + uid + "\r\nDTSTAMP:20260701T120000Z\r\n" +
-		"DTSTART:20260704T130000Z\r\nDTEND:20260704T133000Z\r\n" +
-		"SUMMARY:" + summary + "\r\nX-CUSTOM:preserve-me\r\nEND:VEVENT\r\nEND:VCALENDAR\r\n"
-	obj, err := model.Decode([]byte(ics), time.UTC)
-	if err != nil {
-		t.Fatalf("decoding test object: %v", err)
-	}
-	return obj
-}
-
-func findResource(cal store.Calendar, name string) *store.Resource {
-	for _, r := range cal.Resources {
-		if r.Name == name {
-			return r
-		}
-	}
-	return nil
-}
 
 func TestOpenLoadsVdirTree(t *testing.T) {
 	s, err := store.Open(context.Background(), "testdata/vdir")

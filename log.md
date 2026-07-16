@@ -4,6 +4,15 @@
 
 ---
 
+## 2026-07-16 — Refactor: consolidate scattered test helpers into per-package testhelpers_test.go
+
+- Tidiness pass (test-only, no production change). The ICS-builder / object-finder test helpers had been re-defined ad hoc across many files (four near-identical VTODO/VEVENT builders and several finders), which is how `todoWithDescICS`/`todoICS`/`todoDescObj` proliferated. Gathered them into one canonical home per package so a new test reuses a builder instead of adding a fifth:
+  - `internal/store/testhelpers_test.go`: `mustDecode`, `todoWithDescICS`, `todoICS`, `itoa`, `eventICS`, `findResource`, `findTd`, `findEvt` (moved verbatim from `store_test.go`/`complete_noclobber_test.go`/`quickfield_noclobber_test.go`/`grabclobber_test.go`). Merged the byte-identical duplicate `findTdDesc` into `findTd` (its one caller repointed).
+  - `internal/ui/testhelpers_test.go`: `todoDescObj`, `findTdDesc`, `todoBySummary`, `todosBySummary` (moved from `editclobber_test.go`/`edit_test.go`/`copypaste_test.go`). The app-harness helpers (`newTestApp`/`newWritableTestApp`/`storeFixture`/`drawCells`) stay with the harness in `app_test.go`/`edit_test.go`.
+- **Pure move, verified:** `Test`-function counts unchanged (store 37→37, ui 185→185); only helper *definitions* relocated (plus one exact-duplicate merge). No production code and no test assertions touched, so the audit hardening is intact — no coverage-map update needed. Removed the now-unused `model` imports the moves left behind.
+- Full gate + `-race` (store) + vet + staticcheck on `internal/store` + `internal/ui` pass.
+- Files: `internal/store/testhelpers_test.go` (new), `internal/ui/testhelpers_test.go` (new), and the six source test files trimmed.
+
 ## 2026-07-16 — Refactor: split edit.go — extract item form builders to itemforms.go
 
 - Codebase-tidiness pass (no behavior change), post-pass-13 health review. `internal/ui/edit.go` had grown to 1312 lines (the largest file); extracted the cohesive **item-form-construction** concern — the `todoFields`/`eventFields` types and the ten form builders/readers (`newTodoForm`/`readTodoDraft`/`showTodoForm`/`presentTodoForm`/`showCreateTodoForm` and the event equivalents) — verbatim into a new `internal/ui/itemforms.go`. edit.go now holds the mutation *actions* (create/complete/delete/reparent/edit-orchestration/undo/refresh/modal plumbing); itemforms.go holds the form widgets they open. The generic `caretForm` widget stays in the pre-existing `forms.go`.

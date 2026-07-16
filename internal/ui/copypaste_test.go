@@ -3,19 +3,7 @@ package ui
 import (
 	"testing"
 	"time"
-
-	"github.com/littekge/LazyPlanner/internal/model"
 )
-
-func todosBySummary(a *app, summary string) []*model.Todo {
-	var out []*model.Todo
-	for _, t := range a.store.Todos() {
-		if t.Summary == summary {
-			out = append(out, t)
-		}
-	}
-	return out
-}
 
 // TestCopyTaskDuplicatesAndPersists: Y copies; p duplicates under the selection
 // with a fresh UID leaving the original; the clipboard persists for multi-paste.

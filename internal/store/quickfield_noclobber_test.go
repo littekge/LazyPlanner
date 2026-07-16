@@ -9,34 +9,6 @@ import (
 	"github.com/littekge/LazyPlanner/internal/store"
 )
 
-// todoICS builds a single-VTODO calendar object with a summary and priority.
-func todoICS(t *testing.T, uid, summary string, priority int) *model.Parsed {
-	t.Helper()
-	ics := "BEGIN:VCALENDAR\r\nVERSION:2.0\r\nPRODID:-//LazyPlanner//Test//EN\r\n" +
-		"BEGIN:VTODO\r\nUID:" + uid + "\r\nDTSTAMP:20260701T120000Z\r\n" +
-		"SUMMARY:" + summary + "\r\n"
-	if priority > 0 {
-		ics += "PRIORITY:" + itoa(priority) + "\r\n"
-	}
-	ics += "END:VTODO\r\nEND:VCALENDAR\r\n"
-	obj, err := model.Decode([]byte(ics), time.UTC)
-	if err != nil {
-		t.Fatalf("decoding %q: %v", uid, err)
-	}
-	return obj
-}
-
-func itoa(n int) string { return string(rune('0' + n)) }
-
-func findTd(obj *model.Parsed, uid string) *model.Todo {
-	for _, td := range obj.Todos {
-		if td.UID == uid {
-			return td
-		}
-	}
-	return nil
-}
-
 // TestQuickFieldSetDoesNotClobberConcurrentPull guards pass-12 MED #4: the quick
 // field-set path (ui.applyTodoField, sp/sd) committed via store.Put with NO
 // version check, so a background sync PullRemote that landed between the UI's
