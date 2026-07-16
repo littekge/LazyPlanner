@@ -5,7 +5,7 @@ import (
 	"time"
 )
 
-func TestReproVTodoDurationNoDTStart(t *testing.T) {
+func TestVTodoDurationNoDTStart(t *testing.T) {
 	data := "BEGIN:VCALENDAR\r\n" +
 		"VERSION:2.0\r\n" +
 		"PRODID:-//test//test//EN\r\n" +

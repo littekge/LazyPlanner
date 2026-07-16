@@ -21,10 +21,10 @@ func TestClampIndexBoundaries(t *testing.T) {
 	}{
 		{-1, 3, 0}, // below range clamps to 0
 		{0, 3, 0},
-		{2, 3, 2},  // last valid index
-		{3, 3, 2},  // i == n: the escaped-canary boundary — must clamp to n-1
-		{5, 3, 2},  // above range clamps to n-1
-		{1, 1, 0},  // i == n with a single-item list
+		{2, 3, 2}, // last valid index
+		{3, 3, 2}, // i == n: the escaped-canary boundary — must clamp to n-1
+		{5, 3, 2}, // above range clamps to n-1
+		{1, 1, 0}, // i == n with a single-item list
 	}
 	for _, c := range cases {
 		if got := clampIndex(c.i, c.n); got != c.want {

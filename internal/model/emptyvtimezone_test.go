@@ -9,7 +9,7 @@ import (
 // Repro for HIGH finding: an empty VTIMEZONE (natural, or left empty after
 // stripForbiddenNesting drops its only child) cannot be re-encoded, making the
 // whole resource — including a sibling VEVENT — unwritable.
-func TestReproEmptyVTimezoneBlocksEncode(t *testing.T) {
+func TestEmptyVTimezoneBlocksEncode(t *testing.T) {
 	cases := map[string]string{
 		"caseA_natural_empty_vtimezone": "BEGIN:VCALENDAR\r\n" +
 			"VERSION:2.0\r\n" +

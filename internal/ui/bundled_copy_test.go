@@ -15,7 +15,7 @@ import (
 // alone. The bug: CopyTodo clones the whole object (X and Y), so the write
 // carries Y along with its ORIGINAL UID — a phantom copy of Y the user never
 // touched, and a duplicate-UID resource on the server.
-func TestCopyBundledSiblingRepro(t *testing.T) {
+func TestCopyBundledSibling(t *testing.T) {
 	now := time.Date(2026, 7, 5, 9, 0, 0, 0, time.UTC)
 	dir := t.TempDir()
 	copyTree(t, "../store/testdata/vdir", dir)

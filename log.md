@@ -4,6 +4,18 @@
 
 ---
 
+## 2026-07-16 — Refactor: rename lingering *_repro_test.go regression tests to permanent names
+
+- Tidiness pass (test-only, no behavior change). Five regression tests still carried the interim `*_repro_test.go` filename + `TestRepro*` function name from passes 9–10, which misleadingly reads as "throwaway repro" — they are permanent regression guards. Renamed via `git mv` + a function-name rename (dropping `Repro`/`REPRO`):
+  - `internal/model/repro_duedur_test.go` → `duedur_test.go` (`TestVTodoDueAndDuration`)
+  - `internal/model/repro_durnodtstart_test.go` → `durnodtstart_test.go` (`TestVTodoDurationNoDTStart`)
+  - `internal/model/emptyvtimezone_repro_test.go` → `emptyvtimezone_test.go` (`TestEmptyVTimezoneBlocksEncode`)
+  - `internal/ui/bundled_copy_repro_test.go` → `bundled_copy_test.go` (`TestCopyBundledSibling`)
+  - `internal/ui/repro_coresident_move_test.go` → `coresident_move_test.go` (`TestCoResidentMoveDragsBystander`)
+- Each test function is referenced only in its own file and in `docs/audit/passes/PASS-10.md`; updated those PASS-10 cross-reference pointers to the new paths/names so the historical report still resolves (its findings/prose are otherwise untouched). The one remaining `TestRepro*` mention in PASS-10 is `TestReproVJournalNestedCannotEncode`, a test that was removed after observation — intentionally left. No production code touched; the hardening these tests guard is unchanged, so no coverage-map update was needed.
+- Full repo gate + vet + staticcheck pass; the five renamed tests verified still running and green.
+- Files: the 5 renamed test files, `docs/audit/passes/PASS-10.md`.
+
 ## 2026-07-16 — Refactor: consolidate scattered test helpers into per-package testhelpers_test.go
 
 - Tidiness pass (test-only, no production change). The ICS-builder / object-finder test helpers had been re-defined ad hoc across many files (four near-identical VTODO/VEVENT builders and several finders), which is how `todoWithDescICS`/`todoICS`/`todoDescObj` proliferated. Gathered them into one canonical home per package so a new test reuses a builder instead of adding a fifth:

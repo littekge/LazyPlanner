@@ -15,7 +15,7 @@ import (
 // pasting into a different list must move X alone — but moveSubtree writes the
 // whole resource object (X+Y) to the destination and deletes it from the source,
 // so the unrelated Y silently migrates too.
-func TestReproCoResidentMoveDragsBystander(t *testing.T) {
+func TestCoResidentMoveDragsBystander(t *testing.T) {
 	now := time.Date(2026, 7, 5, 9, 0, 0, 0, time.UTC)
 	dir := t.TempDir()
 	copyTree(t, "../store/testdata/vdir", dir)

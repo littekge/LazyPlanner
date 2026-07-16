@@ -37,19 +37,19 @@ already-recent recurrence / decode / tz / BuildTree paths.
 
 2. **VTODO with both DUE and DURATION decodes but cannot re-encode** — `internal/model/decode.go:82`.
    Same healing gap for VTODO; `Encode()` fails `only one of DUE and DURATION can be specified`.
-   Repro left in tree: `internal/model/repro_duedur_test.go` (`TestReproVTodoDueAndDuration`), ran, fails at Encode.
+   Repro left in tree: `internal/model/duedur_test.go` (`TestVTodoDueAndDuration`), ran, fails at Encode.
    NOTE: this repro is left in the working tree (untracked, not committed) and **will fail `make check` until the heal lands**.
 
 3. **VTODO with DURATION but no DTSTART decodes but cannot re-encode** — `internal/model/decode.go:82`.
    go-ical requires DTSTART when DURATION is present; Parse never enforces the dependency.
-   Repro left in tree: `internal/model/repro_durnodtstart_test.go` (`TestReproVTodoDurationNoDTStart`), ran, fails at Encode.
+   Repro left in tree: `internal/model/durnodtstart_test.go` (`TestVTodoDurationNoDTStart`), ran, fails at Encode.
 
 4. **Empty VTIMEZONE cannot be re-encoded — and `stripForbiddenNesting` can create the empty state itself** — `internal/model/decode.go:190`.
    go-ical rejects a VTIMEZONE with zero STANDARD/DAYLIGHT children. Case A: a naturally-empty
    VTIMEZONE alongside a valid VEVENT. Case B: `stripForbiddenChildren` (decode.go:196-209) removes
    a VTIMEZONE's only (forbidden) child, leaving it empty. Both make the sibling VEVENT / whole
    resource unwritable.
-   Repro left in tree: `internal/model/emptyvtimezone_repro_test.go` (`TestReproEmptyVTimezoneBlocksEncode`, both subtests), ran, fail at Encode.
+   Repro left in tree: `internal/model/emptyvtimezone_test.go` (`TestEmptyVTimezoneBlocksEncode`, both subtests), ran, fail at Encode.
 
 5. **Cross-list move drags co-resident todos to the destination and deletes them from the source** — `internal/ui/yankpaste.go:170`.
    `moveSubtree` re-keys the WHOLE multi-component resource object via `Put`, then `Delete` removes the
@@ -57,7 +57,7 @@ already-recent recurrence / decode / tz / BuildTree paths.
    vdir `.ics`) is silently relocated to the destination list and erased from the source — and on next
    sync the move propagates to the server. This is the exact data-displacement class the all-or-nothing
    rollback claims to prevent.
-   Repro left in tree: `internal/ui/repro_coresident_move_test.go` (`TestReproCoResidentMoveDragsBystander`), ran, fails.
+   Repro left in tree: `internal/ui/coresident_move_test.go` (`TestCoResidentMoveDragsBystander`), ran, fails.
 
 ### MED
 
@@ -89,7 +89,7 @@ already-recent recurrence / decode / tz / BuildTree paths.
    component) and Puts it under the new single-todo resource name, so every other todo sharing the source `.ics`
    is duplicated into the destination calendar retaining its original UID — a phantom copy in an untouched list
    and a duplicate-UID-across-collections integrity violation on push.
-   Repro left in tree: `internal/ui/bundled_copy_repro_test.go` (`TestCopyBundledSiblingRepro`), ran, fails.
+   Repro left in tree: `internal/ui/bundled_copy_test.go` (`TestCopyBundledSibling`), ran, fails.
 
 **Findings 5, 7, and 9 share one root cause with the ingest healers:** the app treats a single CalDAV
 resource as one object but the create/move/copy write paths and the encoder both assume single-component
@@ -97,9 +97,9 @@ resources. A bundled `.ics` (RFC-legal, and a supported vdir/import input) break
 directions — unencodable on ingest, and split/duplicated on structural edits.
 
 > Repros left untracked in the working tree (fail `make check` until fixed; not committed):
-> `internal/model/repro_duedur_test.go`, `internal/model/repro_durnodtstart_test.go`,
-> `internal/model/emptyvtimezone_repro_test.go`, `internal/ui/repro_coresident_move_test.go`,
-> `internal/ui/bundled_copy_repro_test.go`.
+> `internal/model/duedur_test.go`, `internal/model/durnodtstart_test.go`,
+> `internal/model/emptyvtimezone_test.go`, `internal/ui/coresident_move_test.go`,
+> `internal/ui/bundled_copy_test.go`.
 
 ---
 
