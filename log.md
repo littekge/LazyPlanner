@@ -4,6 +4,13 @@
 
 ---
 
+## 2026-07-17 — Audit protocol: recurring root-cause classes must be codified as CLAUDE.md guardrails
+
+- Closed a feedback-loop gap the owner spotted: nothing mandated updating CLAUDE.md when audits repeatedly exposed an unsafe coding practice. Evidence it was real: the bare-`Locate→Put` clobber pattern recurred across passes 11→12→13 and CLAUDE.md never gained a "route writes through `PutIfUnchanged`" guardrail during any of them — it landed only incidentally in the 2026-07-16 doc rewrite.
+- **`docs/audit/PROTOCOL.md`**: new rule 9 — when a pass's findings share a root cause that is a coding *practice* (not a one-off bug), the fix is not complete until the banned practice / required pattern is recorded as a Hard-won guardrail in CLAUDE.md in the same increment; tests protect existing code, only the guardrail protects future code (the failure mode audits are worst at catching, since the ledger marks audited surfaces "recent").
+- **`CLAUDE.md`**: mirroring rules-of-engagement bullet under Hardening Audits, so the fixing agent sees it at the point of action. A legitimate HOW change (it changes what "done fixing" means).
+- Files: `docs/audit/PROTOCOL.md`, `CLAUDE.md`, `log.md`.
+
 ## 2026-07-16 — Docs: add notes.md — short-term memory for tasks interrupted mid-arc
 
 - New document completing the doc set: `notes.md` holds the state of a task in progress when a session ends **mid-arc** (remaining steps, blockers, temporary context) so the next session — agent or owner — picks the work up without reconstructing it. Charter (in its intro blockquote and CLAUDE.md's The Documents entry): **the healthy steady state is empty**; write it only when ending a session mid-task; date every entry; delete a task's notes in the same increment that writes its `log.md` completion entry; a note surviving several sessions is a misplaced main.md fact. Created empty (no task is currently mid-arc).

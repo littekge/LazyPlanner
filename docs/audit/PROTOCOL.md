@@ -32,6 +32,14 @@ looked at, how, and what it did not*.
 8. **No "clean" endpoint.** A pass ends in `more_passes_recommended` or
    `residual_accepted_with_caveats` — the honest target is *bounded, named residual
    risk*, because absence of evidence is not evidence of absence.
+9. **Recurring class → codify the rule.** When a pass's findings share a root cause
+   that is a *coding practice* rather than a one-off bug — especially one surfacing
+   across multiple passes (e.g. the bare `Locate→Put` write) — the fix is not
+   complete until the banned practice / required pattern is recorded as a Hard-won
+   guardrail in `CLAUDE.md`, in the same increment as the fix. Regression tests
+   protect existing code from regressing; only the guardrail protects *future* code
+   from repeating the practice — the failure mode audits are worst at catching,
+   since they examine what exists and the ledger immediately marks it "recent".
 
 ## The stop rule
 

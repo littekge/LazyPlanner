@@ -99,6 +99,7 @@ Deep audits run through a reusable, coverage-first workflow (`.claude/workflows/
 - Read `docs/audit/PROTOCOL.md` before an audit; keep the `COVERAGE.md` ledger current afterwards.
 - **Treat a workflow's own summary as unverified until checked** — confirm claimed repros and commits actually exist before relaying them.
 - Every confirmed finding is fixed **repro-first**: a failing test demonstrating the bug, then the fix, then the test goes green and stays as a regression guard — one commit per fix, full gate every commit.
+- **Recurring class → codify the rule.** When findings share a root cause that is a coding *practice* (not a one-off bug) — especially one seen across multiple passes — the fix is not complete until the banned practice / required pattern is added to Hard-won guardrails below, in the same increment. Tests keep existing code from regressing; the guardrail keeps future code from repeating the practice.
 
 ---
 
