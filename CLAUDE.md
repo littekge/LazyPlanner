@@ -81,6 +81,7 @@ Spec files from a prior project, used as structural reference only — not proje
 5. **Run the program** to verify it still builds and launches: `go build ./...` (and `go run ./cmd/lazyplanner` for manual checks). A `Makefile` wraps the common tasks — `make build`, `make check` (the full gate), `make cross` (stripped Raspberry Pi arm64/armv7/armv6 binaries into `dist/`, also run in CI).
 6. **Keep `main.md` and `README.md` current** — a design change updates main.md; a user-visible change updates the README (per The Documents above) — in the same increment.
 7. **Commit often** with descriptive messages: `git add . && git commit -m "feat: ..."` — on `ai-workspace`, never `main` (see Git Branching Rules).
+8. **Session end**: run `/cleanup` (`.claude/commands/cleanup.md`) — sweep residual worktrees/branches/scratch, verify every doc is current per The Documents, record any mid-arc task in `notes.md`, then commit and push everything to `ai-workspace`.
 
 ---
 

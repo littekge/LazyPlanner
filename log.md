@@ -4,6 +4,12 @@
 
 ---
 
+## 2026-07-17 — Workflow: add the /cleanup end-of-session command
+
+- Automated the owner's habitual end-of-day prompt into a committed slash command, `.claude/commands/cleanup.md` (in-repo like `/audit`, so it works on any machine). Six ordered steps: survey (branch/status/worktrees/branches) → sweep residual disposable worktrees, merged branches, and stray throwaway files (ambiguous → keep and report; never touch `main`/`ai-init`/`ai-workspace`) → doc-currency pass against CLAUDE.md's The Documents rules (main.md in-place, README, log.md heading-count, COVERAGE.md) → notes.md (write a dated mid-arc entry if a task is in progress; otherwise ensure it's empty) → gate (`make check` when code changed) + commit + push to `ai-workspace` → short end-of-session report.
+- CLAUDE.md: Workflow gains step 8 ("Session end: run /cleanup") — a legitimate HOW change (a new standard workflow tool, like /audit was).
+- Files: `.claude/commands/cleanup.md` (new), `CLAUDE.md`, `log.md`.
+
 ## 2026-07-17 — Audit protocol: recurring root-cause classes must be codified as CLAUDE.md guardrails
 
 - Closed a feedback-loop gap the owner spotted: nothing mandated updating CLAUDE.md when audits repeatedly exposed an unsafe coding practice. Evidence it was real: the bare-`Locate→Put` clobber pattern recurred across passes 11→12→13 and CLAUDE.md never gained a "route writes through `PutIfUnchanged`" guardrail during any of them — it landed only incidentally in the 2026-07-16 doc rewrite.
