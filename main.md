@@ -73,7 +73,7 @@ LazyPlanner/
                        ':' command mode.
   vendor/              Vendored dependencies (committed)
   docs/audit/          Hardening-audit protocol, coverage ledger, pass reports
-  main.md  log.md  CLAUDE.md  README.md
+  main.md  log.md  notes.md  CLAUDE.md  README.md
 ```
 
 **Separation rules:**

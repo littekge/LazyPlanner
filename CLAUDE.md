@@ -18,7 +18,8 @@ Before starting any task:
 
 1. **Read `main.md`** — the spec: what the program is, all design decisions, the versioned Build Plan (a compressed history of everything done), and the current phase.
 2. **Read `log.md`** — the change log: what has been done recently (at minimum the recent entries).
-3. **Confirm the branch**: `git branch --show-current` must show `ai-workspace` (or a branch off it) — see Git Branching Rules.
+3. **Read `notes.md`** — in-progress work. It is normally empty; if it isn't, a previous session ended mid-task — pick that work up (or explicitly hand it back to the owner) before starting anything new.
+4. **Confirm the branch**: `git branch --show-current` must show `ai-workspace` (or a branch off it) — see Git Branching Rules.
 
 ---
 
@@ -57,6 +58,10 @@ Append an entry **every time you make a change**, newest at the top, in this for
 - New entries are inserted at the top, directly below the file's intro blockquote. When inserting, do not touch the previous entry — its heading and content must remain intact and byte-identical.
 - After editing `log.md`, verify the result: the number of `## ` headings must equal the number of entries.
 
+### `notes.md` — in-progress task state (short-term memory)
+
+Working state for a task interrupted mid-arc: what's in progress, the remaining steps, blockers, and temporary context the next session needs. **Maintenance**: the healthy steady state is **empty** — write to it only when a session ends mid-task, and date every entry. When the task completes, delete its notes in the same increment that writes the `log.md` completion entry (resolution goes to `log.md`; nothing accumulates here). A note that survives more than a few sessions is a misplaced main.md fact — move it. Never design decisions, never completed work.
+
 ### `docs/audit/` — the hardening-audit record
 
 `PROTOCOL.md` (the audit rules — **read it before running an audit**), `COVERAGE.md` (the living coverage ledger — **keep it current**; it drives which surfaces the next audit targets), and `passes/PASS-N.md` (the full per-pass reports). See Hardening Audits below.
@@ -69,7 +74,7 @@ Spec files from a prior project, used as structural reference only — not proje
 
 ## Workflow
 
-1. **Session startup** (above): read `main.md` + `log.md`, confirm the branch.
+1. **Session startup** (above): read `main.md` + `log.md` + `notes.md`, confirm the branch.
 2. **Work in small increments** — one module, feature, or fix at a time.
 3. **After every change**, append a dated entry to `log.md` (format above).
 4. **Run tests and lints** after every code change: `go test ./...`, then `go vet ./...` and `staticcheck ./...`

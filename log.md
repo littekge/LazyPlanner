@@ -4,6 +4,12 @@
 
 ---
 
+## 2026-07-16 — Docs: add notes.md — short-term memory for tasks interrupted mid-arc
+
+- New document completing the doc set: `notes.md` holds the state of a task in progress when a session ends **mid-arc** (remaining steps, blockers, temporary context) so the next session — agent or owner — picks the work up without reconstructing it. Charter (in its intro blockquote and CLAUDE.md's The Documents entry): **the healthy steady state is empty**; write it only when ending a session mid-task; date every entry; delete a task's notes in the same increment that writes its `log.md` completion entry; a note surviving several sessions is a misplaced main.md fact. Created empty (no task is currently mid-arc).
+- CLAUDE.md wiring (a new document with a role = a legitimate HOW change): Session Startup gains step 3 (read `notes.md`; if non-empty, resume or explicitly hand back the interrupted work before starting anything new), The Documents gains the `notes.md` subsection, Workflow step 1 updated. main.md's repo-layout tree lists the file.
+- Files: `notes.md` (new), `CLAUDE.md`, `main.md`, `log.md`.
+
 ## 2026-07-16 — Docs: restore the two facts the doc-refactor verification found lost
 
 - An independent verification agent traced every fact deleted by the three spec-doc refactor commits (`ad1f777`/`da47b23`/`417be1a`) through the current main.md / CLAUDE.md / README.md / log.md / docs/audit/. Verdict: everything survived — every design decision, rejected-alternative rationale, safety warning, named test, and guardrail — except two minor items, both restored:
