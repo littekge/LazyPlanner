@@ -86,7 +86,11 @@ func (s *Store) Conflicts() []Conflict {
 
 // ResolveKeepLocal resolves a conflict in favor of the local copy: it clears the
 // conflict and adopts the server's current ETag so the next sync's conditional
-// PUT overwrites the server with the local version. The local .ics is unchanged.
+// PUT overwrites the server with the local version. When the conflict is a
+// server *deletion* (no server copy remains), it instead clears the Href so the
+// next sync re-creates the item on the server via the create path — keeping the
+// local edit and resurrecting it, rather than re-raising the same conflict every
+// sync. The local .ics is unchanged.
 func (s *Store) ResolveKeepLocal(ctx context.Context, calID, name string) error {
 	if err := ctx.Err(); err != nil {
 		return err
@@ -106,6 +110,15 @@ func (s *Store) ResolveKeepLocal(ctx context.Context, calID, name string) error 
 	nr.ETag = cm.ServerETag // so the next push's If-Match matches the server
 	nr.Dirty = true
 	nr.Conflicted = false
+	if cm.ServerDeleted {
+		// The server has no copy left to conditionally overwrite, so keep-local
+		// means re-create it. Clear the Href so the next reconcile takes the
+		// create path (Href=="" && Dirty) and pushes it as a new resource;
+		// otherwise it lands in the !onServer && Dirty branch and re-raises the
+		// identical server-deleted conflict every sync, never converging and
+		// never resurrecting the item on the server.
+		nr.Href = ""
+	}
 	cs.resources[name] = &nr
 	delete(cs.conflicts, name)
 	if err := writeSidecar(s.root, cs); err != nil {

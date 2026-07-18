@@ -4,6 +4,13 @@
 
 ---
 
+## 2026-07-18 — Fix (Pass 14 #6): keep-local of a server-deleted conflict now converges
+
+- **Bug**: for a server-delete-vs-dirty conflict, `markConflict` stores an empty `ServerETag`; `ResolveKeepLocal` adopted that empty ETag but left `Href` non-empty, so the next reconcile hit `case !onServer && r.Dirty` (`sync.go`) and re-flagged the identical server-deleted conflict rather than reaching the create path (`r.Href=="" && r.Dirty`). The kept local version was never pushed back — the conflict recurred indefinitely and the item could never be resurrected server-side.
+- **Fix**: `ResolveKeepLocal` now clears `Href` when the conflict is a server *deletion* (`cm.ServerDeleted`), routing the next reconcile to the create path so the item is re-created on the server. The non-deleted (server-edited) case is unchanged — it keeps the Href and adopts the server ETag for a conditional overwrite.
+- **Repro-first**: `internal/sync/keeplocal_serverdeleted_test.go` (`TestKeepLocalServerDeletedConverges`) — first sync flags the server-deleted conflict, keep-local clears it, second sync re-raised it (`conflicts==1`) and pushed nothing; now the second sync converges (`conflicts==0`) and re-creates the item on the server.
+- Files: `internal/store/conflict.go`, `internal/sync/keeplocal_serverdeleted_test.go`. Full gate + `-race` on internal/sync + internal/store green.
+
 ## 2026-07-18 — Fix (Pass 14 #1): pushDelete's 412 branch no longer swallows a delete-vs-server-change conflict
 
 - **Bug**: on a conditional DELETE returning 412 (server changed under a local delete), `st.ClearTombstone` ran unconditionally *outside* the nested resurrect/flag guard. When the server version was unparseable, or (degraded download) the resource's individual GET failed so `serverByHref` lacked the href, the resurrect + `stashServerConflict` block was skipped but the tombstone was still erased — no conflict recorded, tombstone gone (violating never-silently-overwrite). In the parse-fail case no `recordSkip` fired either, so the CTag cached and the next sync's short-circuit permanently swallowed the server's change; in the degraded case the next full sync re-pulled the item clean, silently un-deleting it.
