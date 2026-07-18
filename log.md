@@ -4,6 +4,15 @@
 
 ---
 
+## 2026-07-18 — Docs: finalize Pass 16 (ledger, pass report, build plan, encoder-heal guardrail)
+
+- **Guardrail (rule 9 — recurring class)**: the decode-but-unencodable encoder-heal class reopened (pass 10 → 16), so updated CLAUDE.md's malformed-iCalendar guardrail: it now names `healComponentConstraints`/`dropUnusableTimezones`, records the owner-approved drop-an-unusable-component exception to the iron rule, and — the key addition — mandates that the heal set **mirror go-ical's full `encoder.go` validateComponent** (exactlyOne/atMostOne per component + `singleValuedProps`), re-diffed whenever a new component type is ingested or go-ical bumps, so the class can't reopen a third time.
+- **COVERAGE.md**: flipped the four pass-16 rows (encoder, CLI wiring, mouse, `:config`) to fixed; closed both pass-16 canaries (OPEN→CLOSED); replaced the "healer component-incomplete" and "mouse/:config UNFIXED" blind-spots with the resolved state + the new center-agenda-board click-select follow-up.
+- **PASS-16.md**: status line → all 6 fixed + both canaries closed (body kept as as-found evidence).
+- **main.md**: added the Pass 16 Build Plan line and rewrote the convergence scorecard — HIGH 2→2 (streak still zero), criterion 1 (matrix covered once) now effectively met but "covered once ≠ closed" when a prior closure was incomplete; corrected the stale "childless VTIMEZONE not auto-healed" accepted-gap (now stripped); est. ~1–2 re-sweep passes to earn a clean no-HIGH streak.
+- Three pre-session leftover repro files (helpflag/malformedvtimezone/repro_vjournal) were promoted to permanent regression tests as part of their fixes.
+- Files: `CLAUDE.md`, `docs/audit/COVERAGE.md`, `docs/audit/passes/PASS-16.md`, `main.md`, `log.md`.
+
 ## 2026-07-18 — Fix (Pass 16 HIGH, VTIMEZONE): strip an unencodable VTIMEZONE on ingest
 
 - **Bug** (the other half of the reopened decode-but-unencodable class): a VTIMEZONE missing TZID, or whose STANDARD/DAYLIGHT omits a required DTSTART/TZOFFSETTO/TZOFFSETFROM, decodes but fails `Encode()`, bricking the whole resource (incl. a valid sibling VEVENT) on the first edit. Distinct from the already-accepted "childless VTIMEZONE" gap (these have children, but incomplete ones).

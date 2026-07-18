@@ -21,8 +21,8 @@ not hidden. See `PROTOCOL.md`.
 | Sync reconcile state machine (reconcileCalendar/reconcileReadOnly case matrix, keep-both, Forget, read-only-twin branches) | internal/sync, internal/store | data-loss | 13,14,15 | recent (HIGH fixed pass 13: degraded fetch no longer inferred as deletion. Pass 14 MED fixed: pushDelete's 412 branch cleared the tombstone unconditionally, silently dropping a delete-vs-server-change conflict when the server version was unparseable or absent from a degraded download — it now clears the tombstone only after resurrect+flag, else keeps it and records a skip. Pass 14 LOW fixed: keep-local of a server-deleted conflict never converged — ResolveKeepLocal now clears the Href on a ServerDeleted conflict so reconcile re-creates the item instead of re-raising the conflict. Pass 15 re-swept the keep-both / Forget / read-only-twin data-loss branches — no new finding; the tombstone-vs-server-edit / re-pull-guard paths are exercised by the -race canary below) |
 | CalDAV request-construction (MKCALENDAR/PROPPATCH/DELETE bodies, resolve()/href, color/name validation, idempotency) | internal/caldav | fault-injection | 13 | recent (2 MED fixed: DELETE now idempotent on 404/410, MKCALENDAR idempotent on 405 — no more pending-delete/pending-create wedge) |
 | Sync concurrency | internal/sync | -race stress | 3,11 | recent (re-run post batching/CTag; no new race; the store-level clobber finding is fixed) |
-| CTag incremental short-circuit (skip DownloadAll) | internal/sync | data-loss | 11 | recent (no data-loss found in the skip decision itself) |
-| Background sync goroutines (startPeriodicSync timer + flushOnQuit quit push) | internal/ui, internal/sync | race | 11 | recent (no deadlock/race found) |
+| CTag incremental short-circuit (skip DownloadAll) | internal/sync | data-loss, fault-injection | 11,16 | recent (pass 16 fault-injected a stale/duplicate/absent/lying server CTag driving the skip decision — no finding; the skip is fail-safe) |
+| Background sync goroutines (startPeriodicSync timer + flushOnQuit quit push) | internal/ui, internal/sync | race | 11,16 | recent (pass 16 re-swept under -race against the pass 14–15 write-path changes (CheckRedirect, tombstone-412) — no deadlock/race found) |
 | Store filesystem robustness (paths, revert, rollback, load-time stale-temp sweep) | internal/store | deep audit, race | 9,15 | recent (pass 15 HIGH fixed: `loadCalendar`'s stale-temp sweep used the over-loose `isStaleTempName` (`HasPrefix(".") && Contains(".tmp-")`) and ran BEFORE the `.ics` extension filter, so a real resource whose sanitized name began with a dot and contained `.tmp-` (e.g. UID `.tmp-important@host` → `.tmp-important_host.ics`) was `os.Remove`'d on Open — permanent loss for an offline-created not-yet-pushed item, reachable from a hostile server href. `isStaleTempName` now requires the actual leftover shape — dot-prefixed and ENDING in `.tmp-<digits>` (what `os.CreateTemp` produces); a real resource ends in `.ics` so it can't match, and genuine leftovers are still swept (`TestOpenSweepsStaleTempFiles`). Repro `internal/store/staletemp_test.go`. Pass 15 -race stress on the write primitives found no race — see below) |
 | Local disk / config input boundaries | internal/config, internal/state, internal/store | deep audit, size caps, fuzz | 9,13 | recent (pass 13 fuzzed TOML parse / first-run round-trip / password_command stdout — no finding; canary hole below: config-read size cap untested) |
 | State-file load/parse (widths/hidden-cals/hour-zoom) | internal/state | fuzz (adversarial values), deep audit, size cap | 9,12 | recent (no parse finding; canary hole CLOSED: Save() temp+rename atomicity now tested) |
@@ -36,16 +36,16 @@ not hidden. See `PROTOCOL.md`.
 | Recurrence-edit UI orchestration (scope picker + this-&-future split/detach) | internal/ui | data-loss | 11 | recent (HIGH x2 + MED fixed: commitSplit/commitDetach rollback; DetachTodoOccurrence preserves props) |
 | UI draw paths (custom widgets) | internal/ui | display stress | 6,14 | recent (pass 14 re-swept the newer widgets — agendaboard/itemforms — no crash/freeze; no finding) |
 | UI input handlers (keys/chords/commands) | internal/ui | deep audit, input-edge | 9,13,14 | recent (pass 14 input-edged the raw non-command keypress/chord dispatch (keys.go navigation, grab activation, mode/drill transitions at boundary states) — no finding) |
-| CLI wiring | cmd/lazyplanner | deep audit | 9 | recent |
-| Mouse handling | internal/ui | input-edge | 10 | recent |
-| `:config` reload / $EDITOR flow | internal/ui, internal/config | fault-injection | 10 | recent (MED fixed: $EDITOR shell-split) |
+| CLI wiring | cmd/lazyplanner | deep audit, input-edge | 9,16 | recent (pass 16 input-edged the flag.FlagSet subcommand dispatch — 1 MED + 1 LOW, both fixed: a shared `parseFlags` helper returns flag.ErrHelp unchanged and tags other parse errors `errFlagParsed`; `report()` maps ErrHelp→exit 0 and errFlagParsed→exit 2 without re-printing, so `-h`/`--help` succeeds cleanly and a bad flag prints once. Canary CLOSED — new `conn_test.go` `TestConnFlagsClientRequiresAllCredentials` guards the credential path) |
+| Mouse handling | internal/ui | input-edge | 10,16 | recent (pass 16 LOW, fixed: a MouseLeftDoubleClick ran editSelected() *before* tview processed the event, so it edited the row left by the preceding single click. `treeNodeAtY` now re-targets the current node to the row under the cursor (public tview APIs only) before editing. Known limitation: the center agenda board has no click-to-select even for single clicks, so a double-click there still edits the current selection — board hit-testing is a follow-up. mouse.go) |
+| `:config` reload / $EDITOR flow | internal/ui, internal/config | fault-injection | 10,16 | recent (MED fixed pass 10: $EDITOR shell-split. Pass 16 MED, fixed: editConfigFn's reload path read `cfg, _, _, err := config.Load()`, discarding Load's warning — appearance-typo / world-readable-password warnings were silently lost on `:config` reload. Now combined with buildSyncFn's via `joinWarnings`. Canary CLOSED — `TestServerConfigured` asserts a partial (URL-only/username-only) config returns false) |
 | Store write pipeline atomicity (.ics + sidecar temp/rename) under disk fault | internal/store | fault-injection | 10,15 | recent (MED fixed pass 10: content-hash reconcile; delete-half left to safe re-pull. Pass 15 re-swept the sidecar/delete-half under injected partial-write/ENOSPC/rename-fail — the accepted delete-half residual still degrades to a safe re-pull and no new partial-write gap opened; no finding) |
 | Store write primitives under concurrent goroutines (mutate / PutIfUnchanged / RestoreDirty / tombstone racing PullRemoteBatch) | internal/store | race | 15 | recent (first direct -race stress at the store layer, previously only exercised via the sync engine; no race/deadlock found. Canary CAUGHT: dropping the `r.Href != ""` guard on the tombstone write fails `TestDeleteNeverSyncedLeavesNoTombstone`) |
 | Import ingest path (foreign/bundled external .ics via DownloadAll batch + per-resource GetObject fallback, ImportError collection) | internal/sync, cmd/lazyplanner | fuzz | 15 | recent (pass 15 MED — ACCEPTED RESIDUAL by owner decision 2026-07-18: a single resource mixing a UID-bearing component with a UID-less one fails to encode as a whole — the ingest healers deliberately never fabricate a UID (pass-3 #7), so go-ical's encoder rejects the ENTIRE resource ("want exactly one UID property, got 0") and import records the whole resource in `res.Skipped`, dropping a perfectly valid UID-bearing sibling. Surfaced (not silent), item-level loss, and reachable only from a malformed foreign/hand-edited `.ics` (RFC 5545 requires a UID). Not fixed because every fix crosses a hard invariant — fabricating a UID reverses a settled decision (churn), per-component encode weakens the iron rule (drops the UID-less component), and the CalDAV transport hands us an already-decoded `*ical.Calendar` so there are no raw bytes to preserve. Revisit if it ever bites a real server. See accepted gaps below) |
 | Yank/paste cross-list move & copy rollback | internal/ui | data-loss | 10 | recent (HIGH+MED fixed: per-component isolate/remove) |
 | Feature-promise conformance vs main.md/CLAUDE.md | (whole app) | spec-diff | 10,13 | recent (2 MED fixed: applyMutation (edit form + recur-scoped saves) and reparentSelected H/L now route through PutIfUnchanged — the "no Locate→Put clobber sites remain" invariant is now true again) |
 | Full `sync-collection` incremental (token delta) | internal/sync | — (deliberately deferred) | — | never |
-| go-ical semantic encoder constraints (DTEND/DUE+DURATION, empty VTIMEZONE, VJOURNAL/VFREEBUSY nesting) | internal/model | fuzz (re-encode round-trip) | 10 | recent (4 HIGH + 1 MED fixed: ingest healers) |
+| go-ical semantic encoder constraints (DTEND/DUE+DURATION, empty VTIMEZONE, VJOURNAL/VFREEBUSY nesting) | internal/model | fuzz (re-encode round-trip) | 10,16 | recent (4 HIGH + 1 MED fixed pass 10: ingest healers. Pass 16 re-fuzz found 2 more HIGH of the *same class* — the pass-10 healer set was component-incomplete — both now fixed: (a) a VTIMEZONE missing TZID, or a STANDARD/DAYLIGHT missing DTSTART/TZOFFSETTO/TZOFFSETFROM, bricked the resource at Encode() — `dropEmptyTimezones`→`dropUnusableTimezones` now strips such an unencodable VTIMEZONE on ingest (owner-approved; a referenced TZID degrades to floating time); (b) a VJOURNAL/VFREEBUSY missing DTSTAMP or carrying duplicate single-valued props — `ensureDTStamp` now runs for VJOURNAL/VFREEBUSY in `healComponentConstraints` and `singleValuedProps` gained CompJournal/CompFreeBusy entries. A missing UID on these components is still not healed (fabricating one would churn sync identity — accepted residual). Regression: `malformed_vtimezone_test.go`, `vjournal_encode_test.go`. **The healer table must mirror go-ical's full encoder.go validateComponent — codified as a Hard-won guardrail so this class does not reopen a third time**) |
 | Raspberry Pi target (on-device timing / kiosk) | (hardware) | — | — | never |
 
 ## Declared blind spots (not covered by any pass)
@@ -66,8 +66,22 @@ not hidden. See `PROTOCOL.md`.
   crosses a hard invariant (fabricate-UID reverses a settled decision; per-component encode
   weakens the iron rule; no raw bytes survive the transport's decode). Reachable only from a
   malformed foreign/hand-edited `.ics`. Revisit if a real server ever produces one.
-- **Mouse handling and `:config`/$EDITOR reload** (internal/ui) — stale since pass 10, carried
-  forward again; deprioritized below the CalDAV/store/reconcile cells the owner named.
+- **Mouse handling and `:config`/$EDITOR reload** (internal/ui) — audited pass 16, both findings
+  fixed (mouse double-click re-targets via `treeNodeAtY`; `:config` reload surfaces Load's
+  warning). RESOLVED except the noted center-agenda-board double-click limitation (below).
+- **Center agenda-board click-to-select** (internal/ui) — the board has no position→item hit-
+  testing, so neither a single nor double click on it selects the item under the cursor (a
+  double-click edits the current agenda selection). Low-impact follow-up; needs board-level
+  hit-testing.
+- **CLI subcommand connection-flag validation** (`cmd/lazyplanner/conn.go`, …) — RESOLVED
+  (pass 16): `conn_test.go` `TestConnFlagsClientRequiresAllCredentials` now covers the
+  credential-required guard directly (the escaped canary is closed).
+- **go-ical encoder healer coverage** — pass 16 closed the two component-incomplete HIGH
+  (VTIMEZONE-required-props stripped via `dropUnusableTimezones`; VJOURNAL/VFREEBUSY DTSTAMP +
+  dedupe). The healer table must mirror go-ical's full `encoder.go` validateComponent — now a
+  Hard-won guardrail in CLAUDE.md so the class does not reopen a third time. Residual: a missing
+  **UID** on any component is still not healed (fabricating one churns sync identity — the same
+  accepted residual as the pass-15 import MED).
 - **go-ical semantic encoder healing** — RESOLVED (pass 10 fix): the five
   decode-but-unencodable classes (VEVENT DTEND+DURATION, VTODO DUE+DURATION, VTODO
   DURATION-without-DTSTART, empty VTIMEZONE incl. the `stripForbiddenNesting` self-
@@ -92,6 +106,31 @@ Each is now closed with a boundary test verified to fail under its mutation befo
 - **`internal/config/config.go` `Load`**: dropping `io.LimitReader(f, maxConfigBytes)`
   removes the 4 MiB read cap. CLOSED — `TestLoadCapsReadSize` feeds an oversized file
   (valid before the cap, garbage after) so an uncapped read would error.
+
+## Escaped mutation canaries — pass 16 (2 of 4 escaped → now CLOSED)
+
+Both escapes were test-coverage holes in the CLI/config surfaces this pass targeted (code
+correct, guard untested); both are now closed with a boundary test verified to fail under its
+mutation.
+
+- **ESCAPE → CLOSED (pass 16)** — `internal/config/config.go` `Server.Configured()`: flipping
+  `s.URL != "" && s.Username != ""` → `||` passed the suite, which only called `Configured()` on
+  a fully-populated server; nothing asserted `false` for a partial (URL-only/username-only)
+  config, which would then be synced against. CLOSED — `TestServerConfigured` (table:
+  both/url-only/username-only/neither), verified to fail under the `||` flip.
+- **ESCAPE → CLOSED (pass 16)** — `cmd/lazyplanner/conn.go` `connFlags.client()`: flipping the
+  credential-required guard `*url=="" || *username=="" || *password==""` → `&&` passed — conn.go/
+  import.go/sync.go/calendar.go had NO direct tests, so a URL+username-without-password would
+  build a client with empty credentials. CLOSED — new `conn_test.go`
+  `TestConnFlagsClientRequiresAllCredentials` asserts an error for each partial-credential
+  combination, verified to fail under the `&&` flip.
+- **CAUGHT** — `internal/ui/calendarview.go` `drawDayItems` (~line 307): off-by-one
+  `if n <= avail` → `if n < avail` — `go test ./internal/ui/` FAILED
+  (`TestCalendarViewDrawsMonth`, exactly-fitting item pushed into a spurious "+N more").
+- **CAUGHT** — `internal/sync/sync.go` `reconcileCalendar` (line ~416): inverting both-sides-
+  changed conflict detection `serverObj.ETag != r.ETag` → `==` — `go test ./internal/sync/`
+  FAILED across 7 tests (incl. `TestSyncPushesLocalEdit`, `TestSyncConflictKeepsBoth`,
+  `TestSyncPushDoesNotClobberConcurrentEdit`, `TestSyncRefetchesOn412`).
 
 ## Escaped mutation canary — pass 15 (1 of 3 escaped → now CLOSED)
 

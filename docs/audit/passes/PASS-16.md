@@ -3,9 +3,14 @@
 - **Date:** 2026-07-18
 - **Prior pass:** Pass 15 (CalDAV write-redirect silent success + load-time stale-temp sweep eats real resources + import UID-less-sibling drop) — HIGH 2 · MED 1 · LOW 0
 - **This pass:** HIGH 2 · MED 2 · LOW 2 (all 6 confirmed with runnable failing-test repros executed and observed red)
-- **Status (2026-07-18): findings are AS-FOUND and UNFIXED** — this is the synthesis/evidence
-  report, not a verdict or a fix pass. Each finding below carries a red repro; disposition
-  (fix repro-first, or accept as residual) is the owner's next step.
+- **Status (2026-07-18): ALL 6 findings fixed + both escaped canaries closed.** Both HIGH
+  (VJOURNAL/VFREEBUSY DTSTAMP+dedupe heal; unencodable-VTIMEZONE strip, owner-approved), both
+  MED (:config reload warning; subcommand -h/--help exit), and both LOW (double-print; double-
+  click re-target) were fixed repro-first, and the `Server.Configured()` + `connFlags.client()`
+  canary holes are guarded. The two HIGH reopened the pass-10 encoder-heal class, now codified
+  as a Hard-won guardrail (mirror go-ical's full validateComponent). A missing **UID** on a
+  component stays an accepted residual (a fabricated UID churns sync identity). The findings
+  below are the point-in-time as-found evidence; see `log.md` (2026-07-18) and `COVERAGE.md`.
 
 This pass took the ledger's top stale/single-method cells the plan named: **mouse handling**
 (input-edge, stale since pass 10), the **`:config`/$EDITOR reload** fault paths (fault-injection,
