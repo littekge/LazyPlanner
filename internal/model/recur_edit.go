@@ -279,6 +279,41 @@ func dateOnlyUntil(rule string) string {
 	return strings.Join(parts, ";")
 }
 
+// filterRDates rewrites comp's RDATE properties to keep only the values whose
+// resolved instant satisfies keep — used to partition a series' RDATEs across a
+// this-and-future split so a one-off RDATE lands in exactly one half, not both.
+// RDATE lines may be comma-multi-valued (RFC 5545); each value is judged
+// individually and the original value text is preserved so a VALUE=PERIOD element
+// round-trips unchanged. A value that cannot be resolved is kept — never silently
+// drop data we can't interpret (iron rule).
+func filterRDates(comp *ical.Component, keep func(time.Time) bool, loc *time.Location) {
+	props := comp.Props[ical.PropRecurrenceDates]
+	if len(props) == 0 {
+		return
+	}
+	var out []ical.Prop
+	for _, p := range props {
+		var keptVals []string
+		for _, v := range strings.Split(p.Value, ",") {
+			probe := cloneProp(p)
+			probe.Value = periodStart(v)
+			if t, err := resolveDateTime(&probe, loc); err != nil || keep(t) {
+				keptVals = append(keptVals, v)
+			}
+		}
+		if len(keptVals) > 0 {
+			np := cloneProp(p)
+			np.Value = strings.Join(keptVals, ",")
+			out = append(out, np)
+		}
+	}
+	if len(out) == 0 {
+		delete(comp.Props, ical.PropRecurrenceDates)
+	} else {
+		comp.Props[ical.PropRecurrenceDates] = out
+	}
+}
+
 // CapSeries caps the master's recurrence at `until` (inclusive), so the series
 // ends there — the master half of a this-and-future split, and the whole of a
 // this-and-future delete. Any COUNT is dropped (UNTIL replaces it) and overrides
@@ -310,6 +345,13 @@ func CapSeries(obj *Parsed, uid string, until time.Time, now time.Time, loc *tim
 			rp.Value = dateOnlyUntil(rp.Value)
 		}
 	}
+	// UNTIL bounds only the RRULE generator, not RDATEs (rrule-go's Set.Iterator
+	// merges RDATEs independent of UNTIL), so a trailing RDATE after the cut would
+	// still be emitted by the capped past half — and again by the future series,
+	// which keeps it (NewSeriesFrom) — a duplicated occurrence and the iron-rule
+	// hazard of one unmodeled property becoming two live instances. Keep only
+	// RDATEs at or before the cut.
+	filterRDates(master, func(t time.Time) bool { return !t.After(until) }, loc)
 	touch(master, now)
 
 	kept := clone.Calendar.Children[:0]
@@ -367,6 +409,11 @@ func NewSeriesFrom(obj *Parsed, uid string, occ time.Time, mutate func(*ical.Com
 	// this-and-future split doesn't strip reminders from every future occurrence
 	// (iron rule).
 	comp.Children = cloneChildren(master)
+	// Keep only RDATEs at or after the split point: a pre-split RDATE belongs to
+	// the capped past half, and copying it here would make the future series emit
+	// an extra instant before its own start. Paired with CapSeries dropping
+	// post-cut RDATEs, this partitions each RDATE into exactly one half.
+	filterRDates(comp, func(t time.Time) bool { return !t.Before(occ) }, loc)
 	newUID := NewUID()
 	comp.Props.SetText(ical.PropUID, newUID)
 	// Preserve the rule's bound: keep an absolute UNTIL as-is, and reduce a COUNT by

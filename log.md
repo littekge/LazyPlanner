@@ -4,6 +4,13 @@
 
 ---
 
+## 2026-07-18 — Fix (Pass 14 #5): this-and-future split no longer duplicates a trailing RDATE
+
+- **Bug**: `CapSeries` caps the past half by setting only the RRULE's UNTIL/Count — but UNTIL bounds only the RRULE generator (rrule-go's `Set.Iterator` merges RDATEs independent of UNTIL), so a trailing RDATE after the cut stayed on the capped master, and `NewSeriesFrom` copied every master prop (including that RDATE) into the future series. The one-off RDATE instant was emitted by BOTH resources — one more occurrence than the original, contradicting `main.md:362` and the iron rule (a single unmodeled property becoming two live occurrences).
+- **Fix**: new `filterRDates` partitions a component's RDATE values by a time predicate (handling comma-multi-valued lines and preserving `VALUE=PERIOD` text; unresolvable values kept — iron rule). `CapSeries` drops RDATEs after the cut; `NewSeriesFrom` keeps only RDATEs at or after the split point — so each RDATE lands in exactly one half.
+- **Repro-first**: `internal/model/recur_split_rdate_test.go` (`TestSplitDoesNotDuplicateTrailingRDate`) — FREQ=WEEKLY;COUNT=4 + trailing RDATE (5 total), split at 3rd instance: the RDATE appeared in both halves (total 6), now appears once (total 5).
+- Files: `internal/model/recur_edit.go`, `internal/model/recur_split_rdate_test.go`. Full gate green.
+
 ## 2026-07-18 — Fix (Pass 14 #4): this-and-future split no longer adds a phantom occurrence past an EXDATE
 
 - **Bug**: `main.md:362` promises a bounded COUNT is preserved across a this-and-future split so the total occurrence count is unchanged, but `NewSeriesFrom` reduced the future series' COUNT by `occurrencesBefore`, which counted the *EXDATE-filtered visible* recurrence set. RFC 5545 COUNT bounds the RRULE generator and an EXDATE'd instance still consumes COUNT, so every pre-split EXDATE undercounted the past half by one, leaving the future COUNT one too high and appending an occurrence the original series never had (app-reachable via delete-this-occurrence then this-and-future edit).
