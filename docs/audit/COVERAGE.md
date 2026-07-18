@@ -16,14 +16,14 @@ not hidden. See `PROTOCOL.md`.
 | Subtask tree build | internal/model | fuzz, scale | 4,5 | recent |
 | Quick-add parser | internal/model | fuzz, input-edge | 4,14 | recent (MED fixed pass 14: an invalid day-of-month in the slashed `2/30` and month-name `feb 30` forms was silently normalized by time.Date to a wrong date and rolled a year forward — validYMD/rollForwardMonthDay now reject it, matching the ISO form and the leave-text-in-title principle) |
 | Timezone / DST | internal/model | exhaustive sweep, fuzz | 8,14 | recent (MED fixed pass 14: resolveDateTime parsed only a single date-time, so an RFC-5545-valid comma-listed multi-valued RDATE/EXDATE — or VALUE=PERIOD RDATE — errored and Occurrences collapsed the whole RRULE series to its base instance; resolveDateTimeValues now splits per value. Codified as a Hard-won guardrail) |
-| CalDAV network boundary | internal/caldav | fault-injection, panic-guard | 4,7 | recent |
+| CalDAV network boundary (response-parse: multiget/PROPFIND/REPORT decode, hand-rolled ListObjectHrefs XML, truncated/oversized bodies, redirects) | internal/caldav | fault-injection, panic-guard, fuzz | 4,7,15 | recent (pass 15 HIGH fixed: `PutObject`/`DeleteObject` followed a 301/302/303 on writes — Go's default redirect policy downgrades PUT/DELETE to a bodyless GET dropping the body + If-Match/If-None-Match; a 200/204 on the followed GET landed in the success set, so the write silently vanished and sync cleared the dirty flag. `NewClient` now installs a method-aware `CheckRedirect` returning `http.ErrUseLastResponse` for write methods (`isWriteMethod`), and `PutObject`/`DeleteObject` treat any 3xx as an error; reads and RFC 6764 `.well-known` discovery still follow redirects. Repro `internal/caldav/redirect_test.go`. Canary CLOSED this pass: `ListObjectHrefs` nested-collection filter now guarded by `TestListObjectHrefsExcludesNestedCollection` — see below) |
 | Sync engine (data-loss / TOCTOU) | internal/sync | deep audit | 3,11 | recent (HIGH fixed: PullRemoteBatch skips a Dirty resource via store.ErrKeptLocalEdit) |
-| Sync reconcile state machine (reconcileCalendar/reconcileReadOnly case matrix, keep-both, Forget branches) | internal/sync, internal/store | data-loss | 13,14 | recent (HIGH fixed pass 13: degraded fetch no longer inferred as deletion. Pass 14 MED fixed: pushDelete's 412 branch cleared the tombstone unconditionally, silently dropping a delete-vs-server-change conflict when the server version was unparseable or absent from a degraded download — it now clears the tombstone only after resurrect+flag, else keeps it and records a skip. Pass 14 LOW fixed: keep-local of a server-deleted conflict never converged — ResolveKeepLocal now clears the Href on a ServerDeleted conflict so reconcile re-creates the item instead of re-raising the conflict) |
+| Sync reconcile state machine (reconcileCalendar/reconcileReadOnly case matrix, keep-both, Forget, read-only-twin branches) | internal/sync, internal/store | data-loss | 13,14,15 | recent (HIGH fixed pass 13: degraded fetch no longer inferred as deletion. Pass 14 MED fixed: pushDelete's 412 branch cleared the tombstone unconditionally, silently dropping a delete-vs-server-change conflict when the server version was unparseable or absent from a degraded download — it now clears the tombstone only after resurrect+flag, else keeps it and records a skip. Pass 14 LOW fixed: keep-local of a server-deleted conflict never converged — ResolveKeepLocal now clears the Href on a ServerDeleted conflict so reconcile re-creates the item instead of re-raising the conflict. Pass 15 re-swept the keep-both / Forget / read-only-twin data-loss branches — no new finding; the tombstone-vs-server-edit / re-pull-guard paths are exercised by the -race canary below) |
 | CalDAV request-construction (MKCALENDAR/PROPPATCH/DELETE bodies, resolve()/href, color/name validation, idempotency) | internal/caldav | fault-injection | 13 | recent (2 MED fixed: DELETE now idempotent on 404/410, MKCALENDAR idempotent on 405 — no more pending-delete/pending-create wedge) |
 | Sync concurrency | internal/sync | -race stress | 3,11 | recent (re-run post batching/CTag; no new race; the store-level clobber finding is fixed) |
 | CTag incremental short-circuit (skip DownloadAll) | internal/sync | data-loss | 11 | recent (no data-loss found in the skip decision itself) |
 | Background sync goroutines (startPeriodicSync timer + flushOnQuit quit push) | internal/ui, internal/sync | race | 11 | recent (no deadlock/race found) |
-| Store filesystem robustness | internal/store | deep audit (paths, revert, rollback) | 9 | recent |
+| Store filesystem robustness (paths, revert, rollback, load-time stale-temp sweep) | internal/store | deep audit, race | 9,15 | recent (pass 15 HIGH fixed: `loadCalendar`'s stale-temp sweep used the over-loose `isStaleTempName` (`HasPrefix(".") && Contains(".tmp-")`) and ran BEFORE the `.ics` extension filter, so a real resource whose sanitized name began with a dot and contained `.tmp-` (e.g. UID `.tmp-important@host` → `.tmp-important_host.ics`) was `os.Remove`'d on Open — permanent loss for an offline-created not-yet-pushed item, reachable from a hostile server href. `isStaleTempName` now requires the actual leftover shape — dot-prefixed and ENDING in `.tmp-<digits>` (what `os.CreateTemp` produces); a real resource ends in `.ics` so it can't match, and genuine leftovers are still swept (`TestOpenSweepsStaleTempFiles`). Repro `internal/store/staletemp_test.go`. Pass 15 -race stress on the write primitives found no race — see below) |
 | Local disk / config input boundaries | internal/config, internal/state, internal/store | deep audit, size caps, fuzz | 9,13 | recent (pass 13 fuzzed TOML parse / first-run round-trip / password_command stdout — no finding; canary hole below: config-read size cap untested) |
 | State-file load/parse (widths/hidden-cals/hour-zoom) | internal/state | fuzz (adversarial values), deep audit, size cap | 9,12 | recent (no parse finding; canary hole CLOSED: Save() temp+rename atomicity now tested) |
 | Quick-field edits (sp/sd) — Locate→Put write | internal/ui, internal/model | data-loss | 12 | recent (HIGH STATUS-flatten + MED COMPLETED-restamp + MED TOCTOU all fixed) |
@@ -39,7 +39,9 @@ not hidden. See `PROTOCOL.md`.
 | CLI wiring | cmd/lazyplanner | deep audit | 9 | recent |
 | Mouse handling | internal/ui | input-edge | 10 | recent |
 | `:config` reload / $EDITOR flow | internal/ui, internal/config | fault-injection | 10 | recent (MED fixed: $EDITOR shell-split) |
-| Store write pipeline atomicity (.ics + sidecar temp/rename) under disk fault | internal/store | fault-injection | 10 | recent (MED fixed: content-hash reconcile; delete-half left to safe re-pull) |
+| Store write pipeline atomicity (.ics + sidecar temp/rename) under disk fault | internal/store | fault-injection | 10,15 | recent (MED fixed pass 10: content-hash reconcile; delete-half left to safe re-pull. Pass 15 re-swept the sidecar/delete-half under injected partial-write/ENOSPC/rename-fail — the accepted delete-half residual still degrades to a safe re-pull and no new partial-write gap opened; no finding) |
+| Store write primitives under concurrent goroutines (mutate / PutIfUnchanged / RestoreDirty / tombstone racing PullRemoteBatch) | internal/store | race | 15 | recent (first direct -race stress at the store layer, previously only exercised via the sync engine; no race/deadlock found. Canary CAUGHT: dropping the `r.Href != ""` guard on the tombstone write fails `TestDeleteNeverSyncedLeavesNoTombstone`) |
+| Import ingest path (foreign/bundled external .ics via DownloadAll batch + per-resource GetObject fallback, ImportError collection) | internal/sync, cmd/lazyplanner | fuzz | 15 | recent (pass 15 MED — ACCEPTED RESIDUAL by owner decision 2026-07-18: a single resource mixing a UID-bearing component with a UID-less one fails to encode as a whole — the ingest healers deliberately never fabricate a UID (pass-3 #7), so go-ical's encoder rejects the ENTIRE resource ("want exactly one UID property, got 0") and import records the whole resource in `res.Skipped`, dropping a perfectly valid UID-bearing sibling. Surfaced (not silent), item-level loss, and reachable only from a malformed foreign/hand-edited `.ics` (RFC 5545 requires a UID). Not fixed because every fix crosses a hard invariant — fabricating a UID reverses a settled decision (churn), per-component encode weakens the iron rule (drops the UID-less component), and the CalDAV transport hands us an already-decoded `*ical.Calendar` so there are no raw bytes to preserve. Revisit if it ever bites a real server. See accepted gaps below) |
 | Yank/paste cross-list move & copy rollback | internal/ui | data-loss | 10 | recent (HIGH+MED fixed: per-component isolate/remove) |
 | Feature-promise conformance vs main.md/CLAUDE.md | (whole app) | spec-diff | 10,13 | recent (2 MED fixed: applyMutation (edit form + recur-scoped saves) and reparentSelected H/L now route through PutIfUnchanged — the "no Locate→Put clobber sites remain" invariant is now true again) |
 | Full `sync-collection` incremental (token delta) | internal/sync | — (deliberately deferred) | — | never |
@@ -55,6 +57,17 @@ not hidden. See `PROTOCOL.md`.
 - **`DayAgenda` inclusive dayStart boundary** (pass-14 canary escape) — RESOLVED (pass 14):
   `TestDayAgendaIncludesTodoDueAtMidnight` now pins a todo due exactly at 00:00, verified to
   fail under the `Before→After` mutation. See the pass-14 canary section.
+- **`ListObjectHrefs` nested-collection filter** (pass-15 canary escape) — RESOLVED (pass 15):
+  `TestListObjectHrefsExcludesNestedCollection` adds a nested sub-collection href ≠ the query
+  path, verified to fail under dropping `|| r.isCollection()`. See the pass-15 canary section.
+- **Import of a resource mixing a UID-bearing with a UID-less component** (pass-15 MED) —
+  ACCEPTED RESIDUAL (owner decision 2026-07-18): the whole resource fails go-ical's encoder and
+  is skipped, dropping the valid sibling (surfaced in `res.Skipped`, not silent). Every fix
+  crosses a hard invariant (fabricate-UID reverses a settled decision; per-component encode
+  weakens the iron rule; no raw bytes survive the transport's decode). Reachable only from a
+  malformed foreign/hand-edited `.ics`. Revisit if a real server ever produces one.
+- **Mouse handling and `:config`/$EDITOR reload** (internal/ui) — stale since pass 10, carried
+  forward again; deprioritized below the CalDAV/store/reconcile cells the owner named.
 - **go-ical semantic encoder healing** — RESOLVED (pass 10 fix): the five
   decode-but-unencodable classes (VEVENT DTEND+DURATION, VTODO DUE+DURATION, VTODO
   DURATION-without-DTSTART, empty VTIMEZONE incl. the `stripForbiddenNesting` self-
@@ -79,6 +92,31 @@ Each is now closed with a boundary test verified to fail under its mutation befo
 - **`internal/config/config.go` `Load`**: dropping `io.LimitReader(f, maxConfigBytes)`
   removes the 4 MiB read cap. CLOSED — `TestLoadCapsReadSize` feeds an oversized file
   (valid before the cap, garbage after) so an uncapped read would error.
+
+## Escaped mutation canary — pass 15 (1 of 3 escaped → now CLOSED)
+
+The escape was a test-coverage hole (code correct, path unguarded); it is now closed.
+
+- **ESCAPE → CLOSED (pass 15)** — `internal/caldav/listobjects.go` `ListObjectHrefs`: removing
+  the `|| r.isCollection()` clause from the member-filter passed `go test ./internal/caldav/`.
+  `TestListObjectHrefs`'s fixture had exactly one collection response whose href equaled the
+  queried calendar path, so the surviving path-equality clause (`TrimRight(href,"/") ==
+  collection`) still excluded it and the count was unchanged. Nothing exercised a **nested**
+  sub-collection (a distinct href that is a collection, e.g. `/dav/cal/personal/inbox/`) —
+  precisely what `isCollection()` exists to filter; a regression would leak nested-collection
+  hrefs, and the per-resource download fallback would GET a collection URL as an event object.
+  CLOSED — `TestListObjectHrefsExcludesNestedCollection` adds a nested-collection href ≠ the
+  query path and asserts it is excluded, verified to fail under the dropped clause.
+- **CAUGHT** — `internal/store/mutate.go` `Store.remove` (tombstone `r.Href != ""` guard):
+  `if tombstone && r.Href != ""` → `if tombstone` — `go test ./internal/store/` FAILED,
+  `TestDeleteNeverSyncedLeavesNoTombstone`. A never-synced local delete would otherwise leave a
+  tombstone that a later sync tries to DELETE server-side for a resource that never existed.
+- **CAUGHT** — `internal/sync/sync.go` `reconcileCalendar` step B (pull-server-absent-locally):
+  dropping `|| tombstonedHref[o.Path]` → re-pulls a locally-deleted-but-unpushed resource,
+  resurrecting it. `go test ./internal/sync/` FAILED across 5 tests
+  (`TestSyncPushesTombstoneDelete`, `TestSyncTombstoneVsServerEditIsConflict`,
+  `TestSyncDeleteTransient403KeepsTombstone`, `TestSyncDeleteConfirmedReadOnlyDiscards`,
+  `TestUndoOfSyncedDeleteSurvivesNextSync`).
 
 ## Escaped mutation canary — pass 14 (1 of 3 escaped → now CLOSED)
 

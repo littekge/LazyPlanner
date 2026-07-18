@@ -4,6 +4,15 @@
 
 ---
 
+## 2026-07-18 — Docs: finalize Pass 15 (ledger, pass report, build plan, MED accepted residual)
+
+- **Owner decision**: MED #3 (import drops a valid sibling of a UID-less component) is accepted as a **documented residual**, not fixed — every fix crosses a hard invariant (fabricate-UID reverses the settled no-fabricate decision; per-component encode weakens the iron rule; the CalDAV transport hands us an already-decoded `*ical.Calendar`, so no raw bytes survive to preserve), and it's reachable only from a malformed foreign/hand-edited `.ics` with the loss surfaced in `res.Skipped`.
+- **Guardrail check**: the two HIGH share no coding-*practice* root cause (one is HTTP-client redirect policy, one is a load-time filename heuristic) — no new Hard-won guardrail warranted (each is guarded by its regression test). Recorded per the protocol's convergence-record rule.
+- **COVERAGE.md**: flipped the CalDAV response-parse and store-filesystem rows from HIGH-UNFIXED to fixed; marked the import row an accepted residual; closed the pass-15 `ListObjectHrefs` canary (OPEN→CLOSED); added the import MED to the accepted-gaps list.
+- **PASS-15.md**: status line updated (both HIGH fixed, canary closed, MED accepted residual), body kept as as-found evidence.
+- **main.md**: added the Pass 15 Build Plan line and rewrote the convergence scorecard — HIGH 0→2 resets criterion 2; the gap-closing pass validated that stale cells still hid HIGH bugs; added the import MED to permanently-accepted gaps.
+- Files: `docs/audit/COVERAGE.md`, `docs/audit/passes/PASS-15.md`, `main.md`, `log.md`.
+
 ## 2026-07-18 — Test (Pass 15 canary): guard ListObjectHrefs nested-collection filter
 
 - **Canary escape** (test-coverage hole, not a code bug): `ListObjectHrefs` excludes a member with `strings.TrimRight(href,"/") == collection || r.isCollection()`, but the shared fixture's only collection had an href *equal* to the query path — so the path-equality clause masked the loss of `isCollection()`, and dropping it passed the suite. A regression would leak a nested sub-collection href (e.g. a scheduling `inbox/`) as a member resource, which the per-resource download fallback would then GET as an event object.

@@ -3,9 +3,16 @@
 - **Date:** 2026-07-18
 - **Prior pass:** Pass 14 (reconcile 412 tombstone drop + recurrence write-side split defects + multi-valued RDATE/EXDATE collapse + quick-add day-range) — HIGH 0 · MED 5 · LOW 1
 - **This pass:** HIGH 2 · MED 1 · LOW 0 (all 3 confirmed with runnable failing-test repros executed and observed red)
-- **Status (2026-07-18): findings UNFIXED** — this pass is the evidence report. Each finding
-  carries a proposed regression test left in the tree, currently RED; each should be fixed
-  repro-first (one commit per fix, full gate every commit) and its test kept as a guard.
+- **Status (2026-07-18): both HIGH fixed + the escaped canary closed; the MED accepted as a
+  documented residual (owner decision).** The two HIGH were fixed repro-first (redirect →
+  method-aware `CheckRedirect` + 3xx-as-error; stale-temp → require the `.tmp-<digits>` shape),
+  the canary is guarded (`TestListObjectHrefsExcludesNestedCollection`), and the MED (import
+  drops a valid sibling of a UID-less component) was **not** fixed — every fix crosses a hard
+  invariant (fabricate-UID reverses a settled decision; per-component encode weakens the iron
+  rule; the transport hands us an already-decoded calendar, so no raw bytes survive to
+  preserve). It is reachable only from a malformed foreign/hand-edited `.ics` and is surfaced,
+  not silent. See `log.md` (2026-07-18) and `COVERAGE.md`. The findings below are the
+  point-in-time as-found evidence.
 
 This pass took the ledger's top stale/never CalDAV + store + sync cells head-on, the matrix
 cells `main.md`'s convergence paragraph names as the remaining work: the **CalDAV
