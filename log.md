@@ -4,6 +4,13 @@
 
 ---
 
+## 2026-07-18 — Fix (Pass 16 HIGH, safe part): heal VJOURNAL/VFREEBUSY encode constraints
+
+- **Bug** (part of the reopened decode-but-unencodable class): a foreign resource carrying a **VJOURNAL/VFREEBUSY** that omits DTSTAMP, or carries a duplicate single-valued property, decodes but fails `Encode()` — go-ical's encoder requires exactly-one {DTSTAMP, UID} and at-most-one for a list of props on these components, and the ingest healers covered only VEVENT/VTODO/VTIMEZONE. The whole resource (incl. a valid sibling VEVENT) became unwritable on the first edit.
+- **Fix** (add-only, no fabricated semantics): added VJOURNAL and VFREEBUSY entries to `singleValuedProps` (so `dedupeSingleValued` drops encode-blocking duplicates on them), and `healComponentConstraints` now DTSTAMP-heals VJOURNAL/VFREEBUSY the same way `Parse` does VEVENT/VTODO. A **missing UID** on these components is still not healed (fabricating one would churn sync identity — the settled decision / pass-15 residual) and is part of the separate heal-vs-accept decision, together with the malformed-VTIMEZONE HIGH.
+- **Repro-first**: `internal/model/vjournal_encode_test.go` (`TestHealVJournalMissingDTSTAMP`, `TestHealVJournalDuplicateSingleValued`, `TestHealVFreeBusyMissingDTSTAMP`) — each previously failed `Encode()`, now green.
+- Files: `internal/model/decode.go`, `internal/model/vjournal_encode_test.go`. Full gate (test + vet + staticcheck) green.
+
 ## 2026-07-18 — Audit: Pass 16 (mouse / :config, plus opportunistic encoder + CLI sweeps)
 
 - Ran the `hardening-audit` workflow targeting the last stale headless cells (mouse handling input-edge; `:config`/`$EDITOR` reload fault-injection). The run hit the session usage limit mid-canary/synthesis; **resumed** after reset (`resumeFromRunId`) — completed audit/verify agents replayed from cache, canaries + synthesis re-ran, `enforcement.valid: true`. The plan swept broader than the two targets (also go-ical encoder fuzz, CLI wiring, CTag, background-sync goroutines).

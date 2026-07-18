@@ -111,9 +111,11 @@ func Parse(cal *ical.Calendar, loc *time.Location) (*Parsed, error) {
 // validateComponent): per component type, the properties it requires to appear
 // exactly once or at most once. A malformed object carrying duplicates decodes
 // but fails to encode ("want exactly one/at most one … got N"), so the whole
-// resource — not just the bad item — becomes unwritable. Only the component
-// types LazyPlanner emits are listed; if go-ical's rules change on a dependency
-// bump, re-check this table.
+// resource — not just the bad item — becomes unwritable. Every component type
+// LazyPlanner might ingest and re-encode is listed (not just the VEVENT/VTODO it
+// emits — a foreign resource can carry a VJOURNAL/VFREEBUSY whose duplicate would
+// otherwise brick the whole resource on save); if go-ical's rules change on a
+// dependency bump, re-check this table against encoder.go's validateComponent.
 var singleValuedProps = map[string][]string{
 	ical.CompCalendar: {
 		ical.PropProductID, ical.PropVersion, ical.PropCalendarScale, ical.PropMethod,
@@ -134,6 +136,16 @@ var singleValuedProps = map[string][]string{
 		ical.PropLastModified, ical.PropLocation, ical.PropOrganizer, ical.PropPercentComplete,
 		ical.PropPriority, ical.PropRecurrenceID, ical.PropSequence, ical.PropStatus,
 		ical.PropSummary, ical.PropURL, ical.PropDue, ical.PropDuration, ical.PropColor,
+	},
+	ical.CompJournal: {
+		ical.PropDateTimeStamp, ical.PropUID, ical.PropClass, ical.PropCreated,
+		ical.PropDateTimeStart, ical.PropLastModified, ical.PropOrganizer,
+		ical.PropRecurrenceID, ical.PropSequence, ical.PropStatus, ical.PropSummary,
+		ical.PropURL, ical.PropColor,
+	},
+	ical.CompFreeBusy: {
+		ical.PropDateTimeStamp, ical.PropUID, ical.PropContact, ical.PropDateTimeStart,
+		ical.PropDateTimeEnd, ical.PropOrganizer, ical.PropURL,
 	},
 	ical.CompTimezone: {
 		ical.PropTimezoneID, ical.PropLastModified, ical.PropTimezoneURL,
@@ -253,6 +265,13 @@ func healComponentConstraints(cal *ical.Calendar) {
 			if comp.Props.Get(ical.PropDuration) != nil && (hasDue || !hasStart) {
 				comp.Props.Del(ical.PropDuration)
 			}
+		case ical.CompJournal, ical.CompFreeBusy:
+			// go-ical's encoder requires exactly one DTSTAMP on these components too,
+			// but Parse only DTSTAMP-heals the VEVENT/VTODO it parses into typed items.
+			// A foreign VJOURNAL/VFREEBUSY without DTSTAMP decodes yet bricks the whole
+			// resource on re-encode, so heal it here (a missing UID still can't be
+			// healed — fabricating one would churn sync identity; see main.md).
+			ensureDTStamp(comp)
 		}
 	}
 }
