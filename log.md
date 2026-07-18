@@ -4,6 +4,14 @@
 
 ---
 
+## 2026-07-18 — Audit: Pass 16 (mouse / :config, plus opportunistic encoder + CLI sweeps)
+
+- Ran the `hardening-audit` workflow targeting the last stale headless cells (mouse handling input-edge; `:config`/`$EDITOR` reload fault-injection). The run hit the session usage limit mid-canary/synthesis; **resumed** after reset (`resumeFromRunId`) — completed audit/verify agents replayed from cache, canaries + synthesis re-ran, `enforcement.valid: true`. The plan swept broader than the two targets (also go-ical encoder fuzz, CLI wiring, CTag, background-sync goroutines).
+- **6 confirmed findings, all repros verified red** (HIGH 2 · MED 2 · LOW 2): (HIGH) a malformed **VTIMEZONE** (missing TZID, or STANDARD/DAYLIGHT missing DTSTART/TZOFFSETTO/TZOFFSETFROM) and (HIGH) a **VJOURNAL/VFREEBUSY** missing DTSTAMP or with duplicate single-valued props both decode but fail `Encode()`, bricking the whole resource — the **same decode-but-unencodable class Pass 10 declared closed**, now shown component-incomplete; (MED) `:config` reload discards `config.Load`'s warning (typo + world-readable-password lost); (MED) subcommand `-h/--help` exits non-zero with a spurious error line; (LOW) a bad subcommand flag prints twice; (LOW) double-click edits the previously-selected row. **2 canaries escaped** (`Server.Configured()` partial-config; the whole `connFlags.client()` credential path untested).
+- **Convergence**: HIGH held at 2 (no-HIGH streak stays broken), total 3→6; not converged, and the reopened encoder-heal class implicates criterion 3. Three of the six repro files (helpflag, malformedvtimezone, repro_vjournal) predated this session as untracked leftovers — long-standing, previously-found-but-never-fixed.
+- Removed the 4 leaked canary worktrees. Owner direction: heal the safe HIGH parts (VJOURNAL DTSTAMP/dedupe) + fix all MED/LOW + add the 2 canary guards, repro-first; bring the un-healable HIGH parts (VTIMEZONE TZID/offsets) as a separate heal-vs-accept decision.
+- Files: `docs/audit/passes/PASS-16.md` (new). Fixes land in following repro-first commits; `COVERAGE.md` finalized with them.
+
 ## 2026-07-18 — Docs: CLAUDE.md Session Startup wording + summary step
 
 - Committed a pre-existing uncommitted CLAUDE.md edit (present at session start, not part of the audit work): retitled the Session Startup list from "Before starting any task" to "When reading this file for the first time", and added step 5 — give the user a short summary of the most recently completed task and the recommended next steps. Fixed the "reccomended" typo in the same increment. A legitimate HOW change (how a session opens).
