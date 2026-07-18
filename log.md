@@ -4,6 +4,12 @@
 
 ---
 
+## 2026-07-18 — Test (Pass 15 canary): guard ListObjectHrefs nested-collection filter
+
+- **Canary escape** (test-coverage hole, not a code bug): `ListObjectHrefs` excludes a member with `strings.TrimRight(href,"/") == collection || r.isCollection()`, but the shared fixture's only collection had an href *equal* to the query path — so the path-equality clause masked the loss of `isCollection()`, and dropping it passed the suite. A regression would leak a nested sub-collection href (e.g. a scheduling `inbox/`) as a member resource, which the per-resource download fallback would then GET as an event object.
+- **Guard**: new `TestListObjectHrefsExcludesNestedCollection` with a fixture containing a nested sub-collection whose href ≠ the query path, asserting it is excluded. Adversarially verified: dropping `|| r.isCollection()` makes this test FAIL; reverting restores green. `listobjects.go` unchanged (code already correct).
+- Files: `internal/caldav/listobjects_test.go`. Full gate green.
+
 ## 2026-07-18 — Fix (Pass 15 HIGH #2): stale-temp sweep no longer deletes a legitimate .ics on Open
 
 - **Bug**: `loadCalendar`'s stale-temp sweep used `isStaleTempName` = `HasPrefix(".") && Contains(".tmp-")`, matching any dot-prefixed name *containing* `.tmp-`. A real resource whose UID sanitized to such a name (e.g. `.tmp-important@host` → `.tmp-important_host.ics`) was `os.Remove`'d on every `Store.Open` — permanent loss for an offline-created, not-yet-pushed item, and reachable from a hostile import href.
