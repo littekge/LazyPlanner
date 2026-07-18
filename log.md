@@ -4,6 +4,14 @@
 
 ---
 
+## 2026-07-18 — Fix (Pass 16 HIGH, VTIMEZONE): strip an unencodable VTIMEZONE on ingest
+
+- **Bug** (the other half of the reopened decode-but-unencodable class): a VTIMEZONE missing TZID, or whose STANDARD/DAYLIGHT omits a required DTSTART/TZOFFSETTO/TZOFFSETFROM, decodes but fails `Encode()`, bricking the whole resource (incl. a valid sibling VEVENT) on the first edit. Distinct from the already-accepted "childless VTIMEZONE" gap (these have children, but incomplete ones).
+- **Owner decision**: strip the unusable VTIMEZONE (over best-effort heal or accept-residual) — precedent-aligned with the existing empty-VTIMEZONE drop, and an unencodable VTIMEZONE carries no usable offset anyway.
+- **Fix**: broadened `dropEmptyTimezones` → `dropUnusableTimezones`, which drops a VTIMEZONE that is empty, lacks TZID, or has a STANDARD/DAYLIGHT missing a required prop (new `timezoneUsable` predicate; runs after `dedupeSingleValued` so a duplicate isn't mistaken for a missing prop). A referenced TZID that no longer resolves degrades to floating time via `resolveDateTime` (the app's existing fallback), so nothing usable is lost. Iron-rule trade-off: one corrupt, unusable component is dropped to keep the resource — and its valid events — writable.
+- **Repro-first**: `internal/model/malformed_vtimezone_test.go` (`TestMalformedVTimezoneDroppedKeepsResourceWritable`) — all three malformed cases now re-encode with the VEVENT intact; the existing `TestEmptyVTimezoneBlocksEncode` still passes.
+- Files: `internal/model/decode.go`, `internal/model/malformed_vtimezone_test.go`. Full gate green. This closes both Pass 16 HIGH findings.
+
 ## 2026-07-18 — Test (Pass 16 canaries): guard Configured() partial-config + connFlags.client() credentials
 
 - **2 canary escapes** (test-coverage holes, code correct): (1) `config.Server.Configured()` (`URL != "" && Username != ""`) had no test asserting a partial (URL-only/username-only) config returns false — flipping `&&`→`||` passed the suite, so a partial connection would read as configured and be synced against. (2) `connFlags.client()`'s credential guard (`url=="" || username=="" || password==""`) was wholly untested — `conn.go`/`import.go`/`sync.go`/`calendar.go` had no direct tests — so flipping `||`→`&&` (build a client with an empty password) passed.

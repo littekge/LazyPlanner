@@ -81,7 +81,7 @@ func Parse(cal *ical.Calendar, loc *time.Location) (*Parsed, error) {
 	}
 	dedupeSingleValued(cal)
 	stripForbiddenNesting(cal)
-	dropEmptyTimezones(cal) // after strip, which can leave a VTIMEZONE childless
+	dropUnusableTimezones(cal) // after strip, which can leave a VTIMEZONE childless
 	healComponentConstraints(cal)
 	ensureCalendarProps(cal)
 	sanitizePropValues(cal)
@@ -226,22 +226,50 @@ func stripForbiddenChildren(comp *ical.Component) {
 	}
 }
 
-// dropEmptyTimezones removes any VTIMEZONE with no STANDARD/DAYLIGHT child.
-// go-ical refuses to encode an empty VTIMEZONE, so such a component — present in a
-// foreign object, or left childless after stripForbiddenNesting drops its only,
-// illegally-nested child — would block encoding the whole resource (every sibling
-// item too). An empty VTIMEZONE carries no offset data, and the app resolves zones
-// via the embedded tz database rather than the object's VTIMEZONE, so dropping it
-// loses nothing usable. Must run after stripForbiddenNesting.
-func dropEmptyTimezones(cal *ical.Calendar) {
+// dropUnusableTimezones removes any VTIMEZONE go-ical's encoder would reject: one
+// with no STANDARD/DAYLIGHT child, one missing TZID, or one whose STANDARD/DAYLIGHT
+// omits a required DTSTART/TZOFFSETTO/TZOFFSETFROM. go-ical refuses to encode such
+// a VTIMEZONE (present in a foreign object, or left childless after
+// stripForbiddenNesting drops its only illegally-nested child), so it would block
+// encoding the whole resource — every sibling item too. An unencodable VTIMEZONE
+// carries no usable offset data, and the app resolves zones via the embedded tz
+// database rather than the object's VTIMEZONE — a referenced TZID that no longer
+// resolves degrades to floating time via resolveDateTime — so dropping it loses
+// nothing usable. Must run after stripForbiddenNesting (and dedupeSingleValued, so
+// a duplicate required prop isn't mistaken for a missing one).
+func dropUnusableTimezones(cal *ical.Calendar) {
 	kept := cal.Children[:0]
 	for _, comp := range cal.Children {
-		if comp.Name == ical.CompTimezone && len(comp.Children) == 0 {
+		if comp.Name == ical.CompTimezone && !timezoneUsable(comp) {
 			continue
 		}
 		kept = append(kept, comp)
 	}
 	cal.Children = kept
+}
+
+// timezoneUsable reports whether a VTIMEZONE carries the properties go-ical's
+// encoder requires: exactly one TZID, at least one STANDARD/DAYLIGHT subcomponent,
+// and each such subcomponent's DTSTART/TZOFFSETTO/TZOFFSETFROM. dedupeSingleValued
+// runs first, so a present-but-duplicated required prop is already collapsed to one
+// — a still-missing prop here is genuinely absent.
+func timezoneUsable(vtz *ical.Component) bool {
+	if vtz.Props.Get(ical.PropTimezoneID) == nil {
+		return false
+	}
+	transitions := 0
+	for _, sub := range vtz.Children {
+		if sub.Name != ical.CompTimezoneStandard && sub.Name != ical.CompTimezoneDaylight {
+			continue
+		}
+		transitions++
+		for _, req := range []string{ical.PropDateTimeStart, ical.PropTimezoneOffsetTo, ical.PropTimezoneOffsetFrom} {
+			if sub.Props.Get(req) == nil {
+				return false
+			}
+		}
+	}
+	return transitions > 0
 }
 
 // healComponentConstraints drops properties that decode cleanly but violate
