@@ -4,6 +4,14 @@
 
 ---
 
+## 2026-07-18 — Audit: Pass 15 gap-closing pass over the stale/never matrix cells
+
+- Ran the `hardening-audit` workflow (32 agents) with explicit targets — the stale/never headless cells `main.md`'s convergence paragraph named: CalDAV response-parse fault-injection (stale since pass 7), store write-pipeline disk-fault atomicity + a first direct `-race` of the store write primitives, the reconcile keep-both/Forget/read-only-twin data-loss branches, and (as the plan added) the never-audited import ingest path.
+- **3 confirmed findings, all repros observed red** (HIGH 2 · MED 1): (HIGH) `PutObject`/`DeleteObject` silently report success when a write is answered with a 301/302/303 — Go's default redirect policy downgrades PUT/DELETE to a bodyless GET, dropping body + `If-Match`, and a 200/204 on the followed GET lands in the success set; (HIGH) `loadCalendar`'s stale-temp sweep runs before the `.ics` filter, so a real `.tmp-*.ics` resource is deleted on Open; (MED) importing a resource that mixes a UID-bearing with a UID-less component fails whole-resource encode and drops the valid sibling. **1 of 3 canaries escaped** (`ListObjectHrefs` nested-collection filter). No new root-cause class.
+- **Convergence impact (honest):** HIGH resurged 0→2 after pass 14's first no-HIGH pass, so the two-consecutive-no-HIGH criterion **resets to zero**. This validates the gap-closing decision: the stale/never cells genuinely still hid HIGH data-loss bugs at the CalDAV-write and store-load boundaries the model-heavy passes had deprioritized — not merely a MED/LOW tail. Confirms criterion 1 (matrix covered once) must precede trusting the severity trend.
+- Independently verified before relaying: both HIGH repros run red, build compiles, ledger + pass report written; removed the 3 leaked canary worktrees. The MED import repro was written+run+removed by the workflow (not in the tree) — to be recreated at fix time.
+- Files: `docs/audit/passes/PASS-15.md` (new). Fixes land in following repro-first commits; `COVERAGE.md` finalized with them.
+
 ## 2026-07-18 — Audit protocol: reframe convergence as a severity-weighted trend with explicit criteria
 
 - Addressed a methodology question (14 passes, "never converged" — is the audit too narrow?): the diagnosis is not narrowness but a mis-set target. "Zero findings" is unreachable (real software keeps a MED/LOW tail; the workflow is built never to return "clean"; the Pi hardware surface can't be audited headlessly), and raw finding count (flat ~5–7) masks the real signal — HIGH severity fell 5→1→0 across passes 10→13→14.
