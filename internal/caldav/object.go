@@ -76,6 +76,13 @@ func (c *Client) PutObject(ctx context.Context, href string, data []byte, ifMatc
 	if resp.StatusCode == http.StatusForbidden {
 		return "", ErrReadOnly
 	}
+	// A 3xx here means CheckRedirect stopped a redirect on this write (see
+	// client.go): the PUT did not land at href — the server/proxy pointed us
+	// elsewhere. Never treat that as success; a followed redirect would have
+	// dropped the body and the conditional headers.
+	if resp.StatusCode >= 300 && resp.StatusCode < 400 {
+		return "", fmt.Errorf("caldav: PUT %q: server redirected the write to %q (%s); a write must land on the exact href", href, resp.Header.Get("Location"), resp.Status)
+	}
 	// 201 Created (new), 204 No Content (updated), or 200 OK are all success.
 	if resp.StatusCode != http.StatusCreated && resp.StatusCode != http.StatusNoContent && resp.StatusCode != http.StatusOK {
 		return "", fmt.Errorf("caldav: PUT %q: %s%s", href, resp.Status, responseHint(resp.Body))
@@ -116,6 +123,12 @@ func (c *Client) DeleteObject(ctx context.Context, href, ifMatch string) error {
 	}
 	if resp.StatusCode == http.StatusForbidden {
 		return ErrReadOnly
+	}
+	// A 3xx here means CheckRedirect stopped a redirect on this delete (see
+	// client.go): the DELETE did not act on href. Never treat that as success — a
+	// followed redirect would have been downgraded to a GET, deleting nothing.
+	if resp.StatusCode >= 300 && resp.StatusCode < 400 {
+		return fmt.Errorf("caldav: DELETE %q: server redirected the delete to %q (%s); a write must land on the exact href", href, resp.Header.Get("Location"), resp.Status)
 	}
 	if resp.StatusCode != http.StatusNoContent && resp.StatusCode != http.StatusOK && resp.StatusCode != http.StatusNotFound {
 		return fmt.Errorf("caldav: DELETE %q: %s%s", href, resp.Status, responseHint(resp.Body))

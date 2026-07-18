@@ -4,6 +4,13 @@
 
 ---
 
+## 2026-07-18 — Fix (Pass 15 HIGH #1): CalDAV writes no longer silently succeed on an HTTP redirect
+
+- **Bug**: the shared `http.Client` used Go's default redirect policy, which follows a 301/302/303 on any method and downgrades PUT/DELETE to a bodyless GET — dropping the request body and the `If-Match`/`If-None-Match` conditionals. A 200/204 on the followed GET landed in `PutObject`/`DeleteObject`'s success set, so the call returned success though the write never landed; sync then cleared the dirty flag and the edit was silently lost with no retry. Triggered by any `http://` endpoint or a reverse proxy doing http→https / trailing-slash normalization (violates never-silently-overwrite/lose).
+- **Fix**: `NewClient` installs a method-aware `CheckRedirect` that returns `http.ErrUseLastResponse` when the original request method is a write (`isWriteMethod`: PUT/DELETE/POST/PROPPATCH/MKCALENDAR/MKCOL/MOVE/COPY), so a 3xx is returned as-is; reads and RFC 6764 `.well-known` discovery still follow redirects. `PutObject`/`DeleteObject` now treat any 3xx as an explicit error (a write must land on the exact href, never a proxy-chosen Location). Only set when the caller didn't supply their own `CheckRedirect`.
+- **Repro-first**: `internal/caldav/redirect_test.go` (`TestPutObjectRedirectMustNotReportSuccess`, `TestDeleteObjectRedirectMustNotReportSuccess`) — a 301→GET on PUT/DELETE previously returned success; now returns an error.
+- Files: `internal/caldav/client.go`, `internal/caldav/object.go`, `internal/caldav/redirect_test.go`. Full gate green.
+
 ## 2026-07-18 — Audit: Pass 15 gap-closing pass over the stale/never matrix cells
 
 - Ran the `hardening-audit` workflow (32 agents) with explicit targets — the stale/never headless cells `main.md`'s convergence paragraph named: CalDAV response-parse fault-injection (stale since pass 7), store write-pipeline disk-fault atomicity + a first direct `-race` of the store write primitives, the reconcile keep-both/Forget/read-only-twin data-loss branches, and (as the plan added) the never-audited import ingest path.

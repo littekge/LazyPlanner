@@ -156,12 +156,39 @@ func NewClient(cfg Config) (*Client, error) {
 		base.Transport = cappingTransport{rt: rt}
 	}
 
+	// A CalDAV write must land on the exact target href. Go's default redirect
+	// policy follows a 3xx and downgrades PUT/DELETE to a bodyless GET, dropping
+	// the body and the If-Match/If-None-Match conditionals — a 200 on the followed
+	// GET would then masquerade as a successful write and silently lose the edit.
+	// Stop redirects for write methods (the 3xx is returned as-is and the write
+	// path treats it as an error); reads and discovery — GET/PROPFIND/REPORT,
+	// including RFC 6764 .well-known bootstrapping — still follow redirects.
+	if base.CheckRedirect == nil {
+		base.CheckRedirect = func(_ *http.Request, via []*http.Request) error {
+			if len(via) > 0 && isWriteMethod(via[0].Method) {
+				return http.ErrUseLastResponse
+			}
+			return nil
+		}
+	}
+
 	httpClient := webdav.HTTPClientWithBasicAuth(base, cfg.Username, cfg.Password)
 	dc, err := dav.NewClient(httpClient, cfg.Endpoint)
 	if err != nil {
 		return nil, fmt.Errorf("caldav: creating client: %w", err)
 	}
 	return &Client{dav: dc, httpClient: httpClient, endpoint: endpoint}, nil
+}
+
+// isWriteMethod reports whether an HTTP method mutates server state and so must
+// never be silently redirected to a different resource (see CheckRedirect above).
+func isWriteMethod(method string) bool {
+	switch method {
+	case http.MethodPut, http.MethodDelete, http.MethodPost,
+		"PROPPATCH", "MKCALENDAR", "MKCOL", "MOVE", "COPY":
+		return true
+	}
+	return false
 }
 
 // CalendarHomeSet returns the account's calendar home set path (the collection
