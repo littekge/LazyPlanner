@@ -4,6 +4,13 @@
 
 ---
 
+## 2026-07-18 — Audit: Pass 14 hardening audit (coverage-first workflow)
+
+- Ran the `hardening-audit` workflow (44 agents) against the ledger's top stale/never surfaces: the sync reconcile local×server matrix (data-loss), the timezone/TZID resolver (fuzz — 6 passes stale), quick-add parser semantic correctness (input-edge), non-command key/chord dispatch (input-edge), the newer UI draw widgets (display stress), and the recurrence write-side transforms vs `main.md` promises (spec-diff).
+- **6 confirmed findings, all with runnable failing-test repros observed red** (HIGH 0 · MED 5 · LOW 1): pushDelete 412 tombstone drop (silent conflict swallow), multi-valued RDATE/EXDATE collapse, quick-add invalid day-of-month, this-and-future split phantom EXDATE occurrence + duplicated trailing RDATE, and keep-local-of-server-deleted never converging. **1 of 3 mutation canaries escaped** (DayAgenda inclusive midnight boundary — unguarded). HIGH reached zero for the first time in several passes, but total ticked 5→6; phase **not converged**.
+- Independently verified before relaying: every repro runs red, `internal/sync` compiles (the report's "leftover breaks the build" worry was stale), ledger + pass report written. Removed the workflow's leftover exploratory scratch test (`zzz_audit_test.go`, which passed) and the 3 disposable canary worktrees it failed to auto-remove.
+- Files: `docs/audit/passes/PASS-14.md` (new). Fixes land in following repro-first commits; `COVERAGE.md` ledger is finalized with them.
+
 ## 2026-07-18 — Docs: CalDAV test server back online
 
 - The owner reported the CalDAV/NextCloud test server is live again (offline since 2026-07-16), with its credentials being rotated. Updated `main.md` Current State in place: the "server offline" note now records it as back online (2026-07-18), with the caveat that the opt-in live suite must be re-pointed at the fresh test-account credentials before it can run. No live-server task is pending, so no credentials were needed; normal work stays headless.
