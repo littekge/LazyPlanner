@@ -4,6 +4,15 @@
 
 ---
 
+## 2026-07-18 — Docs: finalize Pass 14 (guardrail, ledger, pass report, build plan)
+
+- **CLAUDE.md**: added a 5th Hard-won guardrail — *RDATE/EXDATE are multi-valued and independent of the RRULE's COUNT/UNTIL bound* — codifying the root-cause class shared by fixes #2/#4/#5 (per the audit protocol's recurring-class rule: tests protect existing code, only the guardrail protects future code). Points at `resolveDateTimeValues`/`filterRDates`/`rruleIterationsBefore` and their regression tests.
+- **COVERAGE.md**: flipped the four pass-14 ledger rows (recurrence write-side, quick-add, timezone, sync reconcile) from UNFIXED to fixed-pass-14 with the mechanism; moved the DayAgenda canary from OPEN blind-spot to CLOSED (guard added, mutation-verified); refreshed the escaped-canary section.
+- **PASS-14.md**: status line updated from "NONE fixed" to all-6+canary fixed, keeping the body as point-in-time as-found evidence.
+- **main.md**: added the one-line Pass 14 entry to the v1.0.x Build Plan ledger and refreshed the remaining-targets paragraph (reconcile matrix now 3 cells fixed; CalDAV response-parse + disk-fault atomicity surfaced as the stale targets).
+- No README change: the quick-add fix makes behavior match the already-documented "leaves anything ambiguous in the title" principle.
+- Files: `CLAUDE.md` (guardrail hunk only — a pre-existing unrelated session-startup edit was left unstaged), `docs/audit/COVERAGE.md`, `docs/audit/passes/PASS-14.md`, `main.md`, `log.md`.
+
 ## 2026-07-18 — Fix (Pass 14 #6): keep-local of a server-deleted conflict now converges
 
 - **Bug**: for a server-delete-vs-dirty conflict, `markConflict` stores an empty `ServerETag`; `ResolveKeepLocal` adopted that empty ETag but left `Href` non-empty, so the next reconcile hit `case !onServer && r.Dirty` (`sync.go`) and re-flagged the identical server-deleted conflict rather than reaching the create path (`r.Href=="" && r.Dirty`). The kept local version was never pushed back — the conflict recurred indefinitely and the item could never be resurrected server-side.

@@ -3,9 +3,11 @@
 - **Date:** 2026-07-18
 - **Prior pass:** Pass 13 (spec-diff reopened Locate→Put + reconcile degraded-download + CalDAV request-side idempotency) — HIGH 1 · MED 4 · LOW 0
 - **This pass:** HIGH 0 · MED 5 · LOW 1 (all 6 confirmed with runnable failing-test repros executed and observed red)
-- **Status (2026-07-18): NONE fixed.** Every repro was written, run, and observed to fail
-  against the current code; the record below is the point-in-time audit evidence. Fixing is a
-  separate repro-first increment (one commit per fix, full gate every commit).
+- **Status (2026-07-18): ALL 6 findings + the escaped canary FIXED** repro-first (one commit
+  per fix, full gate every commit); the RDATE/EXDATE root-cause class was codified as a
+  Hard-won guardrail in `CLAUDE.md`. The findings below are the point-in-time as-found audit
+  evidence — every repro was written, run, and observed to fail against the then-current code;
+  see `log.md` (2026-07-18 entries) and `COVERAGE.md` for the fixes and their commits.
 
 This pass took the ledger's top stale/never surfaces head-on: the **sync reconcile state
 machine** full local×server case matrix (data-loss) — the target `main.md` names as the top

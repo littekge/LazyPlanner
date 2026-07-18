@@ -12,13 +12,13 @@ not hidden. See `PROTOCOL.md`.
 |---|---|---|---|---|
 | iCalendar decode/ingest | internal/model | fuzz, heal-on-ingest | 4 | recent |
 | Recurrence expansion (read) | internal/model | fuzz, tz/DST sweep, scale-bound | 4,5,8 | recent |
-| Recurrence write-side (mutate/split/advance) | internal/model | fuzz, deep audit | 9 | recent |
+| Recurrence write-side (mutate/split/advance) | internal/model | fuzz, deep audit, spec-diff | 9,14 | recent (2 MED fixed pass 14: this-&-future split added a phantom trailing occurrence past a pre-split EXDATE — now counts RRULE iterations via rruleIterationsBefore — and duplicated a trailing RDATE across both halves — now partitioned via filterRDates; both restore main.md:362. Codified as a Hard-won guardrail) |
 | Subtask tree build | internal/model | fuzz, scale | 4,5 | recent |
-| Quick-add parser | internal/model | fuzz | 4 | recent |
-| Timezone / DST | internal/model | exhaustive sweep | 8 | recent |
+| Quick-add parser | internal/model | fuzz, input-edge | 4,14 | recent (MED fixed pass 14: an invalid day-of-month in the slashed `2/30` and month-name `feb 30` forms was silently normalized by time.Date to a wrong date and rolled a year forward — validYMD/rollForwardMonthDay now reject it, matching the ISO form and the leave-text-in-title principle) |
+| Timezone / DST | internal/model | exhaustive sweep, fuzz | 8,14 | recent (MED fixed pass 14: resolveDateTime parsed only a single date-time, so an RFC-5545-valid comma-listed multi-valued RDATE/EXDATE — or VALUE=PERIOD RDATE — errored and Occurrences collapsed the whole RRULE series to its base instance; resolveDateTimeValues now splits per value. Codified as a Hard-won guardrail) |
 | CalDAV network boundary | internal/caldav | fault-injection, panic-guard | 4,7 | recent |
 | Sync engine (data-loss / TOCTOU) | internal/sync | deep audit | 3,11 | recent (HIGH fixed: PullRemoteBatch skips a Dirty resource via store.ErrKeptLocalEdit) |
-| Sync reconcile state machine (reconcileCalendar/reconcileReadOnly case matrix, keep-both, Forget branches) | internal/sync | data-loss | 13 | recent (HIGH fixed: a degraded per-resource-fetch failure no longer inferred as a remote deletion — downloadResilient returns the listed-but-unfetched set, both reconcile paths skip it) |
+| Sync reconcile state machine (reconcileCalendar/reconcileReadOnly case matrix, keep-both, Forget branches) | internal/sync, internal/store | data-loss | 13,14 | recent (HIGH fixed pass 13: degraded fetch no longer inferred as deletion. Pass 14 MED fixed: pushDelete's 412 branch cleared the tombstone unconditionally, silently dropping a delete-vs-server-change conflict when the server version was unparseable or absent from a degraded download — it now clears the tombstone only after resurrect+flag, else keeps it and records a skip. Pass 14 LOW fixed: keep-local of a server-deleted conflict never converged — ResolveKeepLocal now clears the Href on a ServerDeleted conflict so reconcile re-creates the item instead of re-raising the conflict) |
 | CalDAV request-construction (MKCALENDAR/PROPPATCH/DELETE bodies, resolve()/href, color/name validation, idempotency) | internal/caldav | fault-injection | 13 | recent (2 MED fixed: DELETE now idempotent on 404/410, MKCALENDAR idempotent on 405 — no more pending-delete/pending-create wedge) |
 | Sync concurrency | internal/sync | -race stress | 3,11 | recent (re-run post batching/CTag; no new race; the store-level clobber finding is fixed) |
 | CTag incremental short-circuit (skip DownloadAll) | internal/sync | data-loss | 11 | recent (no data-loss found in the skip decision itself) |
@@ -34,8 +34,8 @@ not hidden. See `PROTOCOL.md`.
 | Bulk-pull batching / scale | internal/store, internal/sync | benchmarks, data-loss | 5,11 | recent (HIGH fixed: PullRemoteBatch no longer clobbers a href-less pull-orphan's local edit) |
 | Grab-mode temporal-manipulation state machine (per-nudge commit, snapshot/2-resource revert) | internal/ui | data-loss, input-edge | 11 | recent (MED+LOW x2 fixed: cancelGrab surfaces revert errors; PutIfUnchanged version-check; HasDue re-check) |
 | Recurrence-edit UI orchestration (scope picker + this-&-future split/detach) | internal/ui | data-loss | 11 | recent (HIGH x2 + MED fixed: commitSplit/commitDetach rollback; DetachTodoOccurrence preserves props) |
-| UI draw paths (custom widgets) | internal/ui | display stress | 6 | recent |
-| UI input handlers (keys/chords/commands) | internal/ui | deep audit, input-edge | 9,13 | recent (pass 13 input-edged the `:` command dispatch beyond `:calendar` — `:goto`/`:view`/`:search`/`:config`/`:conflicts`/`:q` arg/edge handling — no finding) |
+| UI draw paths (custom widgets) | internal/ui | display stress | 6,14 | recent (pass 14 re-swept the newer widgets — agendaboard/itemforms — no crash/freeze; no finding) |
+| UI input handlers (keys/chords/commands) | internal/ui | deep audit, input-edge | 9,13,14 | recent (pass 14 input-edged the raw non-command keypress/chord dispatch (keys.go navigation, grab activation, mode/drill transitions at boundary states) — no finding) |
 | CLI wiring | cmd/lazyplanner | deep audit | 9 | recent |
 | Mouse handling | internal/ui | input-edge | 10 | recent |
 | `:config` reload / $EDITOR flow | internal/ui, internal/config | fault-injection | 10 | recent (MED fixed: $EDITOR shell-split) |
@@ -52,6 +52,9 @@ not hidden. See `PROTOCOL.md`.
   color. Needs a physical Pi; the sole known-never surface with product risk.
 - **Full `sync-collection` incremental sync** — a deliberate feature deferral, not a
   bug (the CTag short-circuit is in place); audit once implemented.
+- **`DayAgenda` inclusive dayStart boundary** (pass-14 canary escape) — RESOLVED (pass 14):
+  `TestDayAgendaIncludesTodoDueAtMidnight` now pins a todo due exactly at 00:00, verified to
+  fail under the `Before→After` mutation. See the pass-14 canary section.
 - **go-ical semantic encoder healing** — RESOLVED (pass 10 fix): the five
   decode-but-unencodable classes (VEVENT DTEND+DURATION, VTODO DUE+DURATION, VTODO
   DURATION-without-DTSTART, empty VTIMEZONE incl. the `stripForbiddenNesting` self-
@@ -76,6 +79,22 @@ Each is now closed with a boundary test verified to fail under its mutation befo
 - **`internal/config/config.go` `Load`**: dropping `io.LimitReader(f, maxConfigBytes)`
   removes the 4 MiB read cap. CLOSED — `TestLoadCapsReadSize` feeds an oversized file
   (valid before the cap, garbage after) so an uncapped read would error.
+
+## Escaped mutation canary — pass 14 (1 of 3 escaped → now CLOSED)
+
+The escape was a test-coverage hole (code correct, path unguarded); it is now closed.
+
+- **`internal/model/agenda.go` `DayAgenda`** (todo due-time lower bound): flipping the
+  inclusive lower bound `!t.Due.Before(dayStart)` (Due ≥ dayStart) → `t.Due.After(dayStart)`
+  (Due > dayStart) drops any todo due *exactly* at the start of the day (midnight) — the
+  natural due time for a date-only / all-day todo — silently vanishing it from that day's
+  agenda. `TestDayAgenda`'s todos were due at 09:00 (inside the window) and dayEnd+1h
+  (outside); none sat exactly on dayStart, so the flipped boundary was never exercised.
+  CLOSED (pass 14): `TestDayAgendaIncludesTodoDueAtMidnight` pins a todo due exactly at
+  dayStart, verified to fail under the mutation and pass after reverting.
+- The other two canaries were **caught**: `internal/ui/grab.go` `grabNudge` J/K resize min-
+  duration guard (`TestGrabResizeRejectsZeroDuration`), and `internal/sync/sync.go` CTag-cache
+  guard (`TestDegradedDownloadDoesNotCacheCTagSoNextSyncRetries`, added with pass 13's HIGH #1).
 
 ## Pass 11 — RESOLVED (all 7 findings + both canary holes fixed 2026-07-15)
 
