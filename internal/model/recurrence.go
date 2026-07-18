@@ -188,21 +188,26 @@ func (e *Event) recurrenceSet(hasRRULE bool) (*rrule.Set, error) {
 	}
 
 	for _, prop := range e.Raw.Props.Values(ical.PropRecurrenceDates) {
-		// resolveDateTime (not prop.DateTime) so a Windows/Outlook TZID on an
-		// RDATE recovers the same way DTSTART does, instead of erroring out and
-		// blanking the whole event's expansion.
-		dt, err := resolveDateTime(&prop, loc)
+		// resolveDateTimeValues (not prop.DateTime) so a Windows/Outlook TZID on
+		// an RDATE recovers the same way DTSTART does, instead of erroring out and
+		// blanking the whole event's expansion — and so a comma-listed
+		// multi-valued RDATE contributes every value, not zero.
+		dts, err := resolveDateTimeValues(&prop, loc)
 		if err != nil {
 			return nil, fmt.Errorf("event %q: parsing RDATE: %w", e.UID, err)
 		}
-		set.RDate(dt)
+		for _, dt := range dts {
+			set.RDate(dt)
+		}
 	}
 	for _, prop := range e.Raw.Props.Values(ical.PropExceptionDates) {
-		dt, err := resolveDateTime(&prop, loc)
+		dts, err := resolveDateTimeValues(&prop, loc)
 		if err != nil {
 			return nil, fmt.Errorf("event %q: parsing EXDATE: %w", e.UID, err)
 		}
-		set.ExDate(dt)
+		for _, dt := range dts {
+			set.ExDate(dt)
+		}
 	}
 	return set, nil
 }

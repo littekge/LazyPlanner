@@ -1,6 +1,7 @@
 package model
 
 import (
+	"strings"
 	"time"
 
 	"github.com/emersion/go-ical"
@@ -49,4 +50,37 @@ func resolveDateTime(prop *ical.Prop, loc *time.Location) (time.Time, error) {
 
 	_, err := prop.DateTime(loc)
 	return time.Time{}, err
+}
+
+// resolveDateTimeValues resolves an RDATE/EXDATE property that may carry a
+// comma-separated list of values on a single line (RFC 5545 permits this) into
+// one absolute time per value. Without this, go-ical's single-value DateTime
+// infers the value type from the whole line's length, so a multi-valued line
+// matches no date/date-time layout and errors — collapsing the recurrence set to
+// its base instance. A VALUE=PERIOD element ("start/end" or "start/duration")
+// contributes its start instant. Each value inherits the property's TZID/VALUE
+// params, so a Windows/Outlook TZID recovers the same way a single value does.
+func resolveDateTimeValues(prop *ical.Prop, loc *time.Location) ([]time.Time, error) {
+	parts := strings.Split(prop.Value, ",")
+	out := make([]time.Time, 0, len(parts))
+	for _, part := range parts {
+		sub := *prop
+		sub.Value = periodStart(part)
+		t, err := resolveDateTime(&sub, loc)
+		if err != nil {
+			return nil, err
+		}
+		out = append(out, t)
+	}
+	return out, nil
+}
+
+// periodStart returns the start instant of an RFC 5545 PERIOD value
+// ("start/end" or "start/duration"); for a plain date-time value it returns the
+// value unchanged. Only the start matters when expanding a recurrence set.
+func periodStart(v string) string {
+	if i := strings.IndexByte(v, '/'); i >= 0 {
+		return v[:i]
+	}
+	return v
 }

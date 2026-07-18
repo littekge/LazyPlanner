@@ -4,6 +4,13 @@
 
 ---
 
+## 2026-07-18 — Fix (Pass 14 #2): multi-valued RDATE/EXDATE no longer collapses a series
+
+- **Bug**: `resolveDateTime` parses only a single date-time, so an RFC-5545-valid comma-listed multi-valued `RDATE`/`EXDATE` on one property line (or a `VALUE=PERIOD` RDATE) errored — go-ical infers the value type from the whole line's length, which matches no date layout. `recurrenceSet` propagated the error and `Event.Occurrences` swallowed it by degrading to the lone DTSTART base instance, silently dropping the entire RRULE expansion.
+- **Fix**: new `resolveDateTimeValues` (in `tz.go`) splits an RDATE/EXDATE property value on commas and resolves each sub-value (each inheriting the property's TZID/VALUE params, so a Windows/Outlook TZID still recovers), taking the start instant of a `VALUE=PERIOD` element. `recurrenceSet` now adds every resolved value instead of one. No on-disk change (Raw round-trips byte-for-byte); this is expansion-only.
+- **Repro-first**: `internal/model/multivalue_dates_test.go` (`TestMultiValuedEXDATE`/`TestMultiValuedRDATE`) — 5-daily-minus-2-excluded and DTSTART+2-RDATE both expected 3 instances, got 1 before the fix; green after.
+- Files: `internal/model/tz.go`, `internal/model/recurrence.go`, `internal/model/multivalue_dates_test.go`. Full gate (test + vet + staticcheck) green.
+
 ## 2026-07-18 — Audit: Pass 14 hardening audit (coverage-first workflow)
 
 - Ran the `hardening-audit` workflow (44 agents) against the ledger's top stale/never surfaces: the sync reconcile local×server matrix (data-loss), the timezone/TZID resolver (fuzz — 6 passes stale), quick-add parser semantic correctness (input-edge), non-command key/chord dispatch (input-edge), the newer UI draw widgets (display stress), and the recurrence write-side transforms vs `main.md` promises (spec-diff).
