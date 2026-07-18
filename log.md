@@ -4,6 +4,13 @@
 
 ---
 
+## 2026-07-18 — Fix (Pass 14 #1): pushDelete's 412 branch no longer swallows a delete-vs-server-change conflict
+
+- **Bug**: on a conditional DELETE returning 412 (server changed under a local delete), `st.ClearTombstone` ran unconditionally *outside* the nested resurrect/flag guard. When the server version was unparseable, or (degraded download) the resource's individual GET failed so `serverByHref` lacked the href, the resurrect + `stashServerConflict` block was skipped but the tombstone was still erased — no conflict recorded, tombstone gone (violating never-silently-overwrite). In the parse-fail case no `recordSkip` fired either, so the CTag cached and the next sync's short-circuit permanently swallowed the server's change; in the degraded case the next full sync re-pulled the item clean, silently un-deleting it.
+- **Fix**: the 412 branch now clears the tombstone **only** after the conflict is actually resurrected (`PutRemote`) and flagged (`stashServerConflict`). If the server version is missing from `serverByHref`, unparseable, or the resurrect write fails, it keeps the tombstone and records a skip — the skip prevents CTag caching so the next full sync retries the conditional delete.
+- **Repro-first**: `internal/sync/tombstone412_conflict_test.go` (`TestTombstone412DegradedDownloadKeepsConflict`) — 412 with a degraded download (bulk + individual GET both fail): was `Conflicts=0` AND tombstones empty; now the tombstone survives to retry. Existing `TestSyncTombstoneVsServerEditIsConflict` (happy path) still green.
+- Files: `internal/sync/sync.go`, `internal/sync/tombstone412_conflict_test.go`. Full gate + `-race` on internal/sync green.
+
 ## 2026-07-18 — Test (Pass 14 canary): guard DayAgenda's inclusive midnight boundary
 
 - **Canary escape** (test-coverage hole, not a code bug): `DayAgenda`'s due-date window uses an inclusive lower bound `!t.Due.Before(dayStart)` (Due ≥ dayStart), but `TestDayAgenda`'s todos are due at 09:00 and dayEnd+1h — none exactly at dayStart — so flipping the bound to exclusive (`Due.After(dayStart)`) passed the suite while silently dropping any todo due at 00:00 (the natural due time for a date-only/all-day todo).

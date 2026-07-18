@@ -666,14 +666,29 @@ func pushDelete(ctx context.Context, client Syncer, st *store.Store, calID, calP
 	if errors.Is(err, caldav.ErrPreconditionFailed) {
 		// Deleted locally but changed on the server → conflict. Resurrect the
 		// server version so its change is not lost, flag it, and drop the
-		// tombstone (the delete lost the race).
-		if serverObj, ok := serverByHref[t.Href]; ok {
-			if parsed, perr := model.Parse(serverObj.Data, time.Local); perr == nil {
-				if _, werr := st.PutRemote(ctx, calID, t.Name, parsed, serverObj.ETag, t.Href); werr == nil {
-					stashServerConflict(ctx, st, calID, t.Name, serverObj, res)
-				}
-			}
+		// tombstone (the delete lost the race). Clear the tombstone ONLY once the
+		// conflict is actually resurrected and flagged: if the server version is
+		// absent from a degraded download (its individual GET failed, so
+		// serverByHref lacks the href), unparseable, or the resurrect write
+		// fails, keep the tombstone and record a skip instead — the skip stops
+		// the CTag from being cached so the next full sync retries. Clearing it
+		// without flagging would silently swallow the server's change
+		// (never-silently-overwrite).
+		serverObj, ok := serverByHref[t.Href]
+		if !ok {
+			recordSkip(res, calID, t.Name, fmt.Errorf("delete-vs-server-change for %q: server version unavailable this sync", t.Name))
+			return
 		}
+		parsed, perr := model.Parse(serverObj.Data, time.Local)
+		if perr != nil {
+			recordSkip(res, calID, t.Name, fmt.Errorf("delete-vs-server-change for %q: parsing server version: %w", t.Name, perr))
+			return
+		}
+		if _, werr := st.PutRemote(ctx, calID, t.Name, parsed, serverObj.ETag, t.Href); werr != nil {
+			recordSkip(res, calID, t.Name, fmt.Errorf("resurrecting %q on delete conflict: %w", t.Name, werr))
+			return
+		}
+		stashServerConflict(ctx, st, calID, t.Name, serverObj, res)
 		_ = st.ClearTombstone(ctx, calID, t.Name)
 		return
 	}
