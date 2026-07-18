@@ -4,6 +4,12 @@
 
 ---
 
+## 2026-07-18 — Test (Pass 16 canaries): guard Configured() partial-config + connFlags.client() credentials
+
+- **2 canary escapes** (test-coverage holes, code correct): (1) `config.Server.Configured()` (`URL != "" && Username != ""`) had no test asserting a partial (URL-only/username-only) config returns false — flipping `&&`→`||` passed the suite, so a partial connection would read as configured and be synced against. (2) `connFlags.client()`'s credential guard (`url=="" || username=="" || password==""`) was wholly untested — `conn.go`/`import.go`/`sync.go`/`calendar.go` had no direct tests — so flipping `||`→`&&` (build a client with an empty password) passed.
+- **Guards**: `TestServerConfigured` (table: both/url-only/username-only/neither) and new `cmd/lazyplanner/conn_test.go` `TestConnFlagsClientRequiresAllCredentials` (all-present builds a client; any field missing errors). Adversarially verified — each fails under its exact mutation and passes after reverting. No production code changed.
+- Files: `internal/config/config_test.go`, `cmd/lazyplanner/conn_test.go`. Full gate green.
+
 ## 2026-07-18 — Fix (Pass 16 LOW #6): double-click edits the row under the cursor
 
 - **Bug**: `mouseCapture`'s `MouseLeftDoubleClick` branch called `editSelected()` — which reads the *current* selection — before tview processed the event. If the two clicks of a double-click landed on different rows (pointer moved within the interval), the edit form opened for the previously-selected row, not the row clicked. Recoverable (form only).

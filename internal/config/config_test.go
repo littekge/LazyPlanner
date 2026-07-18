@@ -286,3 +286,25 @@ func TestLoadMalformedTOMLIsActionableError(t *testing.T) {
 		t.Errorf("error %q does not name the config file", err)
 	}
 }
+
+// TestServerConfigured pins that a CalDAV server counts as configured only when
+// BOTH the URL and username are present — a partial config (one field set) must
+// return false, or sync would run against an incomplete connection. Guards the
+// pass-16 canary: flipping the && to || made a URL-only config read as configured.
+func TestServerConfigured(t *testing.T) {
+	cases := []struct {
+		name string
+		srv  Server
+		want bool
+	}{
+		{"both set", Server{URL: "https://host/dav", Username: "me"}, true},
+		{"url only", Server{URL: "https://host/dav"}, false},
+		{"username only", Server{Username: "me"}, false},
+		{"neither", Server{}, false},
+	}
+	for _, tc := range cases {
+		if got := tc.srv.Configured(); got != tc.want {
+			t.Errorf("%s: Configured() = %v, want %v", tc.name, got, tc.want)
+		}
+	}
+}
