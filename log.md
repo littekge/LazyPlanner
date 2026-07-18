@@ -4,6 +4,12 @@
 
 ---
 
+## 2026-07-18 — Test (Pass 14 canary): guard DayAgenda's inclusive midnight boundary
+
+- **Canary escape** (test-coverage hole, not a code bug): `DayAgenda`'s due-date window uses an inclusive lower bound `!t.Due.Before(dayStart)` (Due ≥ dayStart), but `TestDayAgenda`'s todos are due at 09:00 and dayEnd+1h — none exactly at dayStart — so flipping the bound to exclusive (`Due.After(dayStart)`) passed the suite while silently dropping any todo due at 00:00 (the natural due time for a date-only/all-day todo).
+- **Guard**: new `TestDayAgendaIncludesTodoDueAtMidnight` puts a todo due exactly at `dayStart` and asserts it appears. Adversarially verified: the injected `Before→After` mutation makes this test FAIL and reverting restores green — the canary is now closed. `agenda.go` is unchanged (the code was already correct).
+- Files: `internal/model/agenda_test.go`. Full gate green.
+
 ## 2026-07-18 — Fix (Pass 14 #5): this-and-future split no longer duplicates a trailing RDATE
 
 - **Bug**: `CapSeries` caps the past half by setting only the RRULE's UNTIL/Count — but UNTIL bounds only the RRULE generator (rrule-go's `Set.Iterator` merges RDATEs independent of UNTIL), so a trailing RDATE after the cut stayed on the capped master, and `NewSeriesFrom` copied every master prop (including that RDATE) into the future series. The one-off RDATE instant was emitted by BOTH resources — one more occurrence than the original, contradicting `main.md:362` and the iron rule (a single unmodeled property becoming two live occurrences).

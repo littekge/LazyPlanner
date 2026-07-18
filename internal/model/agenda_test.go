@@ -42,3 +42,27 @@ func TestDayAgenda(t *testing.T) {
 		t.Errorf("item 2 = %+v, want the 14:00 event", items[2])
 	}
 }
+
+// TestDayAgendaIncludesTodoDueAtMidnight pins the inclusive lower bound of the
+// due-date window: a todo due exactly at dayStart (00:00) — the natural due time
+// for a date-only / all-day todo — must appear on that day's agenda. Without a
+// case sitting exactly on dayStart, weakening the bound from Due >= dayStart to
+// Due > dayStart would silently drop such a todo (a pass-14 canary escape).
+func TestDayAgendaIncludesTodoDueAtMidnight(t *testing.T) {
+	loc := time.UTC
+	dayStart := time.Date(2026, 7, 4, 0, 0, 0, 0, loc)
+	dayEnd := dayStart.AddDate(0, 0, 1)
+
+	todos := []*model.Todo{
+		{UID: "due-midnight", Summary: "Date-only task", HasDue: true, Due: dayStart},
+	}
+
+	items := model.DayAgenda(nil, todos, dayStart, dayEnd)
+
+	if len(items) != 1 {
+		t.Fatalf("got %d items, want 1 (the midnight-due todo): %+v", len(items), items)
+	}
+	if !items[0].IsTodo() || items[0].Title != "Date-only task" {
+		t.Errorf("item 0 = %+v, want the todo due exactly at dayStart", items[0])
+	}
+}
