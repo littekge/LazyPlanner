@@ -196,7 +196,9 @@ func parseDate(tokens []string, i int, today time.Time, loc *time.Location) (tim
 	// "jul 20" / "july 20": a month name followed by a day number.
 	if mon, ok := monthName(tok); ok && i+1 < len(tokens) {
 		if day, err := strconv.Atoi(tokens[i+1]); err == nil && day >= 1 && day <= 31 {
-			return rollForwardMonthDay(today, mon, day, loc), 2, true
+			if d, ok := rollForwardMonthDay(today, mon, day, loc); ok {
+				return d, 2, true
+			}
 		}
 	}
 
@@ -248,13 +250,32 @@ func monthName(s string) (time.Month, bool) {
 }
 
 // rollForwardMonthDay returns mon/day in the current year, or next year if that
-// date has already passed.
-func rollForwardMonthDay(today time.Time, mon time.Month, day int, loc *time.Location) time.Time {
-	d := time.Date(today.Year(), mon, day, 0, 0, 0, 0, loc)
-	if d.Before(today) {
-		d = time.Date(today.Year()+1, mon, day, 0, 0, 0, 0, loc)
+// date has already passed. It reports ok=false for an impossible day-of-month
+// (e.g. Feb 30, Apr 31) rather than letting time.Date normalize it into another
+// month — matching the ISO parser, which rejects such a date outright, so the
+// same logical input can't parse one way slashed and another way as ISO. A day
+// that is real only in a leap year (Feb 29) is honored in whichever of the two
+// candidate years actually has it.
+func rollForwardMonthDay(today time.Time, mon time.Month, day int, loc *time.Location) (time.Time, bool) {
+	for _, year := range []int{today.Year(), today.Year() + 1} {
+		if !validYMD(year, mon, day) {
+			continue
+		}
+		d := time.Date(year, mon, day, 0, 0, 0, 0, loc)
+		if !d.Before(today) {
+			return d, true
+		}
 	}
-	return d
+	return time.Time{}, false
+}
+
+// validYMD reports whether day is a real calendar day of mon in year. time.Date
+// silently normalizes an out-of-range day into the following month (Feb 30 →
+// Mar 2), so a round-trip through it is the check: if the normalized date's
+// fields differ from the inputs, the day was impossible.
+func validYMD(year int, mon time.Month, day int) bool {
+	d := time.Date(year, mon, day, 0, 0, 0, 0, time.UTC)
+	return d.Year() == year && d.Month() == mon && d.Day() == day
 }
 
 // parseNumericDate handles ISO (2006-01-02) and slashed US (m/d, m/d/y) dates.
@@ -286,7 +307,10 @@ func parseNumericDate(tok string, today time.Time, loc *time.Location) (time.Tim
 		if year < 100 {
 			year += 2000
 		}
+		if !validYMD(year, time.Month(mon), day) {
+			return time.Time{}, false
+		}
 		return time.Date(year, time.Month(mon), day, 0, 0, 0, 0, loc), true
 	}
-	return rollForwardMonthDay(today, time.Month(mon), day, loc), true
+	return rollForwardMonthDay(today, time.Month(mon), day, loc)
 }

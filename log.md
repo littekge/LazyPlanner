@@ -4,6 +4,13 @@
 
 ---
 
+## 2026-07-18 — Fix (Pass 14 #3): quick-add rejects an impossible day-of-month
+
+- **Bug**: `parseNumericDate`/`parseDate` accepted any day 1..31 and handed it to `time.Date`, which normalizes an out-of-range day into the next month (`2/30` → Mar 2), then `rollForwardMonthDay` pushed it a year forward — so `x 2/30`, `x feb 30`, `x 4/31`, `x jun 31` all silently became wrong dates, while the ISO form (`x 2026-02-30`) correctly rejected it. The same logical input parsed one way slashed and another as ISO, violating the parser's "when in doubt, leave text in the title rather than guess" principle.
+- **Fix**: new `validYMD` round-trips (year, month, day) through `time.Date` and rejects it if the normalized fields differ. `rollForwardMonthDay` now returns `(time.Time, bool)`, trying the current then next year and honoring a leap-only day (Feb 29) in whichever candidate year actually has it; both call sites (month-name path, slashed path) and the explicit-year branch drop an impossible day to "no date", leaving the tokens in the title — matching the ISO form.
+- **Repro-first**: `internal/model/quickadd_dayrange_test.go` (`TestQuickAddInvalidDayOfMonth`) — asserts every invalid form stays in the title *and* valid dates (incl. past-date roll-forward and an explicit leap Feb 29) still parse, so the fix can't over-reject.
+- Files: `internal/model/quickadd.go`, `internal/model/quickadd_dayrange_test.go`. Full gate green.
+
 ## 2026-07-18 — Fix (Pass 14 #2): multi-valued RDATE/EXDATE no longer collapses a series
 
 - **Bug**: `resolveDateTime` parses only a single date-time, so an RFC-5545-valid comma-listed multi-valued `RDATE`/`EXDATE` on one property line (or a `VALUE=PERIOD` RDATE) errored — go-ical infers the value type from the whole line's length, which matches no date layout. `recurrenceSet` propagated the error and `Event.Occurrences` swallowed it by degrading to the lone DTSTART base instance, silently dropping the entire RRULE expansion.
