@@ -4,6 +4,13 @@
 
 ---
 
+## 2026-07-18 — Fix (Pass 16 MED #3): :config reload surfaces config.Load's warning
+
+- **Bug**: `editConfigFn`'s reload path read `cfg, _, _, err := config.Load()`, discarding Load's warning. Only `buildSyncFn`'s warning reached `ui.ConfigReload.Warning`, so an appearance typo (`default_view="wek"`) or a **world-readable password file** introduced in the editor was silently accepted on reload — the reload flashed "config reloaded" with no warning, whereas a startup Load of the same file surfaces one (mildly security-relevant for the permission case).
+- **Fix**: capture Load's warning and combine it with buildSyncFn's via a new `joinWarnings` helper (startup emits them as separate stderr lines; the UI reload flash is a single string, so they're joined with "; ").
+- **Repro-first**: `cmd/lazyplanner/configreload_warning_test.go` (`TestConfigReloadPreservesLoadWarning`) — with a 0644 config carrying a typo, `ConfigReload.Warning` was empty; now non-empty.
+- Files: `cmd/lazyplanner/main.go`, `cmd/lazyplanner/configreload_warning_test.go`. Full gate green.
+
 ## 2026-07-18 — Fix (Pass 16 HIGH, safe part): heal VJOURNAL/VFREEBUSY encode constraints
 
 - **Bug** (part of the reopened decode-but-unencodable class): a foreign resource carrying a **VJOURNAL/VFREEBUSY** that omits DTSTAMP, or carries a duplicate single-valued property, decodes but fails `Encode()` — go-ical's encoder requires exactly-one {DTSTAMP, UID} and at-most-one for a list of props on these components, and the ingest healers covered only VEVENT/VTODO/VTIMEZONE. The whole resource (incl. a valid sibling VEVENT) became unwritable on the first edit.

@@ -182,7 +182,7 @@ func editConfigFn(configPath string, pathErr error, accountID string, s *store.S
 		if err := ed.Run(); err != nil {
 			return ui.ConfigReload{}, fmt.Errorf("editor: %w", err)
 		}
-		cfg, _, _, err := config.Load()
+		cfg, _, loadWarn, err := config.Load()
 		if err != nil {
 			return ui.ConfigReload{}, err
 		}
@@ -190,7 +190,25 @@ func editConfigFn(configPath string, pathErr error, accountID string, s *store.S
 			return ui.ConfigReload{}, fmt.Errorf("server/account changed — restart to switch caches")
 		}
 		syncFn, warn := buildSyncFn(cfg.Server, s)
-		return ui.ConfigReload{Sync: syncFn, ColorMode: cfg.Appearance.ColorMode, Warning: warn}, nil
+		// Surface config.Load's own warning too (appearance typo, world-readable
+		// password file) — at startup it goes to its own stderr line, but on a
+		// :config reload the single flash string must carry it, or an edit that
+		// introduces the problem is silently accepted.
+		return ui.ConfigReload{Sync: syncFn, ColorMode: cfg.Appearance.ColorMode, Warning: joinWarnings(loadWarn, warn)}, nil
+	}
+}
+
+// joinWarnings combines two possibly-empty warning strings into one line for the
+// :config reload flash (startup emits them as separate stderr lines; the UI flash
+// is a single string). Either or both may be empty.
+func joinWarnings(a, b string) string {
+	switch {
+	case a == "":
+		return b
+	case b == "":
+		return a
+	default:
+		return a + "; " + b
 	}
 }
 
