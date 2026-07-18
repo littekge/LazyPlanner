@@ -4,6 +4,11 @@
 
 ---
 
+## 2026-07-18 — Docs: CLAUDE.md Session Startup wording + summary step
+
+- Committed a pre-existing uncommitted CLAUDE.md edit (present at session start, not part of the audit work): retitled the Session Startup list from "Before starting any task" to "When reading this file for the first time", and added step 5 — give the user a short summary of the most recently completed task and the recommended next steps. Fixed the "reccomended" typo in the same increment. A legitimate HOW change (how a session opens).
+- Files: `CLAUDE.md`, `log.md`.
+
 ## 2026-07-18 — Docs: finalize Pass 15 (ledger, pass report, build plan, MED accepted residual)
 
 - **Owner decision**: MED #3 (import drops a valid sibling of a UID-less component) is accepted as a **documented residual**, not fixed — every fix crosses a hard invariant (fabricate-UID reverses the settled no-fabricate decision; per-component encode weakens the iron rule; the CalDAV transport hands us an already-decoded `*ical.Calendar`, so no raw bytes survive to preserve), and it's reachable only from a malformed foreign/hand-edited `.ics` with the loss surfaced in `res.Skipped`.

@@ -14,12 +14,13 @@ That is all the project context this file carries. What the program does, every 
 
 ## Session Startup
 
-Before starting any task:
+When reading this file for the first time:
 
 1. **Read `main.md`** — the spec: what the program is, all design decisions, the versioned Build Plan (a compressed history of everything done), and the current phase.
 2. **Read `log.md`** — the change log: what has been done recently (at minimum the recent entries).
 3. **Read `notes.md`** — in-progress work. It is normally empty; if it isn't, a previous session ended mid-task — pick that work up (or explicitly hand it back to the owner) before starting anything new.
 4. **Confirm the branch**: `git branch --show-current` must show `ai-workspace` (or a branch off it) — see Git Branching Rules.
+5. Give the user a short summary of the most recently completed task and the recommended next steps.
 
 ---
 
