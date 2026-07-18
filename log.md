@@ -4,6 +4,15 @@
 
 ---
 
+## 2026-07-18 — Audit protocol: reframe convergence as a severity-weighted trend with explicit criteria
+
+- Addressed a methodology question (14 passes, "never converged" — is the audit too narrow?): the diagnosis is not narrowness but a mis-set target. "Zero findings" is unreachable (real software keeps a MED/LOW tail; the workflow is built never to return "clean"; the Pi hardware surface can't be audited headlessly), and raw finding count (flat ~5–7) masks the real signal — HIGH severity fell 5→1→0 across passes 10→13→14.
+- **`docs/audit/PROTOCOL.md`**: replaced the qualitative "The stop rule" with an explicit, measurable **"Convergence — the stop rule"**: converged-for-release requires *all* of (1) headless surface×method matrix covered ≥1×, (2) two *consecutive* passes with no HIGH, (3) no *new* root-cause MED class in those passes, (4) rising trigger cost, (5) canary escape rate ~0 — measured as a severity-weighted trend, not a count. Converged means drop to spot re-sweeps, not stop. Each `PASS-N.md` must now record HIGH·MED·LOW **and** whether any MED was a new class, so the two-pass test is auditable.
+- **`main.md`**: rewrote the Build Plan convergence paragraph to point at the criteria and give the honest scorecard — trend healthy (HIGH→0), but not yet converged (matrix incomplete: CalDAV response-parse, disk-fault atomicity, reconcile keep-both/Forget, mouse/`:config`; only one no-HIGH pass; pass 14 added a new class). Estimated ~2–3 focused passes out.
+- **`docs/audit/passes/PASS-14.md`**: added the "new root-cause class this pass: yes" record and reframed the convergence prose against the criteria.
+- Owner chose "reframe, keep deep passes" over broadening search width — depth is what surfaced pass 14's subtle semantic bugs; breadth's role is only to close remaining matrix cells faster.
+- Files: `docs/audit/PROTOCOL.md`, `main.md`, `docs/audit/passes/PASS-14.md`, `log.md`.
+
 ## 2026-07-18 — Docs: finalize Pass 14 (guardrail, ledger, pass report, build plan)
 
 - **CLAUDE.md**: added a 5th Hard-won guardrail — *RDATE/EXDATE are multi-valued and independent of the RRULE's COUNT/UNTIL bound* — codifying the root-cause class shared by fixes #2/#4/#5 (per the audit protocol's recurring-class rule: tests protect existing code, only the guardrail protects future code). Points at `resolveDateTimeValues`/`filterRDates`/`rruleIterationsBefore` and their regression tests.

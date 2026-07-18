@@ -164,13 +164,18 @@ regression on that exact path would ship silently.
 | LOW  | 0 | 1 | ↑ |
 | **Total** | **5** | **6** | ↑ |
 
-HIGH fell to zero (first pass in a while with no HIGH), but MED rose 4→5, a LOW appeared, and
-the total ticked up 5→6. The shape is not reassuring: two of the five MED are *distinct*
-correctness defects in the same recurrence-split routine (`recur_edit.go`) against an explicit
-`main.md` promise; a third (multi-valued RDATE/EXDATE) is a plain RFC-5545 conformance gap the
-fuzz corpus never seeded; and the reconcile matrix — audited yet again — still yielded a
-silent-conflict-drop cell. New/stale surfaces keep producing findings on contact.
-**Not converged.**
+**New root-cause class this pass:** yes — RDATE/EXDATE semantics (findings #2/#4/#5), now
+bound by a Hard-won guardrail. Recorded per `PROTOCOL.md`'s convergence criteria, whose
+severity-floor and no-new-class tests require *two consecutive* passes to clear.
+
+HIGH fell to zero (first pass in a while with no HIGH), but by the severity-weighted reading
+that is the signal — total count (5→6) is not. The remaining shape: two of the five MED are
+*distinct* correctness defects in the same recurrence-split routine (`recur_edit.go`) against an
+explicit `main.md` promise; a third (multi-valued RDATE/EXDATE) is a plain RFC-5545 conformance
+gap the fuzz corpus never seeded; and the reconcile matrix — audited yet again — still yielded a
+silent-conflict-drop cell. Against the criteria: HIGH=0 for the *first* time (needs a second
+consecutive pass), a *new* MED class appeared, and the headless matrix is not yet covered once.
+**Not converged** — estimated ~2–3 focused passes out.
 
 ---
 

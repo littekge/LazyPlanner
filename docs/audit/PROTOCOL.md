@@ -41,12 +41,39 @@ looked at, how, and what it did not*.
    from repeating the practice — the failure mode audits are worst at catching,
    since they examine what exists and the ledger immediately marks it "recent".
 
-## The stop rule
+## Convergence — the stop rule
 
-Stop when **diverse methods converge**: successive passes over *new* ground (the
-ledger proves it was new) stop finding HIGH/MED, the canary escape rate is ~0, and
-the remaining blind spots are explicitly accepted. Do **not** stop because one agent
-returned "no issues" on the first try — that selects for the least-thorough run.
+"Zero findings" is the **wrong target**: real software keeps a long MED/LOW tail,
+this workflow is built never to return "clean" (rule 8), and one surface — the
+Raspberry Pi on real hardware — cannot be audited headlessly at all. So convergence
+is a **severity-weighted trend across diverse passes, not a raw finding count**. A
+flat count (e.g. 5→6) while HIGH falls (5→1→0 across passes 10→13→14) is
+*converging*, not stalling — judging by count alone misreads it as stuck.
+
+The phase is **converged for release readiness** when *all* of these hold:
+
+1. **Matrix covered once.** Every *headless* surface×method cell in `COVERAGE.md`
+   has been audited at least once. The Pi-hardware surface is exempt and stays a
+   permanently-accepted gap. Until the matrix is complete, "still finding bugs"
+   means coverage is incomplete — not that the code is uniquely fragile.
+2. **Severity floor at zero.** Two *consecutive* passes over new-or-re-swept ground
+   yield **no HIGH**.
+3. **No new root-cause class.** Those same two passes surface no MED of a *new*
+   class — only variations of classes already bound by a guardrail + tests (rule 9).
+4. **Rising trigger cost.** New findings require increasingly exotic conditions to
+   reach (e.g. foreign import + degraded network + invalid typed input), not
+   ordinary use.
+5. **Canary escape rate ~0.** The suite catches injected mutations on audited
+   surfaces.
+
+Converged does **not** mean "stop auditing" — it means drop from back-to-back
+passes to occasional spot re-sweeps and accept the named residual risk. Do **not**
+treat a single "no issues" pass as convergence; that selects for the least-thorough
+run — criterion 2/3 require *two* consecutive passes precisely to defeat that.
+
+Make the trend auditable: every `PASS-N.md` records its HIGH·MED·LOW counts **and
+whether any MED was a new root-cause class**, so the two-consecutive-clean-pass test
+can be checked against the record rather than re-litigated each pass.
 
 ## Reading the output
 
