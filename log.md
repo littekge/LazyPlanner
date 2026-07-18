@@ -4,6 +4,11 @@
 
 ---
 
+## 2026-07-18 — Docs: CalDAV test server back online
+
+- The owner reported the CalDAV/NextCloud test server is live again (offline since 2026-07-16), with its credentials being rotated. Updated `main.md` Current State in place: the "server offline" note now records it as back online (2026-07-18), with the caveat that the opt-in live suite must be re-pointed at the fresh test-account credentials before it can run. No live-server task is pending, so no credentials were needed; normal work stays headless.
+- Files: `main.md`, `log.md`.
+
 ## 2026-07-17 — Workflow: add the /cleanup end-of-session command
 
 - Automated the owner's habitual end-of-day prompt into a committed slash command, `.claude/commands/cleanup.md` (in-repo like `/audit`, so it works on any machine). Six ordered steps: survey (branch/status/worktrees/branches) → sweep residual disposable worktrees, merged branches, and stray throwaway files (ambiguous → keep and report; never touch `main`/`ai-init`/`ai-workspace`) → doc-currency pass against CLAUDE.md's The Documents rules (main.md in-place, README, log.md heading-count, COVERAGE.md) → notes.md (write a dated mid-arc entry if a task is in progress; otherwise ensure it's empty) → gate (`make check` when code changed) + commit + push to `ai-workspace` → short end-of-session report.

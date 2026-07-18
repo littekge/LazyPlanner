@@ -44,7 +44,7 @@ LazyPlanner is a terminal-based todo-list and calendar management program. It is
 
 ## Current State
 
-**v1.0.0 is complete** (2026-07-12; all thirteen Build Plan steps). The project is in a continuous **hardening & audit phase** — patch-level (v1.0.x) bug-hunting, resilience, and consistency work rather than new features. Audit coverage and residual risk are tracked in `docs/audit/COVERAGE.md`, and the Build Plan below carries a one-line summary of every hardening pass. The CalDAV/NextCloud test server is **offline** (since 2026-07-16), so the opt-in live suite cannot run — sync findings are verified headlessly until it returns.
+**v1.0.0 is complete** (2026-07-12; all thirteen Build Plan steps). The project is in a continuous **hardening & audit phase** — patch-level (v1.0.x) bug-hunting, resilience, and consistency work rather than new features. Audit coverage and residual risk are tracked in `docs/audit/COVERAGE.md`, and the Build Plan below carries a one-line summary of every hardening pass. The CalDAV/NextCloud test server is **back online** (since 2026-07-18; its credentials are being rotated, so the opt-in live suite must be re-pointed at the fresh test-account credentials before it can run) — sync findings continue to be verified headlessly, with the live suite available on demand.
 
 ---
 
