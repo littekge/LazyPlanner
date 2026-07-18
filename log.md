@@ -4,6 +4,13 @@
 
 ---
 
+## 2026-07-18 — Fix (Pass 15 HIGH #2): stale-temp sweep no longer deletes a legitimate .ics on Open
+
+- **Bug**: `loadCalendar`'s stale-temp sweep used `isStaleTempName` = `HasPrefix(".") && Contains(".tmp-")`, matching any dot-prefixed name *containing* `.tmp-`. A real resource whose UID sanitized to such a name (e.g. `.tmp-important@host` → `.tmp-important_host.ics`) was `os.Remove`'d on every `Store.Open` — permanent loss for an offline-created, not-yet-pushed item, and reachable from a hostile import href.
+- **Fix**: `isStaleTempName` now requires the actual leftover shape — a dot-prefixed name **ending** in `.tmp-<digits>` (what `os.CreateTemp(dir, "."+base+".tmp-*")` produces; the `*` is replaced with decimal digits). A real resource ends in `.ics`, so it can never match. The sweep still removes genuine leftovers (guarded by the existing `TestOpenSweepsStaleTempFiles`, whose `.e@test.ics.tmp-123456` confirms the shape).
+- **Repro-first**: `internal/store/staletemp_test.go` (`TestStaleTempSweepSpareLegitimateResource`) — `.tmp-important_host.ics` was deleted on reload; now survives.
+- Files: `internal/store/store.go`, `internal/store/staletemp_test.go`. Full gate green.
+
 ## 2026-07-18 — Fix (Pass 15 HIGH #1): CalDAV writes no longer silently succeed on an HTTP redirect
 
 - **Bug**: the shared `http.Client` used Go's default redirect policy, which follows a 301/302/303 on any method and downgrades PUT/DELETE to a bodyless GET — dropping the request body and the `If-Match`/`If-None-Match` conditionals. A 200/204 on the followed GET landed in `PutObject`/`DeleteObject`'s success set, so the call returned success though the write never landed; sync then cleared the dirty flag and the edit was silently lost with no retry. Triggered by any `http://` endpoint or a reverse proxy doing http→https / trailing-slash normalization (violates never-silently-overwrite/lose).

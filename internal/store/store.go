@@ -209,11 +209,31 @@ func (s *Store) loadCalendar(ctx context.Context, id string) (*calState, []LoadE
 }
 
 // isStaleTempName reports whether name is a temp file writeFileAtomic left behind
-// when a write was interrupted before its rename. The pattern mirrors
-// os.CreateTemp(dir, "."+base+".tmp-*"): a dot-prefixed name containing ".tmp-".
-// Real cache files (.ics, the .lazyplanner.json sidecar) never contain ".tmp-".
+// when a write was interrupted before its rename. os.CreateTemp(dir,
+// "."+base+".tmp-*") replaces the trailing "*" with decimal digits, so a real
+// leftover is a dot-prefixed name ending in ".tmp-<digits>". It must END that way,
+// not merely contain ".tmp-": a real resource whose sanitized name contains
+// ".tmp-" (e.g. a UID ".tmp-important@host" → ".tmp-important_host.ics") ends in
+// .ics and must never be swept — deleting it on Open is permanent data loss for an
+// offline-created, not-yet-pushed item.
 func isStaleTempName(name string) bool {
-	return strings.HasPrefix(name, ".") && strings.Contains(name, ".tmp-")
+	if !strings.HasPrefix(name, ".") {
+		return false
+	}
+	i := strings.LastIndex(name, ".tmp-")
+	if i < 0 {
+		return false
+	}
+	suffix := name[i+len(".tmp-"):]
+	if suffix == "" {
+		return false
+	}
+	for _, r := range suffix {
+		if r < '0' || r > '9' {
+			return false
+		}
+	}
+	return true
 }
 
 // loadResource reads and parses one .ics file, merging in the sync state the
