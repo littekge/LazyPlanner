@@ -346,7 +346,7 @@ func NewSeriesFrom(obj *Parsed, uid string, occ time.Time, mutate func(*ical.Com
 	if master == nil {
 		return nil, fmt.Errorf("model: no recurring master with UID %q", uid)
 	}
-	pastCount := occurrencesBefore(master, occ, loc)
+	pastCount := rruleIterationsBefore(master, occ, loc)
 
 	cal := ical.NewCalendar()
 	cal.Props.SetText(ical.PropVersion, icalVersion)
@@ -411,18 +411,32 @@ func NewSeriesFrom(obj *Parsed, uid string, occ time.Time, mutate func(*ical.Com
 	return Parse(cal, loc)
 }
 
-// occurrencesBefore counts the master's occurrences strictly before occ — the
-// ones that stay with the capped past half of a split, used to reduce the future
-// half's COUNT. Returns 0 when the component isn't dated or has no rule.
-func occurrencesBefore(master *ical.Component, occ time.Time, loc *time.Location) int {
+// rruleIterationsBefore counts the master's RRULE iterations strictly before occ
+// — the COUNT units consumed by the capped past half of a split, used to reduce
+// the future half's COUNT. It builds a set from the RRULE alone, excluding EXDATE
+// and RDATE deliberately: RFC 5545 COUNT bounds the RRULE generator, so an
+// EXDATE'd instance still consumes COUNT (counting the EXDATE-filtered visible
+// set instead would undercount the past half and leave the future COUNT one too
+// high, appending a phantom trailing occurrence), and an RDATE is an explicit
+// extra instant that COUNT does not bound. Returns 0 when the component isn't
+// dated or has no rule.
+func rruleIterationsBefore(master *ical.Component, occ time.Time, loc *time.Location) int {
 	_, anchor, _, ok := componentAnchor(master, loc)
 	if !ok {
 		return 0
 	}
-	set, err := componentRecurrenceSet(master, anchor)
+	roption, err := master.Props.RecurrenceRule()
+	if err != nil || roption == nil {
+		return 0
+	}
+	roption.Dtstart = anchor
+	rule, err := rrule.NewRRule(*roption)
 	if err != nil {
 		return 0
 	}
+	set := &rrule.Set{}
+	set.DTStart(anchor)
+	set.RRule(rule)
 	// safeBetween (not set.Between) so a degenerate rule degrades to 0 rather than
 	// panicking during a this-and-future split (iron rule).
 	starts, ok := safeBetween(set, anchor, occ)

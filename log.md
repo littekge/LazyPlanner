@@ -4,6 +4,13 @@
 
 ---
 
+## 2026-07-18 — Fix (Pass 14 #4): this-and-future split no longer adds a phantom occurrence past an EXDATE
+
+- **Bug**: `main.md:362` promises a bounded COUNT is preserved across a this-and-future split so the total occurrence count is unchanged, but `NewSeriesFrom` reduced the future series' COUNT by `occurrencesBefore`, which counted the *EXDATE-filtered visible* recurrence set. RFC 5545 COUNT bounds the RRULE generator and an EXDATE'd instance still consumes COUNT, so every pre-split EXDATE undercounted the past half by one, leaving the future COUNT one too high and appending an occurrence the original series never had (app-reachable via delete-this-occurrence then this-and-future edit).
+- **Fix**: replaced `occurrencesBefore` with `rruleIterationsBefore`, which builds a set from the RRULE alone (excluding EXDATE and RDATE) and counts iterations strictly before the split point — the actual COUNT units the capped past half consumes.
+- **Repro-first**: `internal/model/recur_split_exdate_test.go` (`TestSplitPreservesCountWithPreSplitEXDATE`) — FREQ=DAILY;COUNT=5, delete day2, split at day4: total after split was 5 (phantom day6), now 4.
+- Files: `internal/model/recur_edit.go`, `internal/model/recur_split_exdate_test.go`. Full gate green.
+
 ## 2026-07-18 — Fix (Pass 14 #3): quick-add rejects an impossible day-of-month
 
 - **Bug**: `parseNumericDate`/`parseDate` accepted any day 1..31 and handed it to `time.Date`, which normalizes an out-of-range day into the next month (`2/30` → Mar 2), then `rollForwardMonthDay` pushed it a year forward — so `x 2/30`, `x feb 30`, `x 4/31`, `x jun 31` all silently became wrong dates, while the ISO form (`x 2026-02-30`) correctly rejected it. The same logical input parsed one way slashed and another as ISO, violating the parser's "when in doubt, leave text in the title rather than guess" principle.
