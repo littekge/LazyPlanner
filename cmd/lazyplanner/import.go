@@ -21,7 +21,7 @@ func runImport(args []string) error {
 	fs := flag.NewFlagSet("import", flag.ContinueOnError)
 	conn := addConnFlags(fs)
 	data := fs.String("data", "", "data directory (default: OS data dir)")
-	if err := fs.Parse(args); err != nil {
+	if err := parseFlags(fs, args); err != nil {
 		return err
 	}
 

@@ -34,7 +34,7 @@ func runCalendar(args []string) error {
 func runCalendarList(args []string) error {
 	fs := flag.NewFlagSet("calendar list", flag.ContinueOnError)
 	conn := addConnFlags(fs)
-	if err := fs.Parse(args); err != nil {
+	if err := parseFlags(fs, args); err != nil {
 		return err
 	}
 	client, err := conn.client()
@@ -72,7 +72,7 @@ func runCalendarCreate(args []string) error {
 	color := fs.String("color", "", "calendar color, e.g. #3366cc (optional)")
 	desc := fs.String("desc", "", "calendar description (optional)")
 	path := fs.String("path", "", "explicit collection path (default: home set + slug of name)")
-	if err := fs.Parse(args); err != nil {
+	if err := parseFlags(fs, args); err != nil {
 		return err
 	}
 	if *name == "" {
@@ -114,7 +114,7 @@ func runCalendarDelete(args []string) error {
 	fs := flag.NewFlagSet("calendar delete", flag.ContinueOnError)
 	conn := addConnFlags(fs)
 	path := fs.String("path", "", "collection path to delete (from `calendar list`) (required)")
-	if err := fs.Parse(args); err != nil {
+	if err := parseFlags(fs, args); err != nil {
 		return err
 	}
 	if *path == "" {

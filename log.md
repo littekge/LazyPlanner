@@ -4,6 +4,13 @@
 
 ---
 
+## 2026-07-18 — Fix (Pass 16 MED #4 + LOW #5): subcommand flag-parse output (one shared fix)
+
+- **Bug** (shared root cause): every subcommand ran `fs.Parse(args); return err` with `flag.ContinueOnError`. `flag` already writes output for two cases, so returning the error straight to `report()` double-handled it: (MED) `-h/--help` returns `flag.ErrHelp` after fs.Parse prints usage → `report()` printed a spurious `lazyplanner: flag: help requested` and exited **1**; (LOW) a bad flag has its error+usage printed by fs.Parse, then `report()` printed the **same error again**.
+- **Fix**: a shared `parseFlags(fs, args)` helper returns `flag.ErrHelp` unchanged and tags any other parse error `errFlagParsed`; `report()` now maps `ErrHelp`→exit 0 (usage already shown) and `errFlagParsed`→exit 2 without re-printing (flag already printed). All five subcommand parse sites (import/sync/calendar list-create-delete) route through it.
+- **Repro-first**: `cmd/lazyplanner/subcommand_flags_test.go` (`TestSubcommandHelpFlagExitsZero`) and `subcommand_badflag_test.go` (`TestSubcommandBadFlagPrintsErrorOnce`).
+- Files: `cmd/lazyplanner/main.go`, `import.go`, `sync.go`, `calendar.go`, + the two tests. Full gate green.
+
 ## 2026-07-18 — Fix (Pass 16 MED #3): :config reload surfaces config.Load's warning
 
 - **Bug**: `editConfigFn`'s reload path read `cfg, _, _, err := config.Load()`, discarding Load's warning. Only `buildSyncFn`'s warning reached `ui.ConfigReload.Warning`, so an appearance typo (`default_view="wek"`) or a **world-readable password file** introduced in the editor was silently accepted on reload — the reload flashed "config reloaded" with no warning, whereas a startup Load of the same file surfaces one (mildly security-relevant for the permission case).

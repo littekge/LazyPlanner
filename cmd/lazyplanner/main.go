@@ -5,6 +5,8 @@ package main
 
 import (
 	"context"
+	"errors"
+	"flag"
 	"fmt"
 	"io"
 	"os"
@@ -63,13 +65,40 @@ func run(args []string) int {
 	}
 }
 
-// report prints err (if any) and maps it to an exit code.
+// report prints err (if any) and maps it to an exit code. The two flag-parsing
+// outcomes are special: `flag` already wrote output for them, so report must not
+// print again. -h/--help (flag.ErrHelp) is a clean request → exit 0; a bad flag
+// (wrapped in errFlagParsed by parseFlags) already had its error + usage printed
+// by flag → exit 2 without a second, duplicate message.
 func report(err error) int {
-	if err != nil {
+	switch {
+	case err == nil:
+		return 0
+	case errors.Is(err, flag.ErrHelp):
+		return 0
+	case errors.Is(err, errFlagParsed):
+		return 2
+	default:
 		fmt.Fprintln(os.Stderr, "lazyplanner:", err)
 		return 1
 	}
-	return 0
+}
+
+// errFlagParsed tags a subcommand flag-parse failure that flag.FlagSet already
+// reported (error message + usage) so report() exits non-zero without printing a
+// duplicate.
+var errFlagParsed = errors.New("invalid flags")
+
+// parseFlags parses a subcommand's flags, normalizing flag's two
+// already-emitted-output cases (see report): -h/--help returns flag.ErrHelp
+// unchanged; any other parse error is tagged errFlagParsed. Both stop the
+// subcommand, but neither is re-printed.
+func parseFlags(fs *flag.FlagSet, args []string) error {
+	err := fs.Parse(args)
+	if err == nil || errors.Is(err, flag.ErrHelp) {
+		return err
+	}
+	return fmt.Errorf("%w: %w", errFlagParsed, err)
 }
 
 // printUsage writes the top-level command summary.
