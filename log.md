@@ -4,6 +4,14 @@
 
 ---
 
+## 2026-07-18 — Fix (Pass 16 LOW #6): double-click edits the row under the cursor
+
+- **Bug**: `mouseCapture`'s `MouseLeftDoubleClick` branch called `editSelected()` — which reads the *current* selection — before tview processed the event. If the two clicks of a double-click landed on different rows (pointer moved within the interval), the edit form opened for the previously-selected row, not the row clicked. Recoverable (form only).
+- **Fix**: new `treeNodeAtY` maps the click's screen row to the visible task-tree node using public tview APIs only (visible index = y − innerTop + scrollOffset over a pre-order walk of expanded nodes, root included — mirroring TreeView's own mouse math without reaching into its unexported node slice). The double-click handler `SetCurrentNode`s that node before editing. `SetCurrentNode` only sets the field, so the tree's expand-toggle `SetSelectedFunc` does **not** fire (routing a synthetic click would have toggled expansion).
+- **Scope note**: the center agenda board has no click-to-select mapping even for single clicks, so a double-click there still edits the current agenda selection — recorded as a known limitation in `COVERAGE.md` (board-level hit-testing is a separate follow-up).
+- **Repro-first**: `internal/ui/dblclick_test.go` (`TestDoubleClickEditsRowUnderCursor`) — a double-click on row B with row A selected opened A's form; now opens B's.
+- Files: `internal/ui/mouse.go`, `internal/ui/dblclick_test.go`. Full gate green.
+
 ## 2026-07-18 — Fix (Pass 16 MED #4 + LOW #5): subcommand flag-parse output (one shared fix)
 
 - **Bug** (shared root cause): every subcommand ran `fs.Parse(args); return err` with `flag.ContinueOnError`. `flag` already writes output for two cases, so returning the error straight to `report()` double-handled it: (MED) `-h/--help` returns `flag.ErrHelp` after fs.Parse prints usage → `report()` printed a spurious `lazyplanner: flag: help requested` and exited **1**; (LOW) a bad flag has its error+usage printed by fs.Parse, then `report()` printed the **same error again**.

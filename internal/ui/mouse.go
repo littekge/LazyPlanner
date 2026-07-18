@@ -46,11 +46,60 @@ func (a *app) mouseCapture(ev *tcell.EventMouse, action tview.MouseAction) (*tce
 		}
 	case tview.MouseLeftDoubleClick:
 		x, y := ev.Position()
-		// Double-click to edit where a selection maps to an item. The preceding
-		// single click has already moved the selection under the cursor.
-		if a.tree.InRect(x, y) || a.agenda.InRect(x, y) {
+		switch {
+		case a.tree.InRect(x, y):
+			// Select the node actually under the cursor before editing. The two
+			// clicks of a double-click can land on different rows (the pointer moved
+			// within the interval), and editSelected reads the *current* selection —
+			// so without this it edits the row the first click selected, not the row
+			// the user double-clicked. SetCurrentNode only sets the field (no
+			// expand-toggle SetSelectedFunc fires), so this is a pure re-target.
+			if node := a.treeNodeAtY(y); node != nil {
+				a.tree.SetCurrentNode(node)
+			}
+			a.editSelected()
+		case a.agenda.InRect(x, y):
+			// The center agenda board has no click-to-select mapping (single clicks
+			// there don't move the agenda selection either), so a double-click edits
+			// the current agenda selection. Position-precise board editing would need
+			// board-level hit-testing — see COVERAGE.md.
 			a.editSelected()
 		}
 	}
 	return ev, action
+}
+
+// treeNodeAtY maps a screen row to the task-tree node drawn there, mirroring
+// TreeView's own mouse math (visible index = y − innerTop + scrollOffset over the
+// pre-order walk of expanded nodes, root included). Returns nil when y is outside
+// the pane or past the last node. Public-API only — it does not reach into
+// TreeView's unexported node slice.
+func (a *app) treeNodeAtY(y int) *tview.TreeNode {
+	root := a.tree.GetRoot()
+	if root == nil {
+		return nil
+	}
+	_, top, _, height := a.tree.GetInnerRect()
+	if y < top || y >= top+height {
+		return nil
+	}
+	idx := y - top + a.tree.GetScrollOffset()
+	if idx < 0 {
+		return nil
+	}
+	var visible []*tview.TreeNode
+	var walk func(n *tview.TreeNode)
+	walk = func(n *tview.TreeNode) {
+		visible = append(visible, n)
+		if n.IsExpanded() {
+			for _, c := range n.GetChildren() {
+				walk(c)
+			}
+		}
+	}
+	walk(root)
+	if idx >= len(visible) {
+		return nil
+	}
+	return visible[idx]
 }
