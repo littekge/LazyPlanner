@@ -26,21 +26,52 @@ When reading this file for the first time:
 
 ## The Documents
 
-Each document has exactly one role. The maintenance rule attached to each is what keeps it from drifting.
+Each document has exactly one role. The maintenance rule attached to each is what keeps it from drifting. The general style rules for ALL DOCUMENTS are as follows:
+
+- **Avoid long and wordy paragraphs** -> document sections should be written as
+  short, yet descriptive paragraphs of prose. Long sections can ALMOST ALWAYS be
+  broken up into smaller paragraphs or lists.
+- **Generously use headings** to group related sections.
+- **Use lists** as needed to break down longer paragraphs.
 
 ### `main.md` — WHAT (the master spec)
 
-The single source of truth for the build: project identity, the complete design (all the nitty-gritty detail lives here), all settled decisions, and the versioned Build Plan tracking what has and hasn't been done. **Maintenance**: when behavior or a design decision changes, update main.md in the same increment — and update **in place**: a decision is rewritten, never left standing next to a newer one that nullifies it (project history belongs to `log.md`; the one exception is the Build Plan, which deliberately records completed versions/steps as history). Design detail goes in main.md, never duplicated into CLAUDE.md or the README. New feature work is planned as a new `### v1.x.0` subsection under the Build Plan *before* implementation begins.
+The single source of truth for the build: project identity, the complete design (all the nitty-gritty detail lives here), all settled decisions, and the versioned Build Plan tracking what has and hasn't been done. 
+- **Maintenance**: when behavior or a design decision changes, update main.md in the same increment — and update **in place**: a decision is rewritten, never left standing next to a newer one that nullifies it (project history belongs to `log.md`; the one exception is the Build Plan, which deliberately records completed versions/steps as history). 
+- Design detail goes in main.md, never duplicated into CLAUDE.md or the README. New feature work is planned as a new `### v1.x.0` subsection under the Build Plan *before* implementation begins.
 
 ### `CLAUDE.md` — HOW (this file)
 
-Agent orientation: workflow, rules, and architecture guardrails, with minimal project context. **Maintenance**: update only when the way of working fundamentally changes — a new tool or workflow is adopted, a rule changes, a new hard-won guardrail is discovered. Nothing here may describe the current build state. If you find yourself writing project state or a design detail into this file, it belongs in main.md.
+Agent orientation: workflow, rules, and architecture guardrails, with minimal project context. 
+- **Maintenance**: update only when the way of working fundamentally changes — a new tool or workflow is adopted, a rule changes, a new hard-won guardrail is discovered. Nothing here may describe the current build state. If you find yourself writing project state or a design detail into this file, it belongs in `main.md`.
 
 ### `README.md` — the end-user guide
 
-For a user of the program: a basic summary of what it does, build/install instructions, usage, and a detailed description of the keybindings. **Maintenance**: update it whenever user-visible behavior, usage, or build steps change — in the same increment. It never carries project history, version narrative, build-plan status, or development internals; a curious user reads main.md for those.
+For a user of the program: a basic summary of what it does, build/install instructions, usage, and a detailed description of the keybindings. **Maintenance**: update it whenever user-visible behavior, usage, or build steps change — in the same increment. It never carries project history, version narrative, build-plan status, or development internals; a curious user reads `main.md` for those.
 
-**Keep it tight — two rules that fight the drift this file is prone to:**
+The README should be grouped into a few sections (in order, list indentation
+corresponds to heading levels):
+
+- **LazyPlanner** -> top level heading. Contains a short description of the
+   project (~1-2 sentences).
+  - **What it does** -> longer, bulleted description of the key features of the
+    program.
+  - **Configuration** -> how the configuration file works.
+  - **Usage** -> general description of how to use the app. Should **NOT**
+  conflict with the keybindings section. Keep it short and general -- it's ok to omit obscure or advanced behaviors to improve readability.
+    - **Managing Calendars** -> description on how calendar addition/deletion
+    works.
+    - **Keybindings** -> table of all valid keystrokes and a description of what
+      they do.
+  - **Syncing** -> description of the programs online syncing behavior.
+  - **Build and Install** -> instructions on building and installing the program. Each target gets its own subsection:
+    - **Linux** -> primary build target.
+    - **Windows** -> cross-platform target.
+    - **Raspberry PI** -> cross-platform target.
+  - **Development** -> points to development documents (`main.md`, `log.md`, etc.).
+  - **License** -> link to project license.
+
+**Keep it tight — rules that fight the drift this file is prone to:**
 
 - **The keybindings table is the canonical key reference; prose must not re-narrate it.** Usage prose covers only what a key list *can't* — the pane/overview→center→detail model, drilling, folders, the mode badge, quick-add tokens, type-locking. It must not walk key-by-key through bindings the table already lists (which key cycles calendars, which zooms, etc.); when a key is purely mechanical, let the table carry it. If you're describing a keystroke the table already has, delete the prose or move the *concept* it explains into the table's Action cell.
 - **Prefer short sentences and bullet lists over long, parenthetical-laden run-ons.** A sentence that lists four behaviors with nested parentheticals (a recurring failure mode here — e.g. the every-sync-trigger sentence, the whole-Calendars-pane sentence) should be a lead line plus a bullet list. One idea per sentence; split when a clause needs its own parenthetical.
