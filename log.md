@@ -4,6 +4,13 @@
 
 ---
 
+## 2026-07-18 — Docs: add README screenshots (owner-supplied)
+
+- Added the two owner-supplied screenshots (`examples/README_Photos/{Calendar_View,Task_View}.png`, ~66 KB each) to the README — the visual the earlier review flagged as the single highest-impact improvement for a TUI project.
+- **Calendar view** placed as the hero right under the tagline (shows the full three-region layout: overview column with truecolor calendar dots, the month grid, the detail pane, and the `NORMAL` mode badge). **Task view** placed after the feature list with a one-line caption, showcasing the centerpiece deep-subtask tree.
+- Centered via `<p align="center">` with descriptive `alt` text on each `<img>` (accessibility); `width="900"` keeps them from overflowing. Images committed to the repo (small PNGs, not gitignored).
+- Files: `README.md`, `log.md`, + the two committed PNGs.
+
 ## 2026-07-18 — Docs: trim README wordiness + codify a README conciseness rule in CLAUDE.md
 
 - **README (conciseness pass on the three wordiest spots identified in review):**

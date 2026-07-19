@@ -2,6 +2,11 @@
 
 A terminal-based todo-list and calendar manager with offline-first CalDAV sync — a full-screen interactive TUI in the style of [lazygit](https://github.com/jesseduffield/lazygit), written in Go.
 
+<p align="center">
+  <img src="examples/README_Photos/Calendar_View.png" width="900"
+       alt="LazyPlanner's month view: a left overview column (Calendars with truecolor dots, Tasks, Agenda), a July month grid with events and a selected day, a detail pane on the right, and a NORMAL mode badge in the status bar">
+</p>
+
 ## What it does
 
 - **Syncs with a CalDAV server** (built for NextCloud): offline-first, so the app opens instantly and works without network; changes sync both ways and stay visible from NextCloud web and your phone.
@@ -9,6 +14,13 @@ A terminal-based todo-list and calendar manager with offline-first CalDAV sync �
 - **Calendar views** — month, week, and day grids for events and dated tasks.
 - **Recurring events and tasks**, including per-occurrence editing.
 - Keyboard-first (single-key shortcuts + a `:` command mode), with full mouse support.
+
+<p align="center">
+  <img src="examples/README_Photos/Task_View.png" width="900"
+       alt="LazyPlanner's task view: a deeply nested subtask tree with folder carets and checkboxes in the center pane, and the selected task's status, priority, due date, and notes in the detail pane">
+  <br>
+  <em>Deep subtask hierarchies, navigated like a file explorer.</em>
+</p>
 
 ## Build & Install
 
