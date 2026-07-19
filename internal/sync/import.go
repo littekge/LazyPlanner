@@ -91,6 +91,15 @@ func Import(ctx context.Context, src Source, dst *store.Store) (ImportResult, er
 		// not one per resource (O(N) not O(N²)).
 		var pulls []store.RemoteObject
 		for _, obj := range objs {
+			// Mirror reconcileCalendar's empty-href guard (sync.go): an empty href
+			// can't be addressed, and every empty-href object collapses onto the
+			// same placeholder file name — so they collide in PullRemoteBatch and
+			// silently overwrite each other, each counted as a successful import.
+			// Skip and record instead of losing data under a success report.
+			if obj.Path == "" {
+				res.Skipped = append(res.Skipped, ImportError{Calendar: id, Path: "(empty href)", Err: errEmptyHref})
+				continue
+			}
 			parsed, err := model.Parse(obj.Data, time.Local)
 			if err != nil {
 				res.Skipped = append(res.Skipped, ImportError{Calendar: id, Path: obj.Path, Err: err})

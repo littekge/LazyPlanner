@@ -4,6 +4,13 @@
 
 ---
 
+## 2026-07-18 — Fix (Pass 17 MED, import): empty-href objects no longer silently overwrite each other on Import
+
+- **Bug**: the Import object loop (`import.go`) wrote every downloaded object without checking for an empty resource `Path`, unlike its sibling `reconcileCalendar` (sync.go), which skips empty-href objects via `errEmptyHref`. A malformed/hostile CalDAV server can return responses with empty `<href/>` elements (go-webdav's `Response.Path()` returns `("", nil)` for a 200 propstat with an empty href), so `DownloadAll` yields `caldav.Object`s with `Path==""`. Import fed these to `resourceFileName("")` → the placeholder name `resource.ics`, so multiple empty-href objects all collided on that one name in `PullRemoteBatch` and silently overwrote each other — each clean (no `ErrKeptLocalEdit`), yet each overwrite counted as a successful pull. Import reported N imported while storing 1; the lost object was never recovered (next sync leaves the local `resource.ics` an inert href-less pull-orphan). Silent item-level data loss under a success report.
+- **Fix**: mirror `reconcileCalendar`'s guard — skip `obj.Path==""` in the import loop and record it in `res.Skipped` with `errEmptyHref` instead of adding it to `pulls`. (The same-basename collision for two *distinct* non-empty hrefs is a separate theoretical case; empty-href is the concretely reachable trigger and is what the sibling path guards.)
+- **Repro-first**: `internal/sync/import_emptyhref_test.go` (`TestImportEmptyHrefNotSilentlyLost`) — two distinct empty-href objects previously gave `res.Objects=2` with 1 stored and 0 skips; now both are skipped (`res.Objects=0`, 2 skips, 0 stored), and the test asserts the reported count never exceeds what is persisted.
+- Files: `internal/sync/import.go`, `internal/sync/import_emptyhref_test.go`. Full gate green.
+
 ## 2026-07-18 — Fix (Pass 17 MED, tz): IANA-TZID VALUE=PERIOD RDATE no longer mis-zoned to floating
 
 - **Bug**: `resolveDateTimeValues` set a period element's sub-prop `Value` to `periodStart(part)` but left the stale `VALUE=PERIOD` param on the (shallow-copied) sub-prop. go-ical's `prop.DateTime` has no period case and rejects it, so the value fell into `resolveDateTime`'s recovery path — which only mapped **Windows** zone names (`windowsToIANA`) and never `LoadLocation`'d an IANA TZID directly. An `RDATE;VALUE=PERIOD` with a real IANA TZID (Google/Outlook-style) thus dropped to the floating fallback and was zoned in the calendar's fallback `loc`, not its TZID — a wrong absolute occurrence, silently, while the Windows-name spelling of the same zone resolved correctly (the two paths disagreed).
