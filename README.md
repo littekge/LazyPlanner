@@ -153,7 +153,7 @@ Requires [Go](https://go.dev/dl/) (see the `go` directive in `go.mod` for the mi
 
 On first launch LazyPlanner writes a starter `config.toml` (see [Configuration](#configuration) above) and exits; fill in `[server]` and run it again to open the TUI. Press `q` or `Ctrl-C` to quit.
 
-A `Makefile` wraps the common tasks: `make build` (native binary), `make run`, and `make cross` (the Raspberry Pi binaries — see [Raspberry PI](#raspberry-pi)). `make build` and `make cross` **stamp the version** from the current git tag (so `lazyplanner version` reports e.g. `v1.0.0`); a plain `go build` leaves it as `dev`.
+A `Makefile` wraps the common tasks: `make build` (native binary), `make run`, and `make cross` (the Raspberry Pi binaries — see [Raspberry Pi](#raspberry-pi)). `make build` and `make cross` **stamp the version** from the current git tag (so `lazyplanner version` reports e.g. `v1.0.0`); a plain `go build` leaves it as `dev`.
 
 ### Linux
 
@@ -163,7 +163,7 @@ The primary target: `go build -o lazyplanner ./cmd/lazyplanner` — a single sta
 
 The secondary target, cross-compiled from any machine: `GOOS=windows go build -o lazyplanner.exe ./cmd/lazyplanner`.
 
-### Raspberry PI
+### Raspberry Pi
 
 LazyPlanner is a single static binary with no runtime dependencies, so it's a natural fit for a low-power Raspberry Pi used as an always-on wall calendar. Because it's pure Go (no cgo), you **cross-compile from any machine** — no ARM toolchain needed:
 

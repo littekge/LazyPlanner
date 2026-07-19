@@ -4,6 +4,12 @@
 
 ---
 
+## 2026-07-19 — Docs: fix Raspberry Pi capitalization (README + CLAUDE.md charter)
+
+- Owner decision: use the conventional "Raspberry Pi", not the charter's literal "Raspberry PI".
+- Fixed the README subsection heading (`### Raspberry Pi`), its link text in the Build and Install lead, and the CLAUDE.md README-charter line. The `#raspberry-pi` anchor is unchanged, so no links needed updating.
+- Files: `README.md`, `CLAUDE.md`, `log.md`.
+
 ## 2026-07-19 — Docs: restructure README to the new CLAUDE.md section charter
 
 - Reordered the README to match the section structure the owner added to CLAUDE.md (commit `ae17602`): What it does → Configuration → Usage (Managing Calendars, Keybindings) → Syncing → Build and Install (Linux / Windows / Raspberry PI) → Development → License. Pure moves — no user-facing content was dropped (word count +19 from lead-ins only).

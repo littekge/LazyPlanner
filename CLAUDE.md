@@ -67,7 +67,7 @@ corresponds to heading levels):
   - **Build and Install** -> instructions on building and installing the program. Each target gets its own subsection:
     - **Linux** -> primary build target.
     - **Windows** -> cross-platform target.
-    - **Raspberry PI** -> cross-platform target.
+    - **Raspberry Pi** -> cross-platform target.
   - **Development** -> points to development documents (`main.md`, `log.md`, etc.).
   - **License** -> link to project license.
 
