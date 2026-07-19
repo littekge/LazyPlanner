@@ -4,6 +4,16 @@
 
 ---
 
+## 2026-07-19 — Docs: restructure README to the new CLAUDE.md section charter
+
+- Reordered the README to match the section structure the owner added to CLAUDE.md (commit `ae17602`): What it does → Configuration → Usage (Managing Calendars, Keybindings) → Syncing → Build and Install (Linux / Windows / Raspberry PI) → Development → License. Pure moves — no user-facing content was dropped (word count +19 from lead-ins only).
+- **Build & Install** (was section 2) moved after Syncing, renamed "Build and Install", and split into `### Linux` / `### Windows` / `### Raspberry PI` subsections; the former top-level "Raspberry Pi / dedicated terminal" section (cross-compile, kiosk autologin, performance notes) folded in as the Raspberry PI subsection.
+- **Managing calendars** (was a top-level section after Syncing) became `### Managing Calendars` under Usage, before `### Keybindings`; its "flags same as `import`" reference now forward-links to Syncing.
+- Ripple fixes: `#raspberry-pi--dedicated-terminal` anchor → `#raspberry-pi`, "see Configuration below" → "above", heading case (`Managing Calendars`, `Build and Install`).
+- Light general-style pass per the new all-documents rules: the two densest Usage paragraphs ("Creating & editing", "Commands & layout") broken into a lead sentence + bullets; no key narration added.
+- Verified: all 6 internal anchors resolve against the new headings; section order matches the charter exactly.
+- Files: `README.md`, `log.md`.
+
 ## 2026-07-18 — Docs: final pre-1.0 sweep — two precision fixes (timezone overstatement, create-prefix)
 
 - Ran a final documentation sweep with three parallel review agents (cross-doc consistency/references, log.md integrity, README+main.md vs code). log.md integrity passed clean (248 headings = 248 entries, ordering + this-session claims verified); most areas clean. Two real precision fixes surfaced (the timezone one flagged independently by two agents):

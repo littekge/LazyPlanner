@@ -22,17 +22,6 @@ A terminal-based todo-list and calendar manager with offline-first CalDAV sync �
   <em>Deep subtask hierarchies, navigated like a file explorer.</em>
 </p>
 
-## Build & Install
-
-Requires [Go](https://go.dev/dl/) (see the `go` directive in `go.mod` for the minimum version). Dependencies are vendored, so no network is needed to build.
-
-- **Linux** (primary): `go build -o lazyplanner ./cmd/lazyplanner` — a single static binary, no runtime dependencies. Run `./lazyplanner`.
-- **Windows** (secondary): `GOOS=windows go build -o lazyplanner.exe ./cmd/lazyplanner`.
-
-On first launch LazyPlanner writes a starter `config.toml` (see [Configuration](#configuration) below) and exits; fill in `[server]` and run it again to open the TUI. Press `q` or `Ctrl-C` to quit.
-
-A `Makefile` wraps the common tasks: `make build` (native binary), `make run`, and `make cross` (the Raspberry Pi binaries — see [Raspberry Pi](#raspberry-pi--dedicated-terminal)). `make build` and `make cross` **stamp the version** from the current git tag (so `lazyplanner version` reports e.g. `v1.0.0`); a plain `go build` leaves it as `dev`.
-
 ## Configuration
 
 On first run (no config file), LazyPlanner writes a fully-commented `config.toml` to `~/.config/lazyplanner/` (Linux) / `%APPDATA%\lazyplanner\` (Windows) and exits so you can fill in the connection. The only required section is `[server]`; every other option is shown at its default, commented out. The app **reads this file once at startup and never writes it**.
@@ -59,7 +48,12 @@ Run `lazyplanner` with no arguments to open the TUI (seed the cache with `import
 - **Tasks** → pick a list and its full **subtask tree** opens in the center with inline priority/due/status. `>` zooms into a subtree (`cd`-style, with a breadcrumb), `<` zooms back out; `z` folds it.
 - **Agenda** → the day's events and due tasks at full width; moving the highlight outlines and auto-scrolls to the matching block in the center.
 
-**Creating & editing.** Create actions live under the **`i` prefix** (a which-key hint pops up after `i`); the object letter picks the type — `t` task, `e` event, `s` subtask, `c` calendar, `l` list — and a **capital** `T`/`E`/`S` opens the full form instead of the one-line quick-add (calendars and lists always open their form). A subtask is created under the selected task in its parent's own list; calendars/lists are created **offline-first** (they appear now, hit the server on the next sync) with a **Color** field and swatch picker so they're colored from the start. Quick-add parses smart tokens and leaves anything ambiguous in the title: dates (`fri`, `jul 20`, `7/20`, `2026-07-20`), times (`3pm`, `15:00` — a bare number stays a number), `!high`/`!1`–`!9` priority, `#tag`. Creation is **locked to the calendar's type** (events only on `[events]`/`[both]`, tasks only on `[tasks]`/`[both]`); an unconfirmed `[?]` calendar blocks creation until a sync settles it, unless you force it with **`i!`** (e.g. `i!e`) — read-only and known-wrong-type are never forced. `e` edits the selected item (or, with the Calendars/Tasks panel focused, that calendar/list's name + color); `s` quick-sets one field (`sp` priority, `sd` due); `d` deletes (a folder removes its whole subtree, after a confirm).
+**Creating & editing.** Create actions live under the **`i` prefix** (a which-key hint pops up after `i`); the object letter picks the type — `t` task, `e` event, `s` subtask, `c` calendar, `l` list — and a **capital** `T`/`E`/`S` opens the full form instead of the one-line quick-add (calendars and lists always open their form).
+
+- A subtask is created under the selected task, in its parent's own list; calendars/lists are created **offline-first** (they appear now, hit the server on the next sync) with a **Color** field and swatch picker so they're colored from the start.
+- Quick-add parses smart tokens and leaves anything ambiguous in the title: dates (`fri`, `jul 20`, `7/20`, `2026-07-20`), times (`3pm`, `15:00` — a bare number stays a number), `!high`/`!1`–`!9` priority, `#tag`.
+- Creation is **locked to the calendar's type** (events only on `[events]`/`[both]`, tasks only on `[tasks]`/`[both]`); an unconfirmed `[?]` calendar blocks creation until a sync settles it, unless you force it with **`i!`** (e.g. `i!e`) — read-only and known-wrong-type are never forced.
+- `e` edits the selected item (or, with the Calendars/Tasks panel focused, that calendar/list's name + color); `s` quick-sets one field (`sp` priority, `sd` due); `d` deletes (a folder removes its whole subtree, after a confirm).
 
 **Folders.** A task with unfinished subtasks is a **folder** — drawn with a `▸` caret instead of a checkbox in every view — and can't be completed until they are. It keeps its own due date, so it still appears on the calendar (adding a subtask to a dated task just swaps `[ ]` for `▸`). `Space` toggles a task done in **any** view; in a calendar with no task drilled, `Space` instead hides/shows the highlighted calendar.
 
@@ -67,7 +61,27 @@ Run `lazyplanner` with no arguments to open the TUI (seed the cache with `import
 
 **Recurring items.** Editing (`e`), deleting (`d`), or grabbing (`m`) a recurring **event** opens a scope picker — **This occurrence** (writes a `RECURRENCE-ID` override / `EXDATE`), **This & future** (splits the series at that point, preserving a bounded count), or **All** (edits the master). A recurring **task** shows as a single live instance at its current due; completing it (`Space`) advances it to the next occurrence (the way NextCloud rolls a repeating task forward) — the flash confirms it advanced rather than being checked off, and it's marked done only when the series runs out. Editing "this occurrence" of a task detaches that instance as a separate one-off task (after a confirmation) and advances the rest.
 
-**Commands & layout.** `:` opens a command line — `:sync`, `:view month|week|day`, `:goto`, `:search`, `:config`, `:conflicts`, `:calendar new|rename|color|hide|show`, `:help`, `:q` — and the status bar's middle echoes the last action (`gd` opens `:goto` prefilled). **`:config`** opens `config.toml` in `$EDITOR` and reloads on exit: a `color_mode` or credential change applies live, while an `auto`↔`truecolor` switch or an account change needs a restart. `:calendar` edits are offline-first and sync **both ways** — a rename/recolor pushes via `PROPPATCH`, and a change made in NextCloud is pulled back without clobbering an unpushed local edit. The status bar's left shows a vim-style **mode badge** — `NORMAL`, `DRILL` (drilled into a day), `GRAB` — so a context-sensitive key like `hjkl` is never a surprise; its right shows the sync state and live conflict count. `+`/`-` accordion-expand the center (or zoom the time-grid hour height in week/day view); `Ctrl-←`/`Ctrl-→` and `Ctrl-W` resize the panes, widths remembered across launches. **Mouse**: click to focus/select, double-click the tree/agenda to edit, wheel to scroll. `?` opens the full cheat sheet.
+**Commands & layout.** `:` opens a command line — `:sync`, `:view month|week|day`, `:goto`, `:search`, `:config`, `:conflicts`, `:calendar new|rename|color|hide|show`, `:help`, `:q` — and the status bar's middle echoes the last action (`gd` opens `:goto` prefilled).
+
+- **`:config`** opens `config.toml` in `$EDITOR` and reloads on exit: a `color_mode` or credential change applies live, while an `auto`↔`truecolor` switch or an account change needs a restart.
+- `:calendar` edits are offline-first and sync **both ways** — a rename/recolor pushes via `PROPPATCH`, and a change made in NextCloud is pulled back without clobbering an unpushed local edit.
+- The status bar's left shows a vim-style **mode badge** — `NORMAL`, `DRILL` (drilled into a day), `GRAB` — so a context-sensitive key like `hjkl` is never a surprise; its right shows the sync state and live conflict count.
+- `+`/`-` accordion-expand the center (or zoom the time-grid hour height in week/day view); `Ctrl-←`/`Ctrl-→` and `Ctrl-W` resize the panes, widths remembered across launches.
+- **Mouse**: click to focus/select, double-click the tree/agenda to edit, wheel to scroll. `?` opens the full cheat sheet.
+
+### Managing Calendars
+
+You can create and delete calendars/task lists in-app (`ic` / `il` to create a calendar / list, `d` to delete the focused pane's collection — all offline-first), so you never need the NextCloud web UI. These CLI subcommands do the same directly on the server (via CalDAV `MKCALENDAR` / `DELETE`); they take the same connection flags/env vars as the other subcommands (see [Syncing](#syncing)).
+
+```sh
+lazyplanner calendar list                          # show calendars + their server paths
+lazyplanner calendar create --name "Projects"      # an event calendar
+lazyplanner calendar create --name "Errands" --tasks   # a task list (VTODO)
+lazyplanner calendar create --name "Home" --both --color "#3366cc"
+lazyplanner calendar delete --path "/remote.php/dav/calendars/you/errands/"
+```
+
+After creating a calendar, run `lazyplanner import` to pull it into the local cache.
 
 ### Keybindings
 
@@ -133,21 +147,23 @@ lazyplanner sync \
   --password <app-password>
 ```
 
-## Managing calendars
+## Build and Install
 
-You can create and delete calendars/task lists in-app (`ic` / `il` to create a calendar / list, `d` to delete the focused pane's collection — all offline-first), so you never need the NextCloud web UI. These CLI subcommands do the same directly on the server (via CalDAV `MKCALENDAR` / `DELETE`); connection flags/env vars are the same as `import`.
+Requires [Go](https://go.dev/dl/) (see the `go` directive in `go.mod` for the minimum version). Dependencies are vendored, so no network is needed to build.
 
-```sh
-lazyplanner calendar list                          # show calendars + their server paths
-lazyplanner calendar create --name "Projects"      # an event calendar
-lazyplanner calendar create --name "Errands" --tasks   # a task list (VTODO)
-lazyplanner calendar create --name "Home" --both --color "#3366cc"
-lazyplanner calendar delete --path "/remote.php/dav/calendars/you/errands/"
-```
+On first launch LazyPlanner writes a starter `config.toml` (see [Configuration](#configuration) above) and exits; fill in `[server]` and run it again to open the TUI. Press `q` or `Ctrl-C` to quit.
 
-After creating a calendar, run `lazyplanner import` to pull it into the local cache.
+A `Makefile` wraps the common tasks: `make build` (native binary), `make run`, and `make cross` (the Raspberry Pi binaries — see [Raspberry PI](#raspberry-pi)). `make build` and `make cross` **stamp the version** from the current git tag (so `lazyplanner version` reports e.g. `v1.0.0`); a plain `go build` leaves it as `dev`.
 
-## Raspberry Pi / dedicated terminal
+### Linux
+
+The primary target: `go build -o lazyplanner ./cmd/lazyplanner` — a single static binary, no runtime dependencies. Run `./lazyplanner`.
+
+### Windows
+
+The secondary target, cross-compiled from any machine: `GOOS=windows go build -o lazyplanner.exe ./cmd/lazyplanner`.
+
+### Raspberry PI
 
 LazyPlanner is a single static binary with no runtime dependencies, so it's a natural fit for a low-power Raspberry Pi used as an always-on wall calendar. Because it's pure Go (no cgo), you **cross-compile from any machine** — no ARM toolchain needed:
 
