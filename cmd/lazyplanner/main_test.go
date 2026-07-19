@@ -23,6 +23,24 @@ func TestRunHelpAndVersion(t *testing.T) {
 	}
 }
 
+// TestVersionStringSurfacesInjectedVersion guards the build-time version
+// injection: `version` output must include the appVersion var (set via
+// -ldflags "-X main.appVersion=..."), so a git-tag build reports its tag rather
+// than a hardcoded string. If the version case stopped using appVersion, an
+// injected value would silently not appear.
+func TestVersionStringSurfacesInjectedVersion(t *testing.T) {
+	if appVersion == "" {
+		t.Fatal("appVersion is empty; the ldflags default should be non-empty")
+	}
+	got := versionString()
+	if !strings.Contains(got, appName) {
+		t.Errorf("versionString() = %q, want it to contain appName %q", got, appName)
+	}
+	if !strings.Contains(got, appVersion) {
+		t.Errorf("versionString() = %q, want it to contain appVersion %q (the injected value)", got, appVersion)
+	}
+}
+
 // TestPrintUsageListsSubcommands: usage names each real subcommand so the help is
 // actually useful.
 func TestPrintUsageListsSubcommands(t *testing.T) {

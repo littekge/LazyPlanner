@@ -8,15 +8,23 @@
 BIN     := lazyplanner
 PKG     := ./cmd/lazyplanner
 DIST    := dist
-LDFLAGS := -s -w
+
+# VERSION is derived from the git tag — GitHub Releases + tags are the source of
+# truth, so nothing is hand-maintained in the source. `git describe` yields the
+# tag (e.g. v1.0.0), or tag-N-gHASH between tags, or the short hash before any
+# tag; -dirty flags an uncommitted tree. Falls back to "dev" without git.
+VERSION := $(shell git describe --tags --always --dirty 2>/dev/null || echo dev)
+VERSION_LDFLAGS := -X main.appVersion=$(VERSION)
+
+LDFLAGS := -s -w $(VERSION_LDFLAGS)
 GOFLAGS := -trimpath -ldflags "$(LDFLAGS)"
 
 .PHONY: all build check test vet staticcheck fmt run clean \
         cross pi-arm64 pi-armv7 pi-armv6
 
-## build: native binary for this machine
+## build: native binary for this machine (version injected from the git tag)
 build:
-	go build -o $(BIN) $(PKG)
+	go build -ldflags "$(VERSION_LDFLAGS)" -o $(BIN) $(PKG)
 
 ## check: the full gate (test + vet + staticcheck) — run before committing
 check: test vet staticcheck

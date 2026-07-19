@@ -4,6 +4,16 @@
 
 ---
 
+## 2026-07-18 — Build: inject version from the git tag (no hardcoded version in source)
+
+- **Follow-through on the "GitHub releases own the version" decision**: the binary reported a hardcoded `appVersion = "0.0.1"` const, which would need hand-bumping every release — the same maintained-version problem, one file over.
+- **Code** (`cmd/lazyplanner/main.go`): split the identity block — `appName` stays a const; `appVersion` is now a package `var` defaulting to `"dev"`, injectable at link time via `-ldflags "-X main.appVersion=..."`. Documented why it must be a var (only `-X`-settable form) and that it is set once at link time, never mutated at runtime, so it is not the banned global mutable state. Extracted `versionString()` as a testable seam and routed both the `version` subcommand and the UI title through it.
+- **Build** (`Makefile`): new `VERSION := git describe --tags --always --dirty` (falls back to `dev` without git) injected via `VERSION_LDFLAGS` into both `build` and the `cross`/Pi targets, so a tagged build reports its tag (`v1.0.0`), an untagged commit its short hash, and a plain `go build` stays `dev`.
+- **Test** (`cmd/lazyplanner/main_test.go`): `TestVersionStringSurfacesInjectedVersion` guards that `version` output includes the `appVersion` var, so an injected tag flows through (a regression that stopped using the var would be caught).
+- **Verified end-to-end**: plain `go build` → `LazyPlanner dev`; git-describe ldflags → `LazyPlanner a4bb443-dirty` (would be `v1.0.0` on a clean tagged checkout); explicit `-X main.appVersion=v1.0.0` → `LazyPlanner v1.0.0`. (`make` isn't installed in this env, so the exact `make build` command line was simulated.)
+- **README**: noted that `make build`/`make cross` stamp the version from the git tag while plain `go build` leaves it `dev`.
+- Files: `cmd/lazyplanner/main.go`, `cmd/lazyplanner/main_test.go`, `Makefile`, `README.md`. Full gate green.
+
 ## 2026-07-18 — Docs: main.md no longer tracks a release version (GitHub releases own it)
 
 - **Owner decision**: main.md must not carry a maintained release-version number — GitHub Releases + git tags are the source of truth for versions.

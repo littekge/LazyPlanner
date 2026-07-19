@@ -19,7 +19,7 @@ Requires [Go](https://go.dev/dl/) (see the `go` directive in `go.mod` for the mi
 
 On first launch LazyPlanner writes a starter `config.toml` (see [Configuration](#configuration) below) and exits; fill in `[server]` and run it again to open the TUI. Press `q` or `Ctrl-C` to quit.
 
-A `Makefile` wraps the common tasks: `make build` (native binary), `make run`, and `make cross` (the Raspberry Pi binaries — see [Raspberry Pi](#raspberry-pi--dedicated-terminal)).
+A `Makefile` wraps the common tasks: `make build` (native binary), `make run`, and `make cross` (the Raspberry Pi binaries — see [Raspberry Pi](#raspberry-pi--dedicated-terminal)). `make build` and `make cross` **stamp the version** from the current git tag (so `lazyplanner version` reports e.g. `v1.0.0`); a plain `go build` leaves it as `dev`.
 
 ## Configuration
 

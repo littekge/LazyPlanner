@@ -28,11 +28,21 @@ import (
 	"github.com/littekge/LazyPlanner/internal/ui"
 )
 
-// Application identity, surfaced in the UI and (later) in version output.
-const (
-	appName    = "LazyPlanner"
-	appVersion = "0.0.1"
-)
+// appName is the fixed product identity.
+const appName = "LazyPlanner"
+
+// appVersion is injected at build time from the git tag via
+// -ldflags "-X main.appVersion=..." (see the Makefile's VERSION), so there is no
+// hand-maintained version number in the source — GitHub Releases + git tags are
+// the source of truth. A plain `go build` (no ldflags) leaves the "dev" default.
+// It is a package var only because -X can set a var but not a const; it is
+// assigned once at link time and never mutated at runtime, so it is not the
+// "global mutable state" the coding rules ban.
+var appVersion = "dev"
+
+// versionString is the one-line identity printed by `version`/`-v`/`--version`.
+// Extracted so a test can assert the injected appVersion flows through.
+func versionString() string { return fmt.Sprintf("%s %s", appName, appVersion) }
 
 func main() { os.Exit(run(os.Args[1:])) }
 
@@ -54,7 +64,7 @@ func run(args []string) int {
 		printUsage(os.Stdout)
 		return 0
 	case "version", "-v", "--version":
-		fmt.Fprintf(os.Stdout, "%s %s\n", appName, appVersion)
+		fmt.Fprintln(os.Stdout, versionString())
 		return 0
 	default:
 		// An unrecognized first argument used to fall through and silently open the
@@ -172,7 +182,7 @@ func runTUI() error {
 		fmt.Fprintln(os.Stderr, "lazyplanner:", syncWarn)
 	}
 
-	title := fmt.Sprintf("%s %s", appName, appVersion)
+	title := versionString()
 	return ui.Run(ui.Options{
 		Store:               s,
 		Title:               title,
