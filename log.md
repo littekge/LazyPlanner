@@ -4,6 +4,16 @@
 
 ---
 
+## 2026-07-18 — Docs: 1.0 release review — reconcile main.md timezone decision, trim transient state, README :calendar new
+
+- Pre-1.0 document-charter review (two parallel review agents cross-checked README-vs-code and main.md internal consistency; findings verified against the code before acting).
+- **main.md Finding 1.1 (real — superseded decision left standing)**: the Timezones settled-decision (Settled Decisions) said "store what the server has; create new items in the local timezone", contradicting the UI Design section's "timed values are stored in UTC … written as the equivalent UTC instant". The code (`internal/model/edit.go` `newDateOrTimeProp` → `prop.SetDateTime(t.UTC())`) implements the UTC model, so the settled-decision phrasing was the stale one. Rewrote it **in place** to match: preserve the server's bytes untouched on ingest (iron rule), write newly created/edited *timed* values in UTC (Z form) entered as local wall-clock, display local, all-day date-only.
+- **main.md Finding 2.1 (transient state in a permanent doc)**: Current State carried a churny operational note (test server "back online since 2026-07-18; credentials being rotated; live suite must be re-pointed"). This is neither settled design nor a mid-arc task (so it belongs in neither main.md nor `notes.md`) — trimmed to the stable fact: findings are verified headlessly, the opt-in live suite runs against a throwaway test account on demand.
+- **README completeness**: added `:calendar new` to the `:calendar` command list — the code's help string and main.md both list `new|rename|color|hide|show`; the README was the outlier.
+- Reviewed but deliberately left as-is: Build Plan step 8's "black/white dialogs" (permitted Build-Plan history, superseded by the terminal-default-background design); the "tasks with children" folder metaphor in the data-model note; the README "Development" pointer section (within charter — points, carries no history). CLAUDE.md, log.md structure, notes.md (empty), and the audit docs were verified in-charter and current.
+- **Release note (not a doc fix)**: `appVersion` in `cmd/lazyplanner/main.go` is still `0.0.1` — a code bump for the release proper, flagged for the owner, out of scope for this doc review.
+- Files: `main.md`, `README.md`, `log.md`.
+
 ## 2026-07-18 — Docs: finalize Pass 17 (ledger, pass report, build plan, twin-boundary testing guardrail)
 
 - **PROTOCOL.md**: added a **test-net guardrail — boundaries and sibling-guard parity** (codified per rule 9 after passes 14 + 17 escaped *twin* canaries — the pass-17 `DayAgenda` upper-bound escape mirrored the pass-14 lower-bound escape on the same function, and `reconcileReadOnly`'s degraded-download escape mirrored a guard already covered on the read-write path). Two rules: test *both* sides of every half-open window; mirror a guard's canary onto every sibling path. This recurring class is a *testing* practice, so it lands in the audit protocol rather than CLAUDE.md's code-focused Hard-won guardrails.
