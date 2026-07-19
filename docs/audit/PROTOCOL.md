@@ -83,6 +83,23 @@ can be checked against the record rather than re-litigated each pass.
 - `canarySummary.escaped > 0` → fix the test *gap*, not just any finding.
 - `convergence` + `residualRisk` → the real signal for readiness.
 
+**Test-net guardrail — boundaries and sibling-guard parity** (codified after passes 14 + 17 escaped
+twin canaries — the pass-17 `DayAgenda` upper-bound escape mirrored the pass-14 lower-bound escape on
+the *same* function, and `reconcileReadOnly`'s degraded-download escape mirrored a guard already
+covered on the read-*write* path). Escaped canaries recur when the regression net is extended
+point-by-point rather than by class. When closing a canary — or writing any boundary/guard test —
+close the whole class, not the one point:
+
+1. **Both sides of every half-open window.** A `[start, end)` check has two boundaries; a test that
+   pins one (e.g. a todo due exactly at `dayStart` is *included*) must be paired with one that pins
+   the other (due exactly at `dayEnd` is *excluded*). One-sided boundary tests leave the opposite
+   comparison free to flip silently.
+2. **Mirror a guard onto every sibling path.** When a guard exists on one path (e.g. the read-write
+   reconcile's degraded-download / empty-href skip), grep for its siblings (`reconcileReadOnly`, the
+   Import loop) and give each the *same* canary. A guard covered on one twin and untested on another
+   is a standing escape waiting to happen — the pass-17 MED findings were themselves this shape (a
+   sibling path missing a guard its twin already had).
+
 ## Running it
 
 The `/audit` slash command is a thin wrapper that just launches this workflow with

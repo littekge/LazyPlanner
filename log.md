@@ -4,6 +4,14 @@
 
 ---
 
+## 2026-07-18 — Docs: finalize Pass 17 (ledger, pass report, build plan, twin-boundary testing guardrail)
+
+- **PROTOCOL.md**: added a **test-net guardrail — boundaries and sibling-guard parity** (codified per rule 9 after passes 14 + 17 escaped *twin* canaries — the pass-17 `DayAgenda` upper-bound escape mirrored the pass-14 lower-bound escape on the same function, and `reconcileReadOnly`'s degraded-download escape mirrored a guard already covered on the read-write path). Two rules: test *both* sides of every half-open window; mirror a guard's canary onto every sibling path. This recurring class is a *testing* practice, so it lands in the audit protocol rather than CLAUDE.md's code-focused Hard-won guardrails.
+- **COVERAGE.md**: flipped both pass-17 MED rows (Timezone/DST, Import ingest) UNFIXED→FIXED; flipped the two canary-hole notes (subtask-tree COUNT-clamp, state-file Load) to CLOSED; updated the feature-promise row (the VALUE=PERIOD-IANA gap is now fixed); rewrote the blind-spots entries for both MED and the four canaries to RESOLVED/CLOSED; retitled the pass-17 canary section "4 of 4 escaped → all CLOSED" with each OPEN→CLOSED and its guard test named.
+- **PASS-17.md**: status line → ALL RESOLVED (both MED fixed, all four canaries closed), body kept as as-found evidence; recorded the two fix-time corrections (the COUNT-clamp boundary triggers *past* the last occurrence, and the state.Load canary needed a later-field type mismatch since the suggested trailing-garbage repro is rejected by `checkValid` pre-decode).
+- **main.md**: added the Pass 17 Build Plan line and rewrote the convergence scorecard — HIGH 2→0 (first HIGH-free re-sweep; criterion 2 now at one of two), no new root-cause class, but all four canaries escaped (worst on record, two twins); est. ~1 more re-sweep to earn the streak, sync-core TOCTOU the main heavier surface left.
+- Files: `docs/audit/PROTOCOL.md`, `docs/audit/COVERAGE.md`, `docs/audit/passes/PASS-17.md`, `main.md`, `log.md`.
+
 ## 2026-07-18 — Test (Pass 17 canary): guard state.Load's json.Unmarshal error check
 
 - **Canary escape** (test-net hole, code correct): dropping `state.Load`'s `json.Unmarshal` error check passed the suite. The only malformed-input test (`TestLoadBadFileIsZero`, `"{ not json"`) fails Unmarshal *before* it mutates the struct, so `s` stays zero whether or not the error is checked.

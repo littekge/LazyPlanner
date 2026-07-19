@@ -3,9 +3,17 @@
 - **Date:** 2026-07-18
 - **Prior pass:** Pass 16 (unhealed encoder classes brick the resource + CLI subcommand flag ergonomics + `:config`-reload dropped warning + double-click wrong-row) — HIGH 2 · MED 2 · LOW 2 (all fixed)
 - **This pass:** HIGH 0 · MED 2 · LOW 0 (both confirmed with runnable failing-test repros executed and observed red)
-- **Status (2026-07-18): findings UNFIXED — this is the as-found evidence report.** Two MED, each
-  with a red repro; four escaped mutation canaries (all OPEN test-net holes). The next increment
-  should fix both MED repro-first and close the four canary holes with boundary tests.
+- **Status (2026-07-18): ALL RESOLVED.** Both MED fixed repro-first and all four canary holes
+  closed, one full-gate commit each (see `log.md`); the body below is kept as the as-found evidence.
+  Fixes: tz `resolveDateTimeValues` drops the stale VALUE=PERIOD param + `resolveDateTime` gained an
+  IANA-TZID `LoadLocation` recovery branch (`rdate_period_tzid_test.go`); the Import loop mirrors
+  `reconcileCalendar`'s empty-href skip (`import_emptyhref_test.go`). Canary guards:
+  `TestReadOnlyDegradedDownloadKeptVsDeleted`, `TestSplitAtSeriesEndKeepsFutureBounded`,
+  `TestDayAgendaExcludesTodoDueAtDayEnd`, `TestLoadPartialParseThenErrorIsZero` — each verified to
+  fail under its exact mutation. Two corrections to the as-found notes surfaced at fix time: the
+  COUNT-clamp boundary triggers at occ *past* the last occurrence (not at it), and the `state.Load`
+  canary needed a later-field type mismatch (the suggested trailing-garbage repro is rejected by
+  `checkValid` before decode and would itself have escaped).
 
 This pass took the ledger's stalest / never-audited cells the plan named: the **Import ingest path**
 (marked recent but only ever encode-fuzzed at pass 15 — its fault paths untested), a whole-app

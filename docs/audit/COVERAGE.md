@@ -13,9 +13,9 @@ not hidden. See `PROTOCOL.md`.
 | iCalendar decode/ingest | internal/model | fuzz, heal-on-ingest | 4 | recent |
 | Recurrence expansion (read) | internal/model | fuzz, tz/DST sweep, scale-bound | 4,5,8 | recent |
 | Recurrence write-side (mutate/split/advance) | internal/model | fuzz, deep audit, spec-diff | 9,14 | recent (2 MED fixed pass 14: this-&-future split added a phantom trailing occurrence past a pre-split EXDATE — now counts RRULE iterations via rruleIterationsBefore — and duplicated a trailing RDATE across both halves — now partitioned via filterRDates; both restore main.md:362. Codified as a Hard-won guardrail) |
-| Subtask tree build | internal/model | fuzz, scale | 4,5,17 | recent (pass 17 re-fuzzed BuildTree cycle/orphan/deep-chain classification against 12 passes of model evolution — no finding; canary hole below: the this-&-future split COUNT-clamp boundary is unguarded) |
+| Subtask tree build | internal/model | fuzz, scale | 4,5,17 | recent (pass 17 re-fuzzed BuildTree cycle/orphan/deep-chain classification against 12 passes of model evolution — no finding; pass-17 canary CLOSED: the this-&-future split COUNT-clamp boundary is now guarded by TestSplitAtSeriesEndKeepsFutureBounded) |
 | Quick-add parser | internal/model | fuzz, input-edge | 4,14 | recent (MED fixed pass 14: an invalid day-of-month in the slashed `2/30` and month-name `feb 30` forms was silently normalized by time.Date to a wrong date and rolled a year forward — validYMD/rollForwardMonthDay now reject it, matching the ISO form and the leave-text-in-title principle) |
-| Timezone / DST | internal/model | exhaustive sweep, fuzz | 8,14,17 | recent (MED fixed pass 14: resolveDateTime parsed only a single date-time, so an RFC-5545-valid comma-listed multi-valued RDATE/EXDATE — or VALUE=PERIOD RDATE — errored and Occurrences collapsed the whole RRULE series to its base instance; resolveDateTimeValues now splits per value. Codified as a Hard-won guardrail. **Pass 17 MED — UNFIXED**: an RDATE;VALUE=PERIOD carrying an IANA TZID (e.g. America/New_York) is silently mis-zoned to floating time — resolveDateTimeValues leaves the VALUE=PERIOD param on the sub-prop so go-ical's prop.DateTime rejects it, and resolveDateTime has only a Windows-name recovery branch (windowsToIANA) + floating fallback, no direct time.LoadLocation on an IANA TZID, so the standard IANA case falls through to floating while the Windows-name case resolves correctly — a wrong absolute occurrence time. internal/model/tz.go:68. Repro internal/model/rdate_period_tzid_repro_test.go) |
+| Timezone / DST | internal/model | exhaustive sweep, fuzz | 8,14,17 | recent (MED fixed pass 14: resolveDateTime parsed only a single date-time, so an RFC-5545-valid comma-listed multi-valued RDATE/EXDATE — or VALUE=PERIOD RDATE — errored and Occurrences collapsed the whole RRULE series to its base instance; resolveDateTimeValues now splits per value. Codified as a Hard-won guardrail. **Pass 17 MED — FIXED**: an RDATE;VALUE=PERIOD carrying an IANA TZID (e.g. America/New_York) was silently mis-zoned to floating time — resolveDateTimeValues left the VALUE=PERIOD param on the sub-prop so go-ical's prop.DateTime rejected it, and resolveDateTime had only a Windows-name recovery branch + floating fallback. Fixed: resolveDateTimeValues drops the stale VALUE=PERIOD param on the reduced sub-prop (cloning the shared map), and resolveDateTime gained an IANA-TZID time.LoadLocation recovery branch so the IANA and Windows spellings agree. internal/model/tz.go. Regression internal/model/rdate_period_tzid_test.go) |
 | Windows→IANA zone mapping + TZID resolution | internal/model | fuzz | 17 | recent (first direct audit of windowszones.go's lookup table + tz.go's unknown-TZID fallback. No crash/panic on adversarial/unresolvable TZIDs — the floating fallback holds. One functional gap found on the same resolveDateTime path: the IANA-TZID VALUE=PERIOD RDATE mis-zone (see Timezone/DST row, MED, tz.go:68) — a Windows-name TZID resolves but the IANA-name equivalent falls through to floating) |
 | Color parsing (ParseHexColor / NearestANSI16 / ReadableFg / Luminance) | internal/model | input-edge | 17 | recent (first audit of model/color.go — parses untrusted server-supplied CALENDAR-COLOR / hex strings. Boundary-swept malformed length, non-hex digits, out-of-range channels, empty input to NearestANSI16 — no panic/OOB finding; the parser rejects/clamps as expected. Distinct cell from the caldav color-PROPFIND decode audited pass 12) |
 | CalDAV network boundary (response-parse: multiget/PROPFIND/REPORT decode, hand-rolled ListObjectHrefs XML, truncated/oversized bodies, redirects) | internal/caldav | fault-injection, panic-guard, fuzz | 4,7,15 | recent (pass 15 HIGH fixed: `PutObject`/`DeleteObject` followed a 301/302/303 on writes — Go's default redirect policy downgrades PUT/DELETE to a bodyless GET dropping the body + If-Match/If-None-Match; a 200/204 on the followed GET landed in the success set, so the write silently vanished and sync cleared the dirty flag. `NewClient` now installs a method-aware `CheckRedirect` returning `http.ErrUseLastResponse` for write methods (`isWriteMethod`), and `PutObject`/`DeleteObject` treat any 3xx as an error; reads and RFC 6764 `.well-known` discovery still follow redirects. Repro `internal/caldav/redirect_test.go`. Canary CLOSED this pass: `ListObjectHrefs` nested-collection filter now guarded by `TestListObjectHrefsExcludesNestedCollection` — see below) |
@@ -27,7 +27,7 @@ not hidden. See `PROTOCOL.md`.
 | Background sync goroutines (startPeriodicSync timer + flushOnQuit quit push) | internal/ui, internal/sync | race | 11,16 | recent (pass 16 re-swept under -race against the pass 14–15 write-path changes (CheckRedirect, tombstone-412) — no deadlock/race found) |
 | Store filesystem robustness (paths, revert, rollback, load-time stale-temp sweep) | internal/store | deep audit, race | 9,15 | recent (pass 15 HIGH fixed: `loadCalendar`'s stale-temp sweep used the over-loose `isStaleTempName` (`HasPrefix(".") && Contains(".tmp-")`) and ran BEFORE the `.ics` extension filter, so a real resource whose sanitized name began with a dot and contained `.tmp-` (e.g. UID `.tmp-important@host` → `.tmp-important_host.ics`) was `os.Remove`'d on Open — permanent loss for an offline-created not-yet-pushed item, reachable from a hostile server href. `isStaleTempName` now requires the actual leftover shape — dot-prefixed and ENDING in `.tmp-<digits>` (what `os.CreateTemp` produces); a real resource ends in `.ics` so it can't match, and genuine leftovers are still swept (`TestOpenSweepsStaleTempFiles`). Repro `internal/store/staletemp_test.go`. Pass 15 -race stress on the write primitives found no race — see below) |
 | Local disk / config input boundaries | internal/config, internal/state, internal/store | deep audit, size caps, fuzz | 9,13 | recent (pass 13 fuzzed TOML parse / first-run round-trip / password_command stdout — no finding; canary hole below: config-read size cap untested) |
-| State-file load/parse (widths/hidden-cals/hour-zoom) | internal/state | fuzz (adversarial values), deep audit, size cap | 9,12,17 | recent (pass 17 re-fuzzed adversarial widths/hidden-cals/hour-zoom against the later calendar-id changes — no parse finding; canary hole below: Load() drops the json.Unmarshal error check with no test that a partially-parsing-then-erroring file yields a populated State) |
+| State-file load/parse (widths/hidden-cals/hour-zoom) | internal/state | fuzz (adversarial values), deep audit, size cap | 9,12,17 | recent (pass 17 re-fuzzed adversarial widths/hidden-cals/hour-zoom against the later calendar-id changes — no parse finding; pass-17 canary CLOSED: Load()'s json.Unmarshal error check is now guarded by TestLoadPartialParseThenErrorIsZero — a later-field type mismatch that populates then errors must yield a zero State) |
 | Quick-field edits (sp/sd) — Locate→Put write | internal/ui, internal/model | data-loss | 12 | recent (HIGH STATUS-flatten + MED COMPLETED-restamp + MED TOCTOU all fixed) |
 | Completion toggle (Space) + recurring-todo advance — Locate→Put | internal/ui | data-loss | 12 | recent (MED TOCTOU fixed: PutIfUnchanged) |
 | Session undo stack (pushUndo / prev-snapshot restore replay) | internal/ui, internal/store | data-loss | 12 | recent (HIGH undo-of-synced-delete + MED undo-of-synced-edit fixed: RestoreDirty) |
@@ -43,9 +43,9 @@ not hidden. See `PROTOCOL.md`.
 | `:config` reload / $EDITOR flow | internal/ui, internal/config | fault-injection | 10,16 | recent (MED fixed pass 10: $EDITOR shell-split. Pass 16 MED, fixed: editConfigFn's reload path read `cfg, _, _, err := config.Load()`, discarding Load's warning — appearance-typo / world-readable-password warnings were silently lost on `:config` reload. Now combined with buildSyncFn's via `joinWarnings`. Canary CLOSED — `TestServerConfigured` asserts a partial (URL-only/username-only) config returns false) |
 | Store write pipeline atomicity (.ics + sidecar temp/rename) under disk fault | internal/store | fault-injection | 10,15 | recent (MED fixed pass 10: content-hash reconcile; delete-half left to safe re-pull. Pass 15 re-swept the sidecar/delete-half under injected partial-write/ENOSPC/rename-fail — the accepted delete-half residual still degrades to a safe re-pull and no new partial-write gap opened; no finding) |
 | Store write primitives under concurrent goroutines (mutate / PutIfUnchanged / RestoreDirty / tombstone racing PullRemoteBatch) | internal/store | race | 15 | recent (first direct -race stress at the store layer, previously only exercised via the sync engine; no race/deadlock found. Canary CAUGHT: dropping the `r.Href != ""` guard on the tombstone write fails `TestDeleteNeverSyncedLeavesNoTombstone`) |
-| Import ingest path (foreign/bundled external .ics via DownloadAll batch + per-resource GetObject fallback, ImportError collection) | internal/sync, cmd/lazyplanner | fuzz, fault-injection | 15,17 | recent (**pass 17 MED — UNFIXED**: the Import object loop (import.go:92) writes every downloaded object with no empty-href guard, unlike its sibling reconcileCalendar (sync.go:439-445, errEmptyHref). A malformed/hostile server returning empty <href/> elements (go-webdav's Response.Path() → ("",nil) on an empty href) yields caldav.Objects with Path=="" → resourceFileName("")=="resource.ics" → multiple such objects collide on that one name in PullRemoteBatch and silently overwrite each other, each counted as a successful pull; the same collision hits any two distinct hrefs sharing a basename. Import reports N imported while storing 1. Repro internal/sync/import_emptyhref_repro_test.go. Fix: mirror reconcileCalendar's empty-href skip. pass 15 MED — ACCEPTED RESIDUAL by owner decision 2026-07-18: a single resource mixing a UID-bearing component with a UID-less one fails to encode as a whole — the ingest healers deliberately never fabricate a UID (pass-3 #7), so go-ical's encoder rejects the ENTIRE resource ("want exactly one UID property, got 0") and import records the whole resource in `res.Skipped`, dropping a perfectly valid UID-bearing sibling. Surfaced (not silent), item-level loss, and reachable only from a malformed foreign/hand-edited `.ics` (RFC 5545 requires a UID). Not fixed because every fix crosses a hard invariant — fabricating a UID reverses a settled decision (churn), per-component encode weakens the iron rule (drops the UID-less component), and the CalDAV transport hands us an already-decoded `*ical.Calendar` so there are no raw bytes to preserve. Revisit if it ever bites a real server. See accepted gaps below) |
+| Import ingest path (foreign/bundled external .ics via DownloadAll batch + per-resource GetObject fallback, ImportError collection) | internal/sync, cmd/lazyplanner | fuzz, fault-injection | 15,17 | recent (**pass 17 MED — FIXED**: the Import object loop (import.go) wrote every downloaded object with no empty-href guard, unlike its sibling reconcileCalendar (errEmptyHref). A malformed/hostile server returning empty <href/> elements yields caldav.Objects with Path=="" → resourceFileName("")=="resource.ics" → multiple such objects collided on that one name in PullRemoteBatch and silently overwrote each other, each counted as a successful pull; Import reported N imported while storing 1. Fixed: the import loop now skips obj.Path=="" and records it in res.Skipped with errEmptyHref, mirroring reconcileCalendar. Regression internal/sync/import_emptyhref_test.go. pass 15 MED — ACCEPTED RESIDUAL by owner decision 2026-07-18: a single resource mixing a UID-bearing component with a UID-less one fails to encode as a whole — the ingest healers deliberately never fabricate a UID (pass-3 #7), so go-ical's encoder rejects the ENTIRE resource ("want exactly one UID property, got 0") and import records the whole resource in `res.Skipped`, dropping a perfectly valid UID-bearing sibling. Surfaced (not silent), item-level loss, and reachable only from a malformed foreign/hand-edited `.ics` (RFC 5545 requires a UID). Not fixed because every fix crosses a hard invariant — fabricating a UID reverses a settled decision (churn), per-component encode weakens the iron rule (drops the UID-less component), and the CalDAV transport hands us an already-decoded `*ical.Calendar` so there are no raw bytes to preserve. Revisit if it ever bites a real server. See accepted gaps below) |
 | Yank/paste cross-list move & copy rollback | internal/ui | data-loss | 10 | recent (HIGH+MED fixed: per-component isolate/remove) |
-| Feature-promise conformance vs main.md/CLAUDE.md | (whole app) | spec-diff | 10,13,17 | recent (2 MED fixed pass 13: applyMutation (edit form + recur-scoped saves) and reparentSelected H/L now route through PutIfUnchanged — the "no Locate→Put clobber sites remain" invariant is now true again. Pass 17 re-diffed the passes 14/15/16 promises (method-aware redirect policy, heal-set-mirrors-validateComponent, RDATE/EXDATE multi-value independence): the redirect and reconcile promises hold; the RDATE/EXDATE-independence promise is confirmed intact for comma-listed values but the pass-17 tz.go VALUE=PERIOD-IANA-TZID mis-zone (see Timezone/DST row) is a live gap in the same resolveDateTime path — recorded as a finding there, not a separate spec-drift) |
+| Feature-promise conformance vs main.md/CLAUDE.md | (whole app) | spec-diff | 10,13,17 | recent (2 MED fixed pass 13: applyMutation (edit form + recur-scoped saves) and reparentSelected H/L now route through PutIfUnchanged — the "no Locate→Put clobber sites remain" invariant is now true again. Pass 17 re-diffed the passes 14/15/16 promises (method-aware redirect policy, heal-set-mirrors-validateComponent, RDATE/EXDATE multi-value independence): the redirect and reconcile promises hold; the RDATE/EXDATE-independence promise is confirmed intact for comma-listed values; the pass-17 tz.go VALUE=PERIOD-IANA-TZID mis-zone in the same resolveDateTime path (recorded as a finding in the Timezone/DST row) is now FIXED) |
 | Full `sync-collection` incremental (token delta) | internal/sync | — (deliberately deferred) | — | never |
 | go-ical semantic encoder constraints (DTEND/DUE+DURATION, empty VTIMEZONE, VJOURNAL/VFREEBUSY nesting) | internal/model | fuzz (re-encode round-trip) | 10,16 | recent (4 HIGH + 1 MED fixed pass 10: ingest healers. Pass 16 re-fuzz found 2 more HIGH of the *same class* — the pass-10 healer set was component-incomplete — both now fixed: (a) a VTIMEZONE missing TZID, or a STANDARD/DAYLIGHT missing DTSTART/TZOFFSETTO/TZOFFSETFROM, bricked the resource at Encode() — `dropEmptyTimezones`→`dropUnusableTimezones` now strips such an unencodable VTIMEZONE on ingest (owner-approved; a referenced TZID degrades to floating time); (b) a VJOURNAL/VFREEBUSY missing DTSTAMP or carrying duplicate single-valued props — `ensureDTStamp` now runs for VJOURNAL/VFREEBUSY in `healComponentConstraints` and `singleValuedProps` gained CompJournal/CompFreeBusy entries. A missing UID on these components is still not healed (fabricating one would churn sync identity — accepted residual). Regression: `malformed_vtimezone_test.go`, `vjournal_encode_test.go`. **The healer table must mirror go-ical's full encoder.go validateComponent — codified as a Hard-won guardrail so this class does not reopen a third time**) |
 | Raspberry Pi target (on-device timing / kiosk) | (hardware) | — | — | never |
@@ -62,24 +62,24 @@ not hidden. See `PROTOCOL.md`.
 - **`ListObjectHrefs` nested-collection filter** (pass-15 canary escape) — RESOLVED (pass 15):
   `TestListObjectHrefsExcludesNestedCollection` adds a nested sub-collection href ≠ the query
   path, verified to fail under dropping `|| r.isCollection()`. See the pass-15 canary section.
-- **Import empty-href / basename-collision** (pass-17 MED, UNFIXED) — the Import object loop
-  (`internal/sync/import.go:92`) lacks the empty-href guard its sync sibling `reconcileCalendar`
-  has, so a malformed/hostile server's empty `<href/>` (or two hrefs sharing a basename) collapses
-  multiple objects onto the one `resource.ics` name in PullRemoteBatch, silently overwriting while
-  reporting N imported. Repro `internal/sync/import_emptyhref_repro_test.go`. Fix: mirror
-  `reconcileCalendar`'s `errEmptyHref` skip and record it in `res.Skipped`.
-- **IANA-TZID `VALUE=PERIOD` RDATE mis-zoned to floating** (pass-17 MED, UNFIXED) —
-  `internal/model/tz.go:68` `resolveDateTimeValues` leaves the `VALUE=PERIOD` param on the sub-prop
-  (go-ical's `prop.DateTime` has no PERIOD case), and `resolveDateTime` recovers only Windows-name
-  TZIDs, never `time.LoadLocation` on an IANA TZID — so an `RDATE;VALUE=PERIOD;TZID=America/New_York`
-  resolves as floating (wrong absolute time) while the same line with a Windows name resolves
-  correctly. Repro `internal/model/rdate_period_tzid_repro_test.go`. Fix: strip the `VALUE=PERIOD`
-  param on the period-start sub-prop and add an IANA-TZID `LoadLocation` recovery branch.
-- **Four escaped pass-17 canaries (all OPEN)** — read-only degraded-download guard
+- **Import empty-href / basename-collision** (pass-17 MED) — RESOLVED (pass 17): the Import object
+  loop now mirrors `reconcileCalendar`'s empty-href guard — an `obj.Path==""` object is skipped and
+  recorded in `res.Skipped` with `errEmptyHref` instead of collapsing onto the one `resource.ics`
+  name. Repro `internal/sync/import_emptyhref_test.go` (`TestImportEmptyHrefNotSilentlyLost`), verified
+  to fail before the fix (`res.Objects=2` / stored=1) and asserts the reported count never exceeds
+  what is persisted.
+- **IANA-TZID `VALUE=PERIOD` RDATE mis-zoned to floating** (pass-17 MED) — RESOLVED (pass 17):
+  `resolveDateTimeValues` now drops the stale `VALUE=PERIOD` param on the reduced period-start
+  sub-prop (cloning the shared params map first), and `resolveDateTime` gained an IANA-TZID
+  `time.LoadLocation` recovery branch parallel to the Windows-name one, so the IANA and Windows
+  spellings agree. Repro promoted to `internal/model/rdate_period_tzid_test.go`
+  (`TestRDatePeriodTZIDZoned` + `TestResolveDateTimeIANATZIDRecovery`), verified to fail with either
+  fix hunk neutered.
+- **Four escaped pass-17 canaries** — ALL CLOSED (pass 17): read-only degraded-download guard
   (`reconcileReadOnly`), this-&-future split COUNT-clamp boundary (`NewSeriesFrom` `remaining==0`),
   `DayAgenda` inclusive-upper-bound (dayEnd) twin of the pass-14 lower-bound escape, and
-  `state.Load`'s dropped `json.Unmarshal` error check. See the pass-17 canary section. Each is a
-  live test-net hole; a boolean/comparison regression on any would ship silently.
+  `state.Load`'s dropped `json.Unmarshal` error check — each now has a boundary test verified to
+  fail under its exact mutation. See the pass-17 canary section.
 - **Sync core deep concurrency / TOCTOU** — deliberately NOT re-examined this pass (last deep audit
   pass 11); the pass-17 targets skewed to model-side parsers and one write path. Flagged as the main
   heavier surface being deferred.
@@ -110,52 +110,43 @@ not hidden. See `PROTOCOL.md`.
   DURATION-without-DTSTART, empty VTIMEZONE incl. the `stripForbiddenNesting` self-
   inflict, VJOURNAL/VFREEBUSY nesting) are now healed on ingest with regression tests.
 
-## Escaped mutation canaries — pass 17 (4 of 4 escaped → OPEN)
+## Escaped mutation canaries — pass 17 (4 of 4 escaped → all CLOSED 2026-07-18)
 
-All four canaries this pass escaped — each is a test-coverage hole (code is correct today; a
-plausible regression on that exact path would ship silently). None fixed this pass; each needs a
-boundary test verified to fail under its mutation.
+All four canaries this pass escaped — each was a test-coverage hole (code correct; a plausible
+regression on that exact path would have shipped silently). All four are now closed with boundary
+tests each verified to fail under its exact mutation and pass when reverted; no production code
+changed for the canary closes.
 
-- **OPEN** — `internal/sync/sync.go` `reconcileReadOnly` (~line 514): inverting the degraded-
-  download guard `case !onServer && unfetched[r.Href]:` → `!unfetched[r.Href]` — `go test
-  ./internal/sync/` PASSED. The read-*write* twin of this guard is covered
-  (`TestDegradedDownloadNotTreatedAsDeletion` / `...DirtyResourceNotFalselyConflicted` / `...CTag...`
-  in `degraded_download_deletion_test.go`), but the **read-only** path has no test combining a
-  read-only calendar with a degraded/partial download. The only read-only test
-  (`TestSyncReadOnlyDiscardsStuckAndMirrors`) exercises a dirty-stuck (Discard) and a new-on-server
-  (pull) resource — never a previously-synced clean read-only resource that is server-deleted vs.
-  unfetched, so both sides of the inverted case go unobserved. A regression would false-delete a
-  still-present read-only resource whose GET merely failed, or leak a genuine server deletion.
-  Suggested guard: a read-only + degraded-download test asserting an unfetched resource is kept and
-  a truly server-deleted clean one is Forgotten.
-- **OPEN** — `internal/model/recur_edit.go` `NewSeriesFrom` (this-&-future split): weakening the
-  future-series COUNT clamp `if remaining < 1 { remaining = 1 }` → `< 0` — `go test
-  ./internal/model/` PASSED (incl. `-run 'Split|Series|Recur|Count'`). When the split point lands
-  at/after the last occurrence, `pastCount == roption.Count` so `remaining` computes to 0; the
-  original clamp forced it to 1, but `< 0` lets 0 through, and rrule-go treats `COUNT=0` as
-  *unbounded* — the future series then recurs forever, breaking the "two halves sum to the original
-  count" invariant. The split tests (`recur_split_exdate_test.go` / `recur_split_rdate_test.go`)
-  guard COUNT preservation for pre-split EXDATE/RDATE cases but none covers the `remaining==0`
-  boundary (split at/after the final occurrence). Suggested guard: split a COUNT-bounded series at
-  its last occurrence and assert the future half yields exactly one occurrence, not infinite.
-- **OPEN** — `internal/model/agenda.go` `DayAgenda` (todo due-window *upper* bound): flipping
-  `t.Due.Before(dayEnd)` → `!t.Due.After(dayEnd)` (exclusive → inclusive) — `go test
-  ./internal/model/` PASSED. This is the *upper*-bound twin of the pass-14 escape (which pinned the
-  inclusive *lower* bound via `TestDayAgendaIncludesTodoDueAtMidnight`). A todo due exactly at
-  `dayEnd` (00:00 of the next day — the natural due time for a date-only/all-day todo) would then
-  leak onto both this day's and the next day's agenda (a duplicate). `TestDayAgenda`'s only excluded
-  todo sits at `dayEnd+1h`, so it stays excluded under both bounds and the boundary itself is never
-  asserted. Suggested guard: add a todo due exactly at `dayEnd` and assert it is *excluded* from the
-  current day.
-- **OPEN** — `internal/state/state.go` `Load()` (~line 52): dropping the `json.Unmarshal` error
-  check (`if err := json.Unmarshal(...); err != nil { return State{} }` → ignore err) — `go test
-  ./internal/state/` PASSED (all 4 tests). The only malformed-input test (`TestLoadBadFileIsZero`)
-  feeds `"{ not json"`, which fails Unmarshal *before* mutating the destination struct, so `s`
-  stays zero whether or not the error is checked — the zero-State assertion holds identically for
-  the buggy code. No test exercises a file that *partially* parses then errors (e.g.
-  `{"left_width":5} trailing`), where the dropped check would surface a populated State that should
-  have been rejected as zero. Suggested guard: feed a partially-valid-then-trailing-garbage file and
-  assert `Load` returns a zero State.
+- **CLOSED** — `internal/sync/sync.go` `reconcileReadOnly` (line 514): inverting the degraded-
+  download guard `case !onServer && unfetched[r.Href]:` → `!unfetched[r.Href]` escaped. The
+  read-*write* twin was covered (`degraded_download_deletion_test.go`), but the **read-only** path
+  had no test combining a read-only calendar with a degraded/partial download. Guard:
+  `TestReadOnlyDegradedDownloadKeptVsDeleted` (`internal/sync/readonly_degraded_download_test.go`)
+  exercises both sides on a read-only calendar — an unfetched (GET-failed) resource still on the
+  server is KEPT; a genuinely server-absent one is Forgotten (`PulledDeletes==1`). Verified to fail
+  under the inversion at the reconcileReadOnly site (distinct from the read-write site at line 396).
+- **CLOSED** — `internal/model/recur_edit.go` `NewSeriesFrom` (this-&-future split): weakening the
+  future-series COUNT clamp `if remaining < 1 { remaining = 1 }` → `< 0` escaped — at/after the final
+  occurrence `pastCount == COUNT` so `remaining` computes to 0, and rrule-go treats `COUNT=0` as
+  *unbounded*. Boundary confirmed empirically: `rruleIterationsBefore` counts iterations strictly
+  before occ, so `remaining==0` requires occ *past* the last occurrence. Guard:
+  `TestSplitAtSeriesEndKeepsFutureBounded` (`internal/model/recur_split_count_test.go`) splits a
+  COUNT=3 series one day past its end and asserts the future series stays bounded (exactly one
+  occurrence, not 176 under the mutation).
+- **CLOSED** — `internal/model/agenda.go` `DayAgenda` (todo due-window *upper* bound): flipping
+  `t.Due.Before(dayEnd)` → `!t.Due.After(dayEnd)` (exclusive → inclusive) escaped — the *upper*-bound
+  twin of the pass-14 lower-bound escape. Guard: `TestDayAgendaExcludesTodoDueAtDayEnd`
+  (`internal/model/agenda_test.go`) asserts a todo due exactly at `dayEnd` yields 0 items on the
+  current day (it belongs to the next day). Verified to return 1 item under the mutation.
+- **CLOSED** — `internal/state/state.go` `Load()` (line 52): dropping the `json.Unmarshal` error
+  check escaped — the only bad-file test (`"{ not json"`) fails Unmarshal *before* mutating the
+  struct. The canary's *suggested* trailing-garbage repro would also have escaped: `json.Unmarshal`
+  runs `checkValid` over the whole input first, so trailing garbage is rejected before any decode and
+  leaves the struct zero (verified empirically). The case that actually requires the check is a **type
+  mismatch on a later field** (`{"left_width":5,"hidden_calendars":123}`) — `checkValid` passes, the
+  decoder populates `left_width`, then errors, leaving a half-populated struct. Guard:
+  `TestLoadPartialParseThenErrorIsZero` (`internal/state/state_test.go`) asserts Load rejects it to a
+  zero State; verified to surface `{LeftWidth:5}` under the mutation.
 
 ## Escaped mutation canaries — pass 13 (4 of 4 escaped → all CLOSED 2026-07-16)
 
