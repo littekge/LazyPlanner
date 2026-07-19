@@ -74,7 +74,7 @@ Working state for a task interrupted mid-arc: what's in progress, the remaining 
 
 `PROTOCOL.md` (the audit rules — **read it before running an audit**), `COVERAGE.md` (the living coverage ledger — **keep it current**; it drives which surfaces the next audit targets), and `passes/PASS-N.md` (the full per-pass reports). See Hardening Audits below.
 
-### `examples/spec_examples/`
+### `examples/Spec_Examples/`
 
 Spec files from a prior project, used as structural reference only — not project rules. Read-only.
 

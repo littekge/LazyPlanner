@@ -4,6 +4,14 @@
 
 ---
 
+## 2026-07-18 — Fix: reconcile the examples/Spec_Examples dir-name inconsistency
+
+- The `examples/spec_examples/` → `examples/Spec_Examples/` rename was already on disk (predating this session) and got **unintentionally swept into the screenshot commit `fcd2006`** by a `git add -A` — a process slip (the `R` rename line in `git status` should have been caught pre-commit). The result was an inconsistency: CLAUDE.md documented the lowercase name while disk/git carried the capitalized one.
+- **Owner decision**: keep `Spec_Examples` (consistent with the Capitalized_Snake `README_Photos` dir). Updated CLAUDE.md's reference (`### examples/Spec_Examples/`) so the doc matches disk.
+- The one remaining lowercase mention (`log.md`) is inside a prior history entry and is left byte-intact per the log-immutability rule (it recorded the state accurately at the time).
+- Process note: prefer explicit `git add <paths>` over `git add -A` so an unrelated working-tree change can't ride along in a commit.
+- Files: `CLAUDE.md`, `log.md`.
+
 ## 2026-07-18 — Docs: add README screenshots (owner-supplied)
 
 - Added the two owner-supplied screenshots (`examples/README_Photos/{Calendar_View,Task_View}.png`, ~66 KB each) to the README — the visual the earlier review flagged as the single highest-impact improvement for a TUI project.
