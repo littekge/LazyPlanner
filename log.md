@@ -4,6 +4,13 @@
 
 ---
 
+## 2026-07-18 — Test (Pass 17 canary): guard state.Load's json.Unmarshal error check
+
+- **Canary escape** (test-net hole, code correct): dropping `state.Load`'s `json.Unmarshal` error check passed the suite. The only malformed-input test (`TestLoadBadFileIsZero`, `"{ not json"`) fails Unmarshal *before* it mutates the struct, so `s` stays zero whether or not the error is checked.
+- **Corrected the suggested repro**: the canary's suggested "trailing garbage after a valid object" repro would *also* have escaped — `json.Unmarshal` runs `checkValid` over the whole input first, so trailing garbage is rejected before any decode and leaves the struct zero (verified empirically). The case that actually requires the error check is a **type mismatch on a later field** (`{"left_width":5,"hidden_calendars":123}`): `checkValid` passes, the decoder populates `left_width`, then records the type error — leaving a half-populated struct that the dropped check would surface.
+- **Guard**: `TestLoadPartialParseThenErrorIsZero` in `internal/state/state_test.go` — asserts Load returns a zero State for that input. Adversarially verified: dropping the check makes it fail (`{LeftWidth:5}` leaks); reverting restores green. `state.go` unchanged.
+- Files: `internal/state/state_test.go`. Full gate green. **All four Pass-17 canary holes now closed.**
+
 ## 2026-07-18 — Test (Pass 17 canary): pin DayAgenda's due-window upper bound (twin of the pass-14 lower bound)
 
 - **Canary escape** (test-net hole, code correct): flipping `DayAgenda`'s upper bound `t.Due.Before(dayEnd)` → `!t.Due.After(dayEnd)` (exclusive → inclusive) passed the suite. The window is half-open `[dayStart, dayEnd)`; a todo due exactly at `dayEnd` (00:00 of the next day — the natural due time for a date-only todo) belongs to the *next* day, so an inclusive upper bound would duplicate it onto both days. This is the **upper-bound twin of the pass-14 lower-bound escape** — `TestDayAgendaIncludesTodoDueAtMidnight` pins the inclusive lower bound but nothing asserted the exclusive upper bound.
