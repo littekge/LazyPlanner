@@ -4,6 +4,13 @@
 
 ---
 
+## 2026-07-18 — Test (Pass 17 canary): guard NewSeriesFrom's future-COUNT clamp against unbounded collapse
+
+- **Canary escape** (test-net hole, code correct): weakening `NewSeriesFrom`'s clamp `if remaining < 1 { remaining = 1 }` → `< 0` passed the model suite. When a this-and-future split lands at/after the final occurrence, `pastCount == COUNT` so `remaining` computes to 0; the clamp forces 1, but `< 0` lets 0 through and rrule-go treats `COUNT=0` as *unbounded* — the future series would recur forever. The existing split tests (`recur_split_{exdate,rdate}_test.go`) only cover pre-split EXDATE/RDATE COUNT preservation; none splits at the series end where `remaining` hits 0.
+- **Boundary confirmed empirically first**: `rruleIterationsBefore` counts iterations *strictly before* occ, so `remaining==0` requires occ *past* the last occurrence (splitting exactly at the last gives `remaining==1`, no clamp). The past-the-end split legitimately creates the future series' own new occurrence at occ, so the guard asserts **boundedness** (future has exactly 1 occurrence), not sum-to-original.
+- **Guard**: `internal/model/recur_split_count_test.go` (`TestSplitAtSeriesEndKeepsFutureBounded`) — FREQ=DAILY;COUNT=3, split at day+1-past-end; asserts the future series yields exactly one occurrence at the split point (not 176 under the mutation) and the capped half keeps all three. Adversarially verified: the mutation makes it fail (unbounded, 176 occurrences); reverting restores green. `recur_edit.go` unchanged.
+- Files: `internal/model/recur_split_count_test.go`. Full gate green.
+
 ## 2026-07-18 — Test (Pass 17 canary): guard reconcileReadOnly's degraded-download branch
 
 - **Canary escape** (test-net hole, code correct): inverting `reconcileReadOnly`'s degraded-download guard (`case !onServer && unfetched[r.Href]:` → `!unfetched`) passed the whole suite. The read-*write* twin of this guard is covered (`degraded_download_deletion_test.go`), but the read-only path's equivalent had no test combining a read-only calendar with a degraded/partial download — the only read-only test uses a dirty-stuck resource (Discard) and a new-on-server resource (pull), never a previously-synced clean read-only resource that is server-deleted or unfetched. A regression would false-delete a still-present read-only resource whose GET merely failed, or leak a genuine server deletion.
