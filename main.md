@@ -143,7 +143,7 @@ Tasks with a due date also appear on the time-grid: a timed-due task draws a `[ 
 
 **Un-drilled**, `←`/`→`/`h`/`l` move between days and `↑`/`↓`/`j`/`k` do nothing (days are horizontal); `Enter` drills in. **Drilled**, navigation is **2D and spatial over that day's layout**: `↑`/`↓` move by time, `←`/`→` move between concurrent (side-by-side) events — e.g. from an 11–12 event down to the leftmost of two 12–1 events, then right/left between the pair. The all-day band is the top row (`←`/`→` between its items, `↓` enters the timed grid); due-task markers are single-lane rows. Movement stops at the day's edges; `f`/`b` changes the period (staying drilled), `Esc` backs out.
 
-All timed values are stored in UTC and **displayed in the local timezone**; all-day items stay date-only. (A created "3pm" event is written as the equivalent UTC instant and rendered back as 3pm locally.)
+All timed values are **displayed in the local timezone**; ones LazyPlanner writes are stored in UTC (a value imported from the server is preserved as-is per the iron rule), and all-day items stay date-only. (A created "3pm" event is written as the equivalent UTC instant and rendered back as 3pm locally.)
 
 ### Task tree: lists in the overview, tree in Main
 

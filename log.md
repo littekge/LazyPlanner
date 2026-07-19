@@ -4,6 +4,14 @@
 
 ---
 
+## 2026-07-18 — Docs: final pre-1.0 sweep — two precision fixes (timezone overstatement, create-prefix)
+
+- Ran a final documentation sweep with three parallel review agents (cross-doc consistency/references, log.md integrity, README+main.md vs code). log.md integrity passed clean (248 headings = 248 entries, ordering + this-session claims verified); most areas clean. Two real precision fixes surfaced (the timezone one flagged independently by two agents):
+- **main.md:146 (timezone overstatement, grazed the iron rule)**: the UI-Design line said "All timed values are stored in UTC", which the earlier line-364 reconcile left contradicting the iron rule — an *imported* server value carrying a TZID is preserved untouched, not re-stored in UTC; only values LazyPlanner *writes* are UTC. Narrowed to "displayed in the local timezone; ones LazyPlanner writes are stored in UTC (a value imported from the server is preserved as-is per the iron rule)".
+- **README create-prefix (over-generalization)**: "the object letter … and its capital opens the full form" implied `c`/`l` have capital/quick-add variants; they don't (only `t`/`e`/`s` do, per `internal/ui/keys.go`). Scoped it to "a capital `T`/`E`/`S` … (calendars and lists always open their form)".
+- Verified-clean by the agents (no change needed): version-field removal, README version/build claims vs the Makefile+main.go, all markdown anchors + screenshot paths, the `Spec_Examples` rename (no live lowercase refs), the trimmed Usage/Syncing prose vs code, the timezone Settled Decision vs `internal/model/edit.go`, defaults, charters, empty notes.md. CLAUDE.md guardrails' audit-pass citations were flagged borderline but kept (load-bearing "why" for the recurring-class guardrails).
+- Files: `main.md`, `README.md`, `log.md`.
+
 ## 2026-07-18 — Fix: reconcile the examples/Spec_Examples dir-name inconsistency
 
 - The `examples/spec_examples/` → `examples/Spec_Examples/` rename was already on disk (predating this session) and got **unintentionally swept into the screenshot commit `fcd2006`** by a `git add -A` — a process slip (the `R` rename line in `git status` should have been caught pre-commit). The result was an inconsistency: CLAUDE.md documented the lowercase name while disk/git carried the capitalized one.
