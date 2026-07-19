@@ -7,7 +7,7 @@
 ## Project Identity
 
 - **Name**: LazyPlanner
-- **Version**: 1.0.0, plus ongoing v1.0.x hardening work (see Current State)
+- **Releases**: versioned on GitHub (Releases + git tags) — the single source of truth for release version numbers. main.md tracks the **design** and the **Build Plan** (planning milestones), never a maintained release version.
 - **Module**: `github.com/littekge/LazyPlanner` (matches the GitHub repo)
 - **Language**: Go (chosen for the Go 1 compatibility promise, single static binaries, easy ARM cross-compilation, and the lazygit-style TUI ecosystem). Minimum version: the stable release current at scaffold time, bumped only deliberately thereafter.
 - **Framework/Libraries**:

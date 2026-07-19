@@ -4,6 +4,13 @@
 
 ---
 
+## 2026-07-18 — Docs: main.md no longer tracks a release version (GitHub releases own it)
+
+- **Owner decision**: main.md must not carry a maintained release-version number — GitHub Releases + git tags are the source of truth for versions.
+- Removed the `Version: 1.0.0, plus ongoing v1.0.x hardening` field from Project Identity and replaced it with a **Releases** pointer that codifies the decision: versions live on GitHub; main.md tracks the design and the Build Plan (planning milestones), never a maintained release version.
+- Left intact (not release-version tracking): the Build Plan's `### v1.0.0` / `### v1.0.x` section headings (the "versioned Build Plan" is main.md's sanctioned role — planning history) and Current State's phase description.
+- Files: `main.md`, `log.md`.
+
 ## 2026-07-18 — Docs: 1.0 release review — reconcile main.md timezone decision, trim transient state, README :calendar new
 
 - Pre-1.0 document-charter review (two parallel review agents cross-checked README-vs-code and main.md internal consistency; findings verified against the code before acting).
