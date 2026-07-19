@@ -4,6 +4,13 @@
 
 ---
 
+## 2026-07-18 — Test (Pass 17 canary): pin DayAgenda's due-window upper bound (twin of the pass-14 lower bound)
+
+- **Canary escape** (test-net hole, code correct): flipping `DayAgenda`'s upper bound `t.Due.Before(dayEnd)` → `!t.Due.After(dayEnd)` (exclusive → inclusive) passed the suite. The window is half-open `[dayStart, dayEnd)`; a todo due exactly at `dayEnd` (00:00 of the next day — the natural due time for a date-only todo) belongs to the *next* day, so an inclusive upper bound would duplicate it onto both days. This is the **upper-bound twin of the pass-14 lower-bound escape** — `TestDayAgendaIncludesTodoDueAtMidnight` pins the inclusive lower bound but nothing asserted the exclusive upper bound.
+- **Guard**: `TestDayAgendaExcludesTodoDueAtDayEnd` in `internal/model/agenda_test.go` — a todo due exactly at `dayEnd` must yield 0 items. Adversarially verified: the mutation returns 1 item (the next-day task leaking in); reverting restores green. `agenda.go` unchanged.
+- **Recurring twin-boundary pattern** noted for the guardrail step (pass-14 + pass-17 both escaped the same function's opposite boundary).
+- Files: `internal/model/agenda_test.go`. Full gate green.
+
 ## 2026-07-18 — Test (Pass 17 canary): guard NewSeriesFrom's future-COUNT clamp against unbounded collapse
 
 - **Canary escape** (test-net hole, code correct): weakening `NewSeriesFrom`'s clamp `if remaining < 1 { remaining = 1 }` → `< 0` passed the model suite. When a this-and-future split lands at/after the final occurrence, `pastCount == COUNT` so `remaining` computes to 0; the clamp forces 1, but `< 0` lets 0 through and rrule-go treats `COUNT=0` as *unbounded* — the future series would recur forever. The existing split tests (`recur_split_{exdate,rdate}_test.go`) only cover pre-split EXDATE/RDATE COUNT preservation; none splits at the series end where `remaining` hits 0.
