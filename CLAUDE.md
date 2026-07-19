@@ -40,6 +40,13 @@ Agent orientation: workflow, rules, and architecture guardrails, with minimal pr
 
 For a user of the program: a basic summary of what it does, build/install instructions, usage, and a detailed description of the keybindings. **Maintenance**: update it whenever user-visible behavior, usage, or build steps change — in the same increment. It never carries project history, version narrative, build-plan status, or development internals; a curious user reads main.md for those.
 
+**Keep it tight — two rules that fight the drift this file is prone to:**
+
+- **The keybindings table is the canonical key reference; prose must not re-narrate it.** Usage prose covers only what a key list *can't* — the pane/overview→center→detail model, drilling, folders, the mode badge, quick-add tokens, type-locking. It must not walk key-by-key through bindings the table already lists (which key cycles calendars, which zooms, etc.); when a key is purely mechanical, let the table carry it. If you're describing a keystroke the table already has, delete the prose or move the *concept* it explains into the table's Action cell.
+- **Prefer short sentences and bullet lists over long, parenthetical-laden run-ons.** A sentence that lists four behaviors with nested parentheticals (a recurring failure mode here — e.g. the every-sync-trigger sentence, the whole-Calendars-pane sentence) should be a lead line plus a bullet list. One idea per sentence; split when a clause needs its own parenthetical.
+
+When user-visible behavior changes, update the **table row first**, then add prose only if a *concept* (not a keystroke) needs explaining.
+
 ### `log.md` — the change log
 
 Append an entry **every time you make a change**, newest at the top, in this format:

@@ -4,6 +4,15 @@
 
 ---
 
+## 2026-07-18 — Docs: trim README wordiness + codify a README conciseness rule in CLAUDE.md
+
+- **README (conciseness pass on the three wordiest spots identified in review):**
+  - **Usage prose ↔ keybindings-table duplication**: the Usage prose narrated nearly every key that the keybindings table (kept as-is) already lists. Collapsed the prose to **orientation only** — the pane model, drilling/2D nav, the subtask tree + zoom, folders, grab mode, the `i`-prefix + quick-add tokens + type-locking, the recurring scope picker, the mode badge, two-way color sync — and deleted the key-by-key narration the table carries. Added a lead line pointing to the table as the canonical key reference. No user-facing concept was dropped; the section is roughly halved.
+  - **The line-46 Calendars blob** (one ~250-word run-on) and the every-sync-trigger sentence in Syncing were both broken into a lead sentence + a scannable bullet list.
+  - Dropped a duplicated `r`/background-sync bullet from Usage (it belongs in Syncing) and a filler closing sentence in Recurring.
+- **CLAUDE.md (rule change — a HOW change, permitted)**: added two conciseness rules to the README charter so this drift is caught next time — (1) the keybindings table is the canonical key reference and prose must not re-narrate it (prose covers only concepts a key list can't); (2) prefer short sentences + bullet lists over long parenthetical-laden run-ons, with "update the table row first" guidance.
+- Files: `README.md`, `CLAUDE.md`, `log.md`.
+
 ## 2026-07-18 — Build: inject version from the git tag (no hardcoded version in source)
 
 - **Follow-through on the "GitHub releases own the version" decision**: the binary reported a hardcoded `appVersion = "0.0.1"` const, which would need hand-bumping every release — the same maintained-version problem, one file over.
