@@ -4,6 +4,13 @@
 
 ---
 
+## 2026-07-18 — Fix (Pass 17 MED, tz): IANA-TZID VALUE=PERIOD RDATE no longer mis-zoned to floating
+
+- **Bug**: `resolveDateTimeValues` set a period element's sub-prop `Value` to `periodStart(part)` but left the stale `VALUE=PERIOD` param on the (shallow-copied) sub-prop. go-ical's `prop.DateTime` has no period case and rejects it, so the value fell into `resolveDateTime`'s recovery path — which only mapped **Windows** zone names (`windowsToIANA`) and never `LoadLocation`'d an IANA TZID directly. An `RDATE;VALUE=PERIOD` with a real IANA TZID (Google/Outlook-style) thus dropped to the floating fallback and was zoned in the calendar's fallback `loc`, not its TZID — a wrong absolute occurrence, silently, while the Windows-name spelling of the same zone resolved correctly (the two paths disagreed).
+- **Fix** (two parts, per the finding): (1) in `resolveDateTimeValues`, once `periodStart` has reduced the value to a plain date-time, drop the now-stale `VALUE=PERIOD` param — cloning the params first (`cloneParams`) since the shallow struct copy shares the original's map, so the original prop is never mutated; (2) add an IANA-TZID recovery branch to `resolveDateTime` (`else if z, err := time.LoadLocation(tzid)`), parallel to the Windows-name branch, so a TZID go-ical rejected for a non-zone reason is still zoned by its TZID rather than dropped to floating.
+- **Repro-first**: the workflow's `rdate_period_tzid_repro_test.go` (RED in the tree) was promoted to the permanent regression test `internal/model/rdate_period_tzid_test.go` — now a table asserting the IANA and Windows spellings agree (`TestRDatePeriodTZIDZoned`) plus a direct guard on the recovery branch (`TestResolveDateTimeIANATZIDRecovery`). Adversarially verified: both fail with either fix hunk neutered, pass with them restored.
+- Files: `internal/model/tz.go`, `internal/model/rdate_period_tzid_test.go`. Full gate (test + vet + staticcheck + build) green.
+
 ## 2026-07-18 — Docs: finalize Pass 16 (ledger, pass report, build plan, encoder-heal guardrail)
 
 - **Guardrail (rule 9 — recurring class)**: the decode-but-unencodable encoder-heal class reopened (pass 10 → 16), so updated CLAUDE.md's malformed-iCalendar guardrail: it now names `healComponentConstraints`/`dropUnusableTimezones`, records the owner-approved drop-an-unusable-component exception to the iron rule, and — the key addition — mandates that the heal set **mirror go-ical's full `encoder.go` validateComponent** (exactlyOne/atMostOne per component + `singleValuedProps`), re-diffed whenever a new component type is ingested or go-ical bumps, so the class can't reopen a third time.

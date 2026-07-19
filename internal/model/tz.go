@@ -41,6 +41,15 @@ func resolveDateTime(prop *ical.Prop, loc *time.Location) (time.Time, error) {
 				return t, nil
 			}
 		}
+	} else if z, err := time.LoadLocation(tzid); err == nil {
+		// The TZID is itself a valid IANA zone that go-ical's DateTime rejected
+		// for a reason other than the zone (e.g. a value-type param it can't
+		// handle). Zone the wall-clock value directly rather than dropping it to
+		// the floating fallback below — which would silently mis-zone it by the
+		// TZID's UTC offset. Keeps the IANA path symmetric with the Windows one.
+		if t, err := time.ParseInLocation(icalDateTimeLocal, prop.Value, z); err == nil {
+			return t, nil
+		}
 	}
 
 	// Last resort: keep the item by treating the wall-clock value as floating.
@@ -66,6 +75,16 @@ func resolveDateTimeValues(prop *ical.Prop, loc *time.Location) ([]time.Time, er
 	for _, part := range parts {
 		sub := *prop
 		sub.Value = periodStart(part)
+		// periodStart has reduced any PERIOD element to a plain date-time, so a
+		// lingering VALUE=PERIOD param is now stale: go-ical's DateTime has no
+		// period case and rejects the prop, which would drop an otherwise-valid
+		// IANA-TZID value all the way to the floating fallback (mis-zoned by its
+		// offset). Clone the params first — the shallow struct copy shares prop's
+		// map — then drop the stale param so the reduced value re-parses cleanly.
+		if sub.Params.Get(ical.ParamValue) == string(ical.ValuePeriod) {
+			sub.Params = cloneParams(prop.Params)
+			sub.Params.Del(ical.ParamValue)
+		}
 		t, err := resolveDateTime(&sub, loc)
 		if err != nil {
 			return nil, err
@@ -73,6 +92,16 @@ func resolveDateTimeValues(prop *ical.Prop, loc *time.Location) ([]time.Time, er
 		out = append(out, t)
 	}
 	return out, nil
+}
+
+// cloneParams returns a deep copy of an iCal params map so a per-value edit
+// (dropping a stale VALUE param) can't mutate the shared original.
+func cloneParams(p ical.Params) ical.Params {
+	out := make(ical.Params, len(p))
+	for k, v := range p {
+		out[k] = append([]string(nil), v...)
+	}
+	return out
 }
 
 // periodStart returns the start instant of an RFC 5545 PERIOD value
