@@ -4,6 +4,12 @@
 
 ---
 
+## 2026-07-18 — Test (Pass 17 canary): guard reconcileReadOnly's degraded-download branch
+
+- **Canary escape** (test-net hole, code correct): inverting `reconcileReadOnly`'s degraded-download guard (`case !onServer && unfetched[r.Href]:` → `!unfetched`) passed the whole suite. The read-*write* twin of this guard is covered (`degraded_download_deletion_test.go`), but the read-only path's equivalent had no test combining a read-only calendar with a degraded/partial download — the only read-only test uses a dirty-stuck resource (Discard) and a new-on-server resource (pull), never a previously-synced clean read-only resource that is server-deleted or unfetched. A regression would false-delete a still-present read-only resource whose GET merely failed, or leak a genuine server deletion.
+- **Guard**: `internal/sync/readonly_degraded_download_test.go` (`TestReadOnlyDegradedDownloadKeptVsDeleted`) exercises both sides at once on a read-only calendar — an unfetched (GET-failed) resource still on the server must be KEPT; a genuinely server-absent one must be Forgotten (`PulledDeletes==1`). Adversarially verified: inverting the guard at the reconcileReadOnly site (sync.go:514, distinct from the read-write site at 396) makes both assertions fail; reverting restores green. `sync.go` unchanged.
+- Files: `internal/sync/readonly_degraded_download_test.go`. Full gate green.
+
 ## 2026-07-18 — Fix (Pass 17 MED, import): empty-href objects no longer silently overwrite each other on Import
 
 - **Bug**: the Import object loop (`import.go`) wrote every downloaded object without checking for an empty resource `Path`, unlike its sibling `reconcileCalendar` (sync.go), which skips empty-href objects via `errEmptyHref`. A malformed/hostile CalDAV server can return responses with empty `<href/>` elements (go-webdav's `Response.Path()` returns `("", nil)` for a 200 propstat with an empty href), so `DownloadAll` yields `caldav.Object`s with `Path==""`. Import fed these to `resourceFileName("")` → the placeholder name `resource.ics`, so multiple empty-href objects all collided on that one name in `PullRemoteBatch` and silently overwrote each other — each clean (no `ErrKeptLocalEdit`), yet each overwrite counted as a successful pull. Import reported N imported while storing 1; the lost object was never recovered (next sync leaves the local `resource.ics` an inert href-less pull-orphan). Silent item-level data loss under a success report.
