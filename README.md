@@ -149,11 +149,13 @@ lazyplanner sync \
 
 ## Build and Install
 
-Requires [Go](https://go.dev/dl/) (see the `go` directive in `go.mod` for the minimum version). Dependencies are vendored, so no network is needed to build.
+**Pre-built binaries** for Linux, Raspberry Pi (ARM), Windows, and macOS are attached to every [GitHub Release](https://github.com/littekge/LazyPlanner/releases), named `lazyplanner_<os>_<arch>` alongside a `sha256sums.txt`. Download the one for your platform, make it executable, and put it on your `PATH` — no build step needed.
+
+To build from source instead, requires [Go](https://go.dev/dl/) (see the `go` directive in `go.mod` for the minimum version). Dependencies are vendored, so no network is needed to build.
 
 On first launch LazyPlanner writes a starter `config.toml` (see [Configuration](#configuration) above) and exits; fill in `[server]` and run it again to open the TUI. Press `q` or `Ctrl-C` to quit.
 
-A `Makefile` wraps the common tasks: `make build` (native binary), `make run`, and `make cross` (the Raspberry Pi binaries — see [Raspberry Pi](#raspberry-pi)). `make build` and `make cross` **stamp the version** from the current git tag (so `lazyplanner version` reports e.g. `v1.0.0`); a plain `go build` leaves it as `dev`.
+A `Makefile` wraps the common tasks: `make build` (native binary), `make run`, `make cross` (the Raspberry Pi ARM binaries — see [Raspberry Pi](#raspberry-pi)), and `make release` (every distributable target into `dist/` with checksums — what CI attaches to a Release). Single targets are available too — `make build-linux-amd64`, `make build-windows-amd64`, `make build-darwin-arm64`, and so on. All of these **stamp the version** from the current git tag (so `lazyplanner version` reports e.g. `v1.0.0`); a plain `go build` leaves it as `dev`.
 
 ### Linux
 
@@ -168,13 +170,13 @@ The secondary target, cross-compiled from any machine: `GOOS=windows go build -o
 LazyPlanner is a single static binary with no runtime dependencies, so it's a natural fit for a low-power Raspberry Pi used as an always-on wall calendar. Because it's pure Go (no cgo), you **cross-compile from any machine** — no ARM toolchain needed:
 
 ```sh
-make cross      # → dist/lazyplanner-linux-{arm64,armv7,armv6}, stripped (~8.6 MB)
+make cross      # → dist/lazyplanner_linux_{arm64,armv7,armv6}, stripped (~8.6 MB)
 ```
 
 Pick the binary for your Pi and OS: **arm64** for 64-bit Raspberry Pi OS (Pi 3/4/5, Zero 2 W), **armv7** for 32-bit Pi OS (Pi 2/3/4, Zero 2 W), **armv6** for the original Pi / Pi Zero / Zero W. Copy it over and drop it on the `PATH`:
 
 ```sh
-scp dist/lazyplanner-linux-arm64 pi@raspberrypi:/tmp/lazyplanner
+scp dist/lazyplanner_linux_arm64 pi@raspberrypi:/tmp/lazyplanner
 ssh pi@raspberrypi 'sudo install -m0755 /tmp/lazyplanner /usr/local/bin/lazyplanner'
 ```
 

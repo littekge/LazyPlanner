@@ -4,6 +4,16 @@
 
 ---
 
+## 2026-07-20 — Build/CI: automate release binaries via GitHub Actions
+
+- **Goal**: attach pre-built binaries to every GitHub Release, for all targets — Linux amd64, Raspberry Pi arm64/armv7/armv6, Windows amd64, macOS amd64/arm64 (owner decisions this session).
+- **Trigger** (owner decision): `on: release: types: [published]` — the owner drafts the tag + release notes and clicks Publish; the workflow then builds and *attaches* assets. It never creates tags or releases itself (respects the versioning rule that the owner manages tags/releases).
+- **Makefile** — reworked cross-builds into **one command per target**, with conventional `lazyplanner_<os>_<arch>` names (Windows gets `.exe`): `build-linux-amd64`, `build-linux-arm64`, `build-linux-armv7`, `build-linux-armv6`, `build-windows-amd64`, `build-darwin-amd64`, `build-darwin-arm64`. New `release` target builds all seven into `dist/` then writes `sha256sums.txt` (checksums run as `release`'s recipe, so it's correct under `make -j`); new `checksums` target regenerates the digest alone. The old Pi-only `pi-*` targets were folded into the new scheme, and `cross` now = the three linux/arm* builds (still the cheap ARM regression check `ci.yml` runs on every push). All cross-builds set `CGO_ENABLED=0` — verified the whole matrix compiles cgo-free from a Linux host, and `make release` locally produces correctly-typed, stripped, version-stamped binaries + checksums.
+- **`.github/workflows/release.yml`** (new) — checkout with `fetch-depth: 0` (so the Makefile's `git describe` stamps the published tag into each binary), `setup-go` from `go.mod`, `make release`, then `softprops/action-gh-release@v2` uploads `dist/lazyplanner_*` + `sha256sums.txt`. `permissions: contents: write` (asset upload); `ci.yml` is untouched (still `contents: read`).
+- **README** — Build and Install now leads with a **pre-built binaries** note (download from Releases, no build step) and documents `make release` + the per-target commands; the Raspberry Pi `make cross` output paths were updated to the new `lazyplanner_linux_{arm64,armv7,armv6}` names.
+- **Not touched**: `main.md` (release/CI tooling isn't a program feature/version, so it stays out of the Build Plan). Full gate green via `make check`.
+- Files: `Makefile`, `.github/workflows/release.yml` (new), `README.md`, `log.md`.
+
 ## 2026-07-20 — Docs: nest the hardening passes under the v1.0.0 Build Plan header
 
 - **Owner decision**: the hardening/audit passes were part of the v1.0.0 build, so they belong under the `### v1.0.0` header — just separated from the numbered build steps, not as a peer version subsection.
