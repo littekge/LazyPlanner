@@ -271,6 +271,8 @@ The Build Plan is versioned: each version gets its own subsection, planned out w
 
 ### v1.0.0 — complete (2026-07-12)
 
+#### Build steps
+
 1. **Scaffold** — `go mod init github.com/littekge/LazyPlanner`, directory skeleton, vendor setup, `.gitignore`, CI (GitHub Actions running test/vet/staticcheck on push), and a hello-world tview window that opens and quits cleanly (`q` / `Ctrl-C`). Proves the toolchain end to end.
 2. **Core model** — `internal/model` types (Event, Todo, Calendar) parsed from `.ics` via go-ical; tests against fixture files covering the basics (all-day vs timed events, todos with due dates, timezones).
 3. **Recurrence** — RRULE expansion via rrule-go wrapped behind a model API ("occurrences of X between dates A–B"); timezone-aware; heavily tested (recurrence is a classic bug farm).
@@ -285,7 +287,7 @@ The Build Plan is versioned: each version gets its own subsection, planned out w
 12. **Background sync + polish** — periodic sync (`sync_interval_minutes`); **incremental sync** short-circuit via the collection CTag (an unchanged CTag with no local changes skips the full re-download); sync status indicator; error surfacing in the UI. (Full `sync-collection` REPORT delta sync is a deliberate deferral — see Settled Decisions.)
 13. **Raspberry Pi target** — ARM cross-compile (`make cross`: stripped arm64/armv7/armv6 binaries), performance check, dedicated-terminal (kiosk) setup notes in the README.
 
-### v1.0.x — hardening & audit (ongoing)
+#### Hardening & audit (ongoing)
 
 Post-1.0 the project entered a continuous hardening phase: deep, multi-angle audits — gaps vs. spec, cross-program consistency, adversarially-verified bug hunts across concurrency / hostile input / sync data-loss / UI state — with every finding fixed repro-first, carrying a regression test and its own full-gate commit. From pass 10 onward, audits run through the reusable `hardening-audit` workflow (coverage-first surface selection, mutation canaries that test the test suite, bounded residual-risk reporting); the coverage ledger and full per-pass reports live in `docs/audit/`, and every individual fix is in `log.md`.
 
@@ -309,7 +311,7 @@ Post-1.0 the project entered a continuous hardening phase: deep, multi-angle aud
 
 ### v1.0.1 — bug fixes
 
-Targeted patch-level bug fixes found outside the audit cadence (distinct from the v1.0.x hardening-pass ledger above). Every fix is repro-first with a regression test and full-gate commit; the detailed record is `log.md`.
+Targeted patch-level bug fixes found outside the audit cadence (distinct from v1.0.0's hardening-pass ledger above). Every fix is repro-first with a regression test and full-gate commit; the detailed record is `log.md`.
 
 - **Sync no longer resets the highlight** (2026-07-20) — a completed sync calls `refresh("")`, and with an empty `selUID` the rebuild fell back to selecting the first task (`buildTreeForList` → `SetCurrentNode(kids[0])`), so with periodic/debounced sync the task-tree cursor snapped back to the top on every sync. The calendar view had the sibling defect: `refresh("")` → `buildCenterCalendar` → `setData` reset the day-drill, kicking the user out of event-cycling. `refresh` now preserves the current position when no explicit `selUID` is given — the tree UID via `currentTreeUID`, the calendar drill via `drillState`/`reDrill` (no focus change, so a background sync can't steal focus from an open modal). The agenda view was checked and is unaffected (its highlight follows the already-restored `agendaList` index). Guards: `internal/ui/synchighlight_test.go`.
 

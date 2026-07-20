@@ -4,6 +4,13 @@
 
 ---
 
+## 2026-07-20 — Docs: nest the hardening passes under the v1.0.0 Build Plan header
+
+- **Owner decision**: the hardening/audit passes were part of the v1.0.0 build, so they belong under the `### v1.0.0` header — just separated from the numbered build steps, not as a peer version subsection.
+- Restructured `main.md`'s Build Plan: the 13 numbered steps now sit under a new `#### Build steps` subheading, and the former `### v1.0.x — hardening & audit (ongoing)` top-level subsection is demoted to `#### Hardening & audit (ongoing)` under v1.0.0. Content is byte-unchanged — heading level + placement only. Hierarchy is now `## Build Plan` → `### v1.0.0` → {`#### Build steps`, `#### Hardening & audit`}; `### v1.0.1` and `### Future versions` remain h3 peers.
+- Ripple: the v1.0.1 subsection's cross-reference ("distinct from the v1.0.x hardening-pass ledger above") now reads "distinct from v1.0.0's hardening-pass ledger above", since v1.0.x is no longer a heading.
+- Files: `main.md`, `log.md`.
+
 ## 2026-07-20 — Fix (v1.0.1): a sync no longer resets the highlight in the tree/calendar
 
 - **Bug**: a completed sync calls `refresh("")` (an empty `selUID`), and `refresh`'s task-tree branch reselected the current node only when `selUID != ""`; otherwise `buildTreeForList` fell to its default `SetCurrentNode(kids[0])`. So every sync — and with periodic/debounced sync, that's constantly — snapped the task-tree highlight back to the first task while you were reading/working further down. Reproduced with `TestSyncKeepsTreeHighlight` (fails: highlight jumps off the selected task after `refresh("")`).
