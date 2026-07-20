@@ -124,6 +124,26 @@ Spec files from a prior project, used as structural reference only — not proje
 
 ---
 
+## Versioning
+
+The project is versioned via Github tags/releases. The versioning convention
+used in this project is as follows:
+
+- **Structure:** vX.X.X versioning (e.g. v1.0.0 for a major release)
+- **Major Version:** vX.0.0 — denotes a major release. A major release is
+characterized by the addition of multiple large features, large breaking changes
+to the codebase, or other major refactoring.
+- **Intermediate Version:** v0.X.0 — denotes a minor release. A minor release
+  may consist of the addition of a single large feature, moderate refactoring,
+  additions to existing features, or large groups of bug fixes. 
+- **Minor Version:** v0.0.X — denotes a hotfix. A hotfix consists of only
+  targeted bug fixes, no new features or major sweeping patches of bug fixes.
+
+Every permanent feature or fix eventually becomes part of a versioned release.
+The user manually manages releases and tags, **NEVER** edit or add Github tags
+without the users explicit permission. The user defines the current version that
+you work on. 
+
 ## Git Branching Rules
 
 - **`ai-workspace` is Claude's branch.** All Claude work — commits, experiments, build steps — happens on `ai-workspace` or on branches created off it. Feature/experiment branches off `ai-workspace` are fine; merge them back into `ai-workspace` when done.
