@@ -4,6 +4,21 @@
 
 ---
 
+## 2026-07-20 — Fix (v1.0.1): a sync no longer resets the highlight in the tree/calendar
+
+- **Bug**: a completed sync calls `refresh("")` (an empty `selUID`), and `refresh`'s task-tree branch reselected the current node only when `selUID != ""`; otherwise `buildTreeForList` fell to its default `SetCurrentNode(kids[0])`. So every sync — and with periodic/debounced sync, that's constantly — snapped the task-tree highlight back to the first task while you were reading/working further down. Reproduced with `TestSyncKeepsTreeHighlight` (fails: highlight jumps off the selected task after `refresh("")`).
+- **Sibling bug (calendar)**: the same `refresh("")` path ran `buildCenterCalendar` → `setData`, which unconditionally resets `eventMode`/`eventIndex`, so a sync while **drilled into a day cycling its events** kicked the user back out to day navigation and reset to the first event. The drill-preserving `refreshKeepingDrill` already existed but is only used by direct mutations (e.g. `Space`), not by sync. Reproduced with `TestSyncKeepsCalendarDrill`.
+- **Agenda checked — not affected**: the agenda center highlight is driven by `a.agendaList.GetCurrentItem()`, and that left-list index is already restored by `refresh` (`restoreListIndex`), so the position survives. Locked in as a regression guard (`TestSyncKeepsAgendaHighlight`).
+- **Fix** (`internal/ui/edit.go`, `refresh`): when the caller passes no explicit `selUID`, preserve the current position across the rebuild — capture the current tree UID (new `currentTreeUID` helper) and reselect it in the Tasks branch; capture the calendar `drillState` and `reDrill` it in the Calendar branch (no `setFocus`, so a background sync can't steal focus from an open modal — that stays `refreshKeepingDrill`'s job for the mutation path). An explicit `selUID` (a mutation that knows what to reselect) still wins. Strictly improves the other `refresh("")` callers too (conflict resolution, calendar visibility toggle).
+- **Files**: `internal/ui/edit.go`, `internal/ui/synchighlight_test.go` (new). Full gate green (build, `go test ./...`, `-race` on the new tests, vet, staticcheck).
+
+## 2026-07-20 — Docs: add Versioning section to CLAUDE.md (backfill log entry)
+
+- Backfills the missing `log.md` entry for owner commit `8905cbb`, which added a **Versioning** section to CLAUDE.md (between "The Documents"/`examples` and "Git Branching Rules"). The commit itself carried no log entry; this records it.
+- The section documents the project's vX.X.X convention: **major** `vX.0.0` (multiple large features, breaking changes, or major refactoring), **intermediate/minor** `v0.X.0` (a single large feature, moderate refactoring, or a large group of bug fixes), **hotfix** `v0.0.X` (targeted bug fixes only). It also codifies that GitHub tags/releases are the version source of truth, that Claude never edits/adds tags without explicit permission, and that the owner defines the working version.
+- This is a HOW change (a new rule for the way of working), so CLAUDE.md is the correct home — no `main.md`/README ripple.
+- Files: `log.md` (the CLAUDE.md edit landed in `8905cbb`).
+
 ## 2026-07-19 — Docs: fix Raspberry Pi capitalization (README + CLAUDE.md charter)
 
 - Owner decision: use the conventional "Raspberry Pi", not the charter's literal "Raspberry PI".

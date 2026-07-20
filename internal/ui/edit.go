@@ -734,16 +734,54 @@ func (a *app) refresh(selUID string) {
 
 	switch a.mode {
 	case modeCalendar:
+		// With no explicit selUID (a background sync's refresh("")), preserve an
+		// active day-drill across the rebuild — buildCenterCalendar → setData resets
+		// eventMode/eventIndex, so without this a sync kicks the user out of a day's
+		// event-cycling back to day navigation. A mutation that passes selUID uses
+		// refreshKeepingDrill, which captures the drill and also restores focus.
+		var drillDay time.Time
+		var drilled bool
+		var drillIdx int
+		if selUID == "" {
+			if g, ok := a.calendarPrimitive().(calGrid); ok {
+				drillDay, drilled, drillIdx = g.drillState()
+			}
+		}
 		a.buildCenterCalendar()
+		if drilled {
+			if g, ok := a.calendarPrimitive().(calGrid); ok {
+				g.reDrill(drillDay, drillIdx)
+			}
+		}
 	case modeTasks:
+		// An explicit selUID (a mutation that knows what to reselect) wins;
+		// otherwise keep the current highlight so a background sync's refresh("")
+		// doesn't yank the cursor back to the first task on every sync.
+		keepUID := selUID
+		if keepUID == "" {
+			keepUID = a.currentTreeUID()
+		}
 		a.buildTree()
-		if selUID != "" {
-			a.selectTreeByUID(selUID)
+		if keepUID != "" {
+			a.selectTreeByUID(keepUID)
 		}
 	case modeAgenda:
 		a.buildAgendaCenter()
 	}
 	a.updateStatus()
+}
+
+// currentTreeUID returns the UID of the task currently highlighted in the tree,
+// or "" when the current node is not a task (the list root, or an empty list).
+func (a *app) currentTreeUID() string {
+	node := a.tree.GetCurrentNode()
+	if node == nil {
+		return ""
+	}
+	if td, ok := node.GetReference().(*model.Todo); ok {
+		return td.UID
+	}
+	return ""
 }
 
 func restoreListIndex(list *tview.List, idx int) {
