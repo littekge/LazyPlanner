@@ -24,21 +24,32 @@ A terminal-based todo-list and calendar manager with offline-first CalDAV sync �
 
 ## Configuration
 
-On first run (no config file), LazyPlanner writes a fully-commented `config.toml` to `~/.config/lazyplanner/` (Linux) / `%APPDATA%\lazyplanner\` (Windows) and exits so you can fill in the connection. The only required section is `[server]`; every other option is shown at its default, commented out. The app **reads this file once at startup and never writes it**.
+On first run (no config file), LazyPlanner writes a fully-commented `config.toml` to `~/.config/lazyplanner/` (Linux) / `%APPDATA%\lazyplanner\` (Windows) and exits so you can fill in the connection. You configure one or more **accounts** as `[[account]]` blocks; every other option is shown at its default, commented out. The app **reads this file once at startup and never writes it**.
 
 ```toml
-[server]
+[[account]]
+name = "personal"                          # a unique label, shown in :account and the status bar
 url = "https://cloud.example.com/remote.php/dav"
 username = "you"
 # password = "your-app-password"          # inline (keep the file chmod 600)
 password_command = "bw get password lazyplanner"   # or fetch it from a command
+
+[[account]]
+name = "work"
+url = "https://work.example.com/remote.php/dav"
+username = "employee"
+password_command = "bw get password lazyplanner-work"
 ```
+
+Each account needs a unique `name`. **One account is active at a time**; switch between them in-app with `:account` (see [Usage](#usage)) — there is no merged multi-account view. A single-account config is just one `[[account]]` block.
+
+> **Upgrading from a pre-1.1 config?** The old single `[server]` section was replaced by `[[account]]` blocks. Rename `[server]` to `[[account]]` and add a `name`; the connection fields are otherwise unchanged, and your existing cache is reused (its id still derives from the URL + username). LazyPlanner refuses to start with a leftover `[server]` section and tells you this.
 
 Authentication is always a NextCloud **app password** (Settings → Security → Devices & sessions), never your account password. `password_command` (its stdout is used as the secret) keeps the password out of the file — e.g. `bw get password …` with Bitwarden/Vaultwarden. If the file is group/other-readable, LazyPlanner warns you to `chmod 600` it.
 
 The `[appearance]` section tunes display (all optional): `first_day_of_week`, `default_view`, `time_format`, `date_format`, and **`color_mode`** — how calendar colors render. `color_mode` defaults to `auto` (exact 24-bit truecolor, which your terminal downsamples to 256 or 16 colors as needed); set it to `truecolor` to force 24-bit on a terminal that underreports, `16` to use the nearest themed ANSI color (inherits your terminal theme — good for a light terminal or bare console), or `off` for no calendar colors.
 
-The local cache is **namespaced by account** (a stable id derived from the server URL + username), so changing the server connection uses a separate cache and two accounts' data never mix. Data lives under the OS data directory (`~/.local/share/lazyplanner/<account-id>/` on Linux).
+The local cache is **namespaced by account** (a stable id derived from the server URL + username), so each account keeps its own cache and two accounts' data never mix. Data lives under the OS data directory (`~/.local/share/lazyplanner/<account-id>/` on Linux); which account was active last is remembered in a small `global.json` at the data-dir root and reopened next launch.
 
 ## Usage
 
@@ -61,9 +72,10 @@ Run `lazyplanner` with no arguments to open the TUI (seed the cache with `import
 
 **Recurring items.** Editing (`e`), deleting (`d`), or grabbing (`m`) a recurring **event** opens a scope picker — **This occurrence** (writes a `RECURRENCE-ID` override / `EXDATE`), **This & future** (splits the series at that point, preserving a bounded count), or **All** (edits the master). A recurring **task** shows as a single live instance at its current due; completing it (`Space`) advances it to the next occurrence (the way NextCloud rolls a repeating task forward) — the flash confirms it advanced rather than being checked off, and it's marked done only when the series runs out. Editing "this occurrence" of a task detaches that instance as a separate one-off task (after a confirmation) and advances the rest.
 
-**Commands & layout.** `:` opens a command line — `:sync`, `:view month|week|day`, `:goto`, `:search`, `:config`, `:conflicts`, `:calendar new|rename|color|hide|show`, `:help`, `:q` — and the status bar's middle echoes the last action (`gd` opens `:goto` prefilled).
+**Commands & layout.** `:` opens a command line — `:sync`, `:view month|week|day`, `:goto`, `:search`, `:config`, `:account`, `:conflicts`, `:calendar new|rename|color|hide|show`, `:help`, `:q` — and the status bar's middle echoes the last action (`gd` opens `:goto` prefilled).
 
-- **`:config`** opens `config.toml` in `$EDITOR` and reloads on exit: a `color_mode` or credential change applies live, while an `auto`↔`truecolor` switch or an account change needs a restart.
+- **`:account`** switches the active account: `:account <name>`, or bare `:account` to pick from a list. LazyPlanner flushes pending changes, then reopens on the chosen account's cache. When more than one account is configured the status bar shows the active one.
+- **`:config`** opens `config.toml` in `$EDITOR` and reloads on exit: a `color_mode` or credential change applies live, while an `auto`↔`truecolor` switch needs a restart. Editing the active account's connection (or removing it) can't be hot-swapped — use `:account` or restart.
 - `:calendar` edits are offline-first and sync **both ways** — a rename/recolor pushes via `PROPPATCH`, and a change made in NextCloud is pulled back without clobbering an unpushed local edit.
 - The status bar's left shows a vim-style **mode badge** — `NORMAL`, `DRILL` (drilled into a day), `GRAB` — so a context-sensitive key like `hjkl` is never a surprise; its right shows the sync state and live conflict count.
 - `+`/`-` accordion-expand the center (or zoom the time-grid hour height in week/day view); `Ctrl-←`/`Ctrl-→` and `Ctrl-W` resize the panes, widths remembered across launches.
@@ -117,7 +129,7 @@ After creating a calendar, run `lazyplanner import` to pull it into the local ca
 
 ## Syncing
 
-Once `[server]` is set, LazyPlanner syncs **both ways** automatically:
+Once an `[[account]]` is set, LazyPlanner syncs **both ways** automatically:
 
 - on **startup** (the UI opens instantly from cache and refreshes when the sync lands);
 - **periodically** while open (`sync_interval_minutes`, default 15, `0` = off);
@@ -153,7 +165,7 @@ lazyplanner sync \
 
 To build from source instead, requires [Go](https://go.dev/dl/) (see the `go` directive in `go.mod` for the minimum version). Dependencies are vendored, so no network is needed to build.
 
-On first launch LazyPlanner writes a starter `config.toml` (see [Configuration](#configuration) above) and exits; fill in `[server]` and run it again to open the TUI. Press `q` or `Ctrl-C` to quit.
+On first launch LazyPlanner writes a starter `config.toml` (see [Configuration](#configuration) above) and exits; fill in an `[[account]]` and run it again to open the TUI. Press `q` or `Ctrl-C` to quit.
 
 A `Makefile` wraps the common tasks: `make build` (native binary), `make run`, `make cross` (the Raspberry Pi ARM binaries — see [Raspberry Pi](#raspberry-pi)), and `make release` (every distributable target into `dist/` with checksums — what CI attaches to a Release). Single targets are available too — `make build-linux-amd64`, `make build-windows-amd64`, `make build-darwin-arm64`, and so on. All of these **stamp the version** from the current git tag (so `lazyplanner version` reports e.g. `v1.0.0`); a plain `go build` leaves it as `dev`.
 
@@ -180,7 +192,7 @@ scp dist/lazyplanner_linux_arm64 pi@raspberrypi:/tmp/lazyplanner
 ssh pi@raspberrypi 'sudo install -m0755 /tmp/lazyplanner /usr/local/bin/lazyplanner'
 ```
 
-Run `lazyplanner` once to write the starter config, fill in `[server]` (see [Configuration](#configuration)), and set `sync_interval_minutes` to how often the display should refresh from the server.
+Run `lazyplanner` once to write the starter config, fill in an `[[account]]` (see [Configuration](#configuration)), and set `sync_interval_minutes` to how often the display should refresh from the server.
 
 **Kiosk (launch full-screen on boot).** LazyPlanner is a terminal program, so the simplest dedicated-terminal setup is a console **autologin** on `tty1` that execs it — no X server needed. Enable console autologin with `sudo raspi-config` (*System Options → Boot / Auto Login → Console Autologin*), then have the login shell launch LazyPlanner on the main console only:
 

@@ -4,6 +4,16 @@
 
 ---
 
+## 2026-07-21 — v1.1.0 step 5: docs ripple (README + main.md rewritten in place); feature complete
+
+- Final step of v1.1.0 — the docs now describe the shipped multi-account feature (deferred to last so they never described a half-built switcher).
+- **README**: Configuration section rewritten around `[[account]]` blocks (two-account example, unique-name rule, one-active-at-a-time, no merged view) with an **upgrade blockquote** (rename `[server]` → `[[account]]`, cache reused, refuses to start on a leftover `[server]`); `global.json` last-active memory noted. Usage gains a `:account` bullet and the `:config` note now says the active account's connection can't be hot-swapped (use `:account`/restart); `:account` added to the `:` command summary. Remaining `[server]` mentions are all intentional migration guidance.
+- **main.md** (Settled Decisions rewritten **in place**, per the maintenance rule): the **Account model** decision flipped from "single-account, cheap safeguard" to "multiple accounts, one active, `:account` switcher, teardown-and-rebuild, `global.json` last-active memory, first-block fallback, switch-open fallback"; **Config file** and **Config editing model** updated for `[[account]]` + the `:config`/`:account` split; **defaults** note now "one `[[account]]` block". The v1.1.0 Build Plan subsection marked **implemented (pending live verification + owner release)** with a status line; **Current State** updated to note the move into feature versions. v1.0.0 Build Plan history (step 9's cache-namespacing narrative) left intact per the completed-versions-stay-as-history convention.
+- **In-app help** (`?`) already updated in step 4 (`:account` row). No code changed this step; sanity build + ui/config/cmd tests still green.
+- **v1.1.0 is feature-complete on `ai-workspace`** across all 5 steps. Remaining before an owner release: live two-account end-to-end sync verification once the CalDAV server is back (headless coverage is complete).
+- Full gate green (docs-only; build + tests re-run as a sanity check).
+- Files: `README.md`, `main.md`, `log.md`.
+
 ## 2026-07-21 — v1.1.0 step 4: `:account` command + picker + status-bar segment
 
 - Fourth step of v1.1.0 (TDD). The account switcher is now user-reachable: `:account` triggers the teardown-and-rebuild wired in step 3.
