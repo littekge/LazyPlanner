@@ -4,6 +4,13 @@
 
 ---
 
+## 2026-07-21 — Docs: add the missing v1.0.2 subsection to main.md's Build Plan
+
+- Session-startup doc sweep found one gap: the three 2026-07-20 fixes are labeled v1.0.2 in their commits and log entries, but the Build Plan had no `### v1.0.2` subsection — the version history ended at v1.0.1.
+- Added `### v1.0.2 — bug fixes` between v1.0.1 and Future versions, summarizing the three fixes (month-grid multi-day label, week/day multi-day rendering, sync deferred while a form is open) with their regression-test guards, mirroring the v1.0.1 subsection's style.
+- Verified the rest of the doc set is current: README and main.md already carry the ripples from all three fixes (Syncing bullet, Month/Week-day UI-Design paragraphs, Sync-triggers decision), `docs/audit/COVERAGE.md` is current through pass 17, `notes.md` is empty, and log.md headings = entries.
+- Files: `main.md`, `log.md`.
+
 ## 2026-07-20 — Fix (v1.0.2, Bug 2): debounced/periodic sync deferred while a create/edit form is open
 
 - **Bug**: the debounced push a few seconds after a local edit often fired **while a create/edit form was still open**, silently discarding the user's typed input. Root cause: pushing the just-edited (Dirty) resource makes `CommitPush` store a **new** `*Resource` pointer; the open form captured the old `loc.Prev` pointer, so on Save the version-checked `PutIfUnchanged` sees `cur != loc.Prev`, reports the write **stale**, and `commitMutation`'s stale branch tears down the form (`closeModal`) — losing every keystroke. The `modalOpen()` predicate existed but the sync path never consulted it.
