@@ -4,6 +4,17 @@
 
 ---
 
+## 2026-07-20 — Fix (v1.0.2, Bug 1 month): multi-day timed event no longer repeats its start time
+
+- **Bug**: a timed event spanning several days (e.g. 11am 7/23 → 5pm 7/26) rendered its **start time on every day** of the span in the month grid. Root cause: `OccurrencesOn` returns the occurrence unclamped for each overlapping day and `DayAgenda` copied `o.Start` verbatim, so `itemLabel` printed `hourAxisLabel(it.Start.Hour())` identically on every cell — nothing distinguished a continuation day.
+- **Fix** (owner-approved rendering): the **start day** shows the start time, the **final day** shows the end time prefixed `→` (e.g. `→5pm`), and the days it merely continues through show the **title alone**.
+  - `internal/model/agenda.go`: added `End time.Time` to `AgendaItem` (zero for todos) and populated it from `o.End`, so a day-cell label can tell start/continuation/final day apart.
+  - `internal/ui/calendarview.go`: `itemLabel` now takes the cell's `day` and branches on `model.SameDay(day, it.Start)` / `SameDay(day, it.End)`. A single-day timed event is unchanged (start day == final day → start time).
+- **Repro-first**: `internal/ui/multiday_test.go` — `TestItemLabelMultiDayTimedEvent` (fails on the old body with "11am" on every day) + `TestItemLabelSingleDayTimedEventUnchanged` (regression guard for the common case).
+- Threaded the new `day` arg through the one production caller (`drawCell`) and the one test caller (`taskcalendar_test.go`).
+- **main.md**: documented the multi-day month-cell label behavior in the Month UI-Design paragraph.
+- Files: `internal/model/agenda.go`, `internal/ui/calendarview.go`, `internal/ui/multiday_test.go`, `internal/ui/taskcalendar_test.go`, `main.md`, `log.md`. Full gate green (build, `go test ./...`, vet, staticcheck).
+
 ## 2026-07-20 — Build/CI: automate release binaries via GitHub Actions
 
 - **Goal**: attach pre-built binaries to every GitHub Release, for all targets — Linux amd64, Raspberry Pi arm64/armv7/armv6, Windows amd64, macOS amd64/arm64 (owner decisions this session).

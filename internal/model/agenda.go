@@ -9,7 +9,10 @@ import (
 // AgendaItem is one entry in a day's agenda: either an event occurrence or a
 // todo due that day. Exactly one of Event or Todo is set.
 type AgendaItem struct {
-	Start  time.Time
+	Start time.Time
+	// End is the occurrence's end instant for events (zero for todos); it lets a
+	// day-cell label distinguish a multi-day event's start/continuation/final day.
+	End    time.Time
 	AllDay bool
 	Title  string
 	Event  *Event
@@ -28,6 +31,7 @@ func DayAgenda(occs []Occurrence, todos []*Todo, dayStart, dayEnd time.Time) []A
 	for _, o := range occs {
 		items = append(items, AgendaItem{
 			Start:  o.Start,
+			End:    o.End,
 			AllDay: o.Event.AllDay,
 			Title:  o.Event.Summary,
 			Event:  o.Event,

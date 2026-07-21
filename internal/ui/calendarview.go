@@ -297,7 +297,7 @@ func (cv *calendarView) drawCell(screen tcell.Screen, day time.Time, cellX, cell
 		if selected && cv.eventMode && i == cv.eventIndex {
 			style = style.Reverse(true)
 		}
-		printStyled(screen, cx, row, cw, itemLabel(items[i], cv.folderItem(items[i]), cv.clock24), style)
+		printStyled(screen, cx, row, cw, itemLabel(items[i], day, cv.folderItem(items[i]), cv.clock24), style)
 	}
 	drawMore := func(row, count int) {
 		printStyled(screen, cx, row, cw, fmt.Sprintf("+%d more", count),
@@ -393,16 +393,25 @@ func (cv *calendarView) folderItem(it model.AgendaItem) bool {
 	return it.IsTodo() && cv.isFolder != nil && cv.isFolder(it.Todo.UID)
 }
 
-// itemLabel and itemStyle format a day-cell agenda line. folder marks a task with
-// incomplete children (▸, matching the tree) instead of a checkbox.
-func itemLabel(it model.AgendaItem, folder, use24 bool) string {
+// itemLabel and itemStyle format a day-cell agenda line for the given day. folder
+// marks a task with incomplete children (▸, matching the tree) instead of a
+// checkbox. A timed event that spans several days shows its start time only on
+// the day it starts, its end time (prefixed →) on the day it ends, and the title
+// alone on the days it merely continues through — so the start time no longer
+// repeats on every covered day.
+func itemLabel(it model.AgendaItem, day time.Time, folder, use24 bool) string {
+	title := nonEmpty(it.Title, "(untitled)")
 	switch {
 	case it.IsTodo():
-		return todoMark(it.Todo, folder) + nonEmpty(it.Title, "(untitled)")
+		return todoMark(it.Todo, folder) + title
 	case it.AllDay:
-		return nonEmpty(it.Title, "(untitled)")
+		return title
+	case model.SameDay(day, it.Start):
+		return hourAxisLabel(it.Start.In(time.Local).Hour(), use24) + " " + title
+	case !it.End.IsZero() && model.SameDay(day, it.End):
+		return "→" + hourAxisLabel(it.End.In(time.Local).Hour(), use24) + " " + title
 	default:
-		return hourAxisLabel(it.Start.In(time.Local).Hour(), use24) + " " + nonEmpty(it.Title, "(untitled)")
+		return title
 	}
 }
 
