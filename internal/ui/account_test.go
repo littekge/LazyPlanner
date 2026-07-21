@@ -4,6 +4,8 @@ import (
 	"strings"
 	"testing"
 	"time"
+
+	"github.com/gdamore/tcell/v2"
 )
 
 func multiAccountApp(t *testing.T) *app {
@@ -56,6 +58,27 @@ func TestSwitchAccountUnknownFlashes(t *testing.T) {
 	}
 	if got := a.statusLeft.GetText(true); !strings.Contains(strings.ToLower(got), "unknown") {
 		t.Errorf("flash = %q, want an unknown-account message", got)
+	}
+}
+
+// TestAccountPickerSelectionIsLegible guards the same class as TestSelectionIsLegible
+// (the app's lists) for the :account picker: with our terminal-default background,
+// tview's default List selected style draws terminal-default text on a light bar —
+// illegible (white-on-white). The picker must use the shared reverse-video
+// selectionStyle so the highlighted account stays readable on any theme.
+func TestAccountPickerSelectionIsLegible(t *testing.T) {
+	a := multiAccountApp(t)
+	cells, _, _ := drawCells(t, a.accountPickerList(), 40, 6)
+
+	reversed := false
+	for _, c := range cells {
+		if _, _, attr := c.Style.Decompose(); attr&tcell.AttrReverse != 0 {
+			reversed = true
+			break
+		}
+	}
+	if !reversed {
+		t.Error("account picker selected row is not reverse-video — highlight would be illegible on our terminal-default theme")
 	}
 }
 

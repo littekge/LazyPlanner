@@ -4,6 +4,15 @@
 
 ---
 
+## 2026-07-21 — Fix (v1.1.0): `:account` picker highlight was illegible (white-on-white)
+
+- **Bug**: the highlighted row in the `:account` picker was unreadable — reverse of the intent. Root cause: `accountPickerList` (`internal/ui/command.go`) created a `tview.List` but never set a selected style, so it fell back to tview's default (`vendor/.../tview/list.go:109`: foreground = `Styles.PrimitiveBackgroundColor`, background = `Styles.PrimaryTextColor`). Under `useTerminalTheme`'s `PrimitiveBackgroundColor = ColorDefault`, that renders terminal-default text (white on a dark terminal) on a white bar → white-on-white. Every other list in the app already avoids this via the shared `selectionStyle` (`SetSelectedStyle`); the v1.1.0 picker was the one that missed it.
+- **Fix**: `accountPickerList` now calls `list.SetSelectedStyle(selectionStyle)` (the shared reverse-video style, theme-adaptive), matching `calendars`/`tasklists`/`agendaList` and the conflicts list.
+- **Repro-first**: `internal/ui/account_test.go` `TestAccountPickerSelectionIsLegible` draws the picker and asserts the selected row carries the reverse attribute (mirrors the existing `TestSelectionIsLegible` for the app's lists). Verified RED on the old code (no reverse), green after the fix.
+- **Recurring class → guardrail**: this is the second appearance of the white-on-white selection class, so added a Hard-won guardrail to CLAUDE.md — *every `tview.List` must `SetSelectedStyle(selectionStyle)`* (tview's default is illegible under our terminal-default theme) — with the two legibility regression tests cited. Add one for any new list.
+- Full gate green (`make check`).
+- Files: `internal/ui/command.go`, `internal/ui/account_test.go`, `CLAUDE.md`, `log.md`.
+
 ## 2026-07-21 — v1.1.0 step 5: docs ripple (README + main.md rewritten in place); feature complete
 
 - Final step of v1.1.0 — the docs now describe the shipped multi-account feature (deferred to last so they never described a half-built switcher).

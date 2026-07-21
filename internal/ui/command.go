@@ -147,6 +147,10 @@ func (a *app) accountPickerList() *tview.List {
 	list := tview.NewList().ShowSecondaryText(false)
 	list.SetBackgroundColor(tcell.ColorDefault)
 	list.SetMainTextColor(tcell.ColorDefault)
+	// Reverse-video selection like the app's other lists; tview's default List
+	// selected style is terminal-default text on a light bar (white-on-white) under
+	// our terminal-default background — see selectionStyle and TestSelectionIsLegible.
+	list.SetSelectedStyle(selectionStyle)
 	list.SetBorder(true).SetBorderColor(accentColor)
 	list.SetTitle(" account ").SetTitleColor(accentColor)
 	active := -1
