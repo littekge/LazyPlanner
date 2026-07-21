@@ -4,6 +4,17 @@
 
 ---
 
+## 2026-07-21 — v1.1.0 step 1: multi-account config schema (`[[account]]` + migration error)
+
+- First implementation step of v1.1.0 account switching (TDD, all tests written/failing before code). Config package now parses the multi-account schema; the single `[server]` section is removed.
+- **`internal/config/config.go`**: `Config.Server` → `Config.Accounts []Account`. New `Account` type = a unique `name` + embedded `Server` (so the connection fields and credential logic — `ResolvePassword`/`Configured` — are shared, and the `Server` type + its tests are untouched). `Load` now captures `toml.Decode`'s `MetaData` and: (1) rejects a leftover `[server]` via `meta.IsDefined("server")` with an actionable migration message (else it would be silently ignored → zero accounts, no explanation); (2) runs `validateAccounts` — every block needs a non-empty name, names unique case-insensitively (the name is the switch key). Zero accounts stays valid (offline run). Added `Account.ID()` (cache-namespacing id from the connection; the migration keeps the same cache) and `Config.FirstAccount()` (trivial active-account resolver until step 2's state file).
+- **`internal/config/template.go`**: first-run template emits a named `[[account]]` block (`name = "personal"`) with a commented second-account example, and the header explains `:account` switching.
+- **`cmd/lazyplanner/main.go`**: minimal shim to keep the app functional/buildable pending step 3 — `runTUI` and the `:config` reload closure resolve `cfg.FirstAccount()` instead of `cfg.Server` (single active account = first block; step 3 replaces this with stored-id resolution + the rebuild loop). The `import`/`sync`/`calendar` subcommands are unaffected (they use CLI flags via `conn.go`, not the config file).
+- **Tests** (`internal/config/config_test.go`): migrated the `[server]`-based tests to `[[account]]`; added `TestLoadParsesMultipleAccounts`, `TestLoadRejectsLegacyServerSection`, `TestLoadRejectsNamelessAccount`, `TestLoadRejectsDuplicateAccountNames`, `TestLoadZeroAccountsIsOfflineNotError`, `TestFirstAccount`, `TestAccountID`. Each failed before the impl (verified RED), green after.
+- **Docs deferred to step 5** (by the build plan): README Configuration/Usage + main.md Settled Decisions (Account model / Config schema) are rewritten in place once the whole feature is coherent, so they don't describe a switcher that doesn't exist yet.
+- Full gate green: `go build ./...`, `go test ./...`, `go vet`, `staticcheck`, `gofmt`.
+- Files: `internal/config/config.go`, `internal/config/template.go`, `internal/config/config_test.go`, `cmd/lazyplanner/main.go`, `log.md`.
+
 ## 2026-07-21 — Design: v1.1.0 account switching detailed build plan
 
 - Deep-dive design session for v1.1.0, all decisions owner-settled; main.md's goal-level v1.1.0 subsection replaced with the full design + 5 build steps.

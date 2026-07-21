@@ -151,9 +151,14 @@ func runTUI() error {
 		fmt.Fprintln(os.Stderr, "lazyplanner:", warning)
 	}
 
-	// The cache is namespaced by account so changing the server connection maps
-	// to a separate cache and two accounts' data can never share one directory.
-	dataDir, err := config.AccountDataDir(cfg.Server.URL, cfg.Server.Username)
+	// Resolve the active account. Until the global state file drives last-active
+	// selection (v1.1.0 step 3), this is the first configured account; a config
+	// with no accounts runs fully offline over the cache.
+	acct, _ := cfg.FirstAccount()
+
+	// The cache is namespaced by account so changing the connection maps to a
+	// separate cache and two accounts' data can never share one directory.
+	dataDir, err := config.AccountDataDir(acct.URL, acct.Username)
 	if err != nil {
 		return err
 	}
@@ -167,7 +172,7 @@ func runTUI() error {
 	statePath := filepath.Join(dataDir, state.FileName)
 	uiState := state.Load(statePath)
 
-	accountID := config.AccountID(cfg.Server.URL, cfg.Server.Username)
+	accountID := acct.ID()
 	configPath, pathErr := config.ConfigPath()
 
 	// color_mode "truecolor" force-enables tcell's 24-bit output for terminals
@@ -177,7 +182,7 @@ func runTUI() error {
 		_ = os.Setenv("COLORTERM", "truecolor")
 	}
 
-	syncFn, syncWarn := buildSyncFn(cfg.Server, s)
+	syncFn, syncWarn := buildSyncFn(acct.Server, s)
 	if syncWarn != "" {
 		fmt.Fprintln(os.Stderr, "lazyplanner:", syncWarn)
 	}
@@ -225,10 +230,11 @@ func editConfigFn(configPath string, pathErr error, accountID string, s *store.S
 		if err != nil {
 			return ui.ConfigReload{}, err
 		}
-		if config.AccountID(cfg.Server.URL, cfg.Server.Username) != accountID {
-			return ui.ConfigReload{}, fmt.Errorf("server/account changed — restart to switch caches")
+		acct, _ := cfg.FirstAccount()
+		if acct.ID() != accountID {
+			return ui.ConfigReload{}, fmt.Errorf("account changed — restart to switch caches")
 		}
-		syncFn, warn := buildSyncFn(cfg.Server, s)
+		syncFn, warn := buildSyncFn(acct.Server, s)
 		// Surface config.Load's own warning too (appearance typo, world-readable
 		// password file) — at startup it goes to its own stderr line, but on a
 		// :config reload the single flash string must carry it, or an edit that

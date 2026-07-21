@@ -51,7 +51,8 @@ func TestLoadOverlaysFile(t *testing.T) {
 		t.Fatal(err)
 	}
 	body := `
-[server]
+[[account]]
+name = "personal"
 url = "https://nc.example.com/remote.php/dav"
 username = "jdoe"
 password_command = "echo hunter2"
@@ -73,11 +74,18 @@ time_format = "24h"
 	if warning != "" {
 		t.Errorf("warning = %q for a 0600 file, want none", warning)
 	}
-	if !cfg.Server.Configured() {
-		t.Error("server should be configured")
+	if len(cfg.Accounts) != 1 {
+		t.Fatalf("Accounts = %d, want 1", len(cfg.Accounts))
 	}
-	if cfg.Server.URL != "https://nc.example.com/remote.php/dav" || cfg.Server.Username != "jdoe" {
-		t.Errorf("server = %+v", cfg.Server)
+	acct := cfg.Accounts[0]
+	if acct.Name != "personal" {
+		t.Errorf("account name = %q, want personal", acct.Name)
+	}
+	if !acct.Configured() {
+		t.Error("account should be configured")
+	}
+	if acct.URL != "https://nc.example.com/remote.php/dav" || acct.Username != "jdoe" {
+		t.Errorf("account connection = %+v", acct.Server)
 	}
 	// File overrides the default...
 	if cfg.Appearance.TimeFormat != "24h" {
@@ -103,7 +111,7 @@ func TestLoadCapsReadSize(t *testing.T) {
 		t.Fatal(err)
 	}
 	var b strings.Builder
-	b.WriteString("[server]\nurl = \"https://nc.example.com\"\nusername = \"u\"\n")
+	b.WriteString("[[account]]\nname = \"main\"\nurl = \"https://nc.example.com\"\nusername = \"u\"\n")
 	// One long comment line that runs past the cap; a TOML comment needs no closing
 	// newline, so a read truncated mid-comment is still valid.
 	b.WriteString("# ")
@@ -118,8 +126,8 @@ func TestLoadCapsReadSize(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Load failed on an oversized file; the read cap should have truncated before the trailing garbage: %v", err)
 	}
-	if !configured || cfg.Server.Username != "u" {
-		t.Errorf("expected the pre-cap [server] block to parse, got configured=%v server=%+v", configured, cfg.Server)
+	if !configured || len(cfg.Accounts) != 1 || cfg.Accounts[0].Username != "u" {
+		t.Errorf("expected the pre-cap [[account]] block to parse, got configured=%v accounts=%+v", configured, cfg.Accounts)
 	}
 }
 
@@ -132,7 +140,7 @@ func TestLoadWarnsOnLoosePermissions(t *testing.T) {
 		t.Fatal(err)
 	}
 	path := filepath.Join(dir, configName)
-	if err := os.WriteFile(path, []byte("[server]\nurl=\"x\"\n"), 0o644); err != nil {
+	if err := os.WriteFile(path, []byte("[[account]]\nname=\"m\"\nurl=\"x\"\n"), 0o644); err != nil {
 		t.Fatal(err)
 	}
 	_, _, warning, err := Load()
@@ -249,7 +257,7 @@ func TestLoadWarnsOnUnknownAppearance(t *testing.T) {
 	if err := os.MkdirAll(dir, 0o700); err != nil {
 		t.Fatal(err)
 	}
-	body := "[server]\nurl=\"https://x/dav\"\nusername=\"u\"\n[appearance]\ndefault_view=\"wek\"\ntime_format=\"bogus\"\n"
+	body := "[[account]]\nname=\"m\"\nurl=\"https://x/dav\"\nusername=\"u\"\n[appearance]\ndefault_view=\"wek\"\ntime_format=\"bogus\"\n"
 	if err := os.WriteFile(filepath.Join(dir, configName), []byte(body), 0o600); err != nil {
 		t.Fatal(err)
 	}
@@ -306,5 +314,146 @@ func TestServerConfigured(t *testing.T) {
 		if got := tc.srv.Configured(); got != tc.want {
 			t.Errorf("%s: Configured() = %v, want %v", tc.name, got, tc.want)
 		}
+	}
+}
+
+// writeConfig writes body to the temp config path and returns the ConfigDir.
+func writeConfig(t *testing.T, body string) {
+	t.Helper()
+	dir := withConfigDir(t)
+	if err := os.MkdirAll(dir, 0o700); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(dir, configName), []byte(body), 0o600); err != nil {
+		t.Fatal(err)
+	}
+}
+
+// TestLoadParsesMultipleAccounts pins that several [[account]] blocks parse into
+// Config.Accounts in file order, each carrying its name and connection fields.
+func TestLoadParsesMultipleAccounts(t *testing.T) {
+	writeConfig(t, `
+[[account]]
+name = "personal"
+url = "https://home.example.com/dav"
+username = "me"
+
+[[account]]
+name = "work"
+url = "https://work.example.com/dav"
+username = "employee"
+password_command = "bw get password work"
+`)
+	cfg, configured, _, err := Load()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !configured {
+		t.Error("configured = false, want true")
+	}
+	if len(cfg.Accounts) != 2 {
+		t.Fatalf("Accounts = %d, want 2", len(cfg.Accounts))
+	}
+	if cfg.Accounts[0].Name != "personal" || cfg.Accounts[0].URL != "https://home.example.com/dav" {
+		t.Errorf("account[0] = %+v", cfg.Accounts[0])
+	}
+	if cfg.Accounts[1].Name != "work" || cfg.Accounts[1].PasswordCommand != "bw get password work" {
+		t.Errorf("account[1] = %+v", cfg.Accounts[1])
+	}
+}
+
+// TestLoadRejectsLegacyServerSection guards the migration boundary: the removed
+// [server] section must fail Load with an actionable message, never be silently
+// ignored (which would leave the app with zero accounts and no explanation).
+func TestLoadRejectsLegacyServerSection(t *testing.T) {
+	writeConfig(t, "[server]\nurl = \"https://x/dav\"\nusername = \"u\"\n")
+	_, configured, _, err := Load()
+	if err == nil {
+		t.Fatal("Load() = nil error for a legacy [server] section, want a migration error")
+	}
+	if configured {
+		t.Error("configured = true for a rejected legacy config")
+	}
+	if !strings.Contains(err.Error(), "server") || !strings.Contains(err.Error(), "account") {
+		t.Errorf("error %q should mention the removed [server] section and [[account]]", err)
+	}
+}
+
+// TestLoadRejectsNamelessAccount pins that an [[account]] with no name is a fatal
+// error — the name is the switch key, so an unnamed account can't be selected.
+func TestLoadRejectsNamelessAccount(t *testing.T) {
+	writeConfig(t, "[[account]]\nurl = \"https://x/dav\"\nusername = \"u\"\n")
+	_, _, _, err := Load()
+	if err == nil {
+		t.Fatal("Load() = nil error for a nameless account, want an error")
+	}
+	if !strings.Contains(err.Error(), "name") {
+		t.Errorf("error %q should mention the missing name", err)
+	}
+}
+
+// TestLoadRejectsDuplicateAccountNames pins that two accounts sharing a name
+// (case-insensitively) is fatal — the picker/switch key must be unambiguous.
+func TestLoadRejectsDuplicateAccountNames(t *testing.T) {
+	writeConfig(t, `
+[[account]]
+name = "Work"
+url = "https://a/dav"
+username = "u"
+
+[[account]]
+name = "work"
+url = "https://b/dav"
+username = "u2"
+`)
+	_, _, _, err := Load()
+	if err == nil {
+		t.Fatal("Load() = nil error for duplicate account names, want an error")
+	}
+	if !strings.Contains(strings.ToLower(err.Error()), "duplicate") {
+		t.Errorf("error %q should flag the duplicate name", err)
+	}
+}
+
+// TestLoadZeroAccountsIsOfflineNotError pins that a config with no accounts is a
+// valid offline configuration (configured=true, no error) — the app runs over
+// the cache with nothing to sync, matching a config whose account lacks a URL.
+func TestLoadZeroAccountsIsOfflineNotError(t *testing.T) {
+	writeConfig(t, "[appearance]\ntime_format = \"24h\"\n")
+	cfg, configured, _, err := Load()
+	if err != nil {
+		t.Fatalf("zero-account config should load cleanly, got %v", err)
+	}
+	if !configured {
+		t.Error("configured = false; a present-but-account-less file still counts as configured")
+	}
+	if len(cfg.Accounts) != 0 {
+		t.Errorf("Accounts = %d, want 0", len(cfg.Accounts))
+	}
+}
+
+// TestFirstAccount pins the trivial resolver used until the state file drives
+// active-account selection: the first block, or false when none are configured.
+func TestFirstAccount(t *testing.T) {
+	cfg := Config{Accounts: []Account{
+		{Name: "a", Server: Server{URL: "https://a/dav", Username: "u"}},
+		{Name: "b", Server: Server{URL: "https://b/dav", Username: "u2"}},
+	}}
+	got, ok := cfg.FirstAccount()
+	if !ok || got.Name != "a" {
+		t.Errorf("FirstAccount() = %+v, %v; want account a", got, ok)
+	}
+	if _, ok := (Config{}).FirstAccount(); ok {
+		t.Error("FirstAccount() ok = true for zero accounts, want false")
+	}
+}
+
+// TestAccountID pins that an account derives the same cache id as the free
+// AccountID function over its connection — the cache namespacing must not shift
+// when a [server] config is migrated to a named [[account]] with the same URL.
+func TestAccountID(t *testing.T) {
+	a := Account{Name: "personal", Server: Server{URL: "https://nc.example.com/dav", Username: "jdoe"}}
+	if a.ID() != AccountID(a.URL, a.Username) {
+		t.Errorf("Account.ID() = %q, want %q", a.ID(), AccountID(a.URL, a.Username))
 	}
 }

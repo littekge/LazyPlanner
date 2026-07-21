@@ -8,15 +8,18 @@ import (
 
 // defaultConfigTemplate is the fully-commented config.toml written on first run.
 // Every option is listed at its default (commented out), so the only edit needed
-// to get a working config is filling in the [server] connection. The app never
+// to get a working config is filling in the [[account]] connection. The app never
 // rewrites this file after generating it — it is the user's to hand-edit.
 const defaultConfigTemplate = `# LazyPlanner configuration.
 #
-# The only required section is [server]. Every other option is shown below at
-# its default value (commented out) — uncomment and change what you want.
-# LazyPlanner reads this file once at startup and never writes it.
+# You configure one or more CalDAV accounts as [[account]] blocks and switch
+# between them in-app with :account (one is active at a time). Every other option
+# below is shown at its default value (commented out) — uncomment and change what
+# you want. LazyPlanner reads this file once at startup and never writes it.
 
-[server]
+[[account]]
+# A unique label for this account, shown in the :account switcher and status bar.
+name = "personal"
 # CalDAV base URL. For NextCloud this is typically:
 #   https://your-nextcloud.example.com/remote.php/dav
 url = ""
@@ -31,6 +34,13 @@ username = ""
 #   2. A command whose stdout is the password (preferred — keeps the secret out
 #      of the file). Example with Vaultwarden/Bitwarden:
 # password_command = "bw get password lazyplanner"
+
+# Add more accounts by repeating the block with a different name:
+# [[account]]
+# name = "work"
+# url = ""
+# username = ""
+# password_command = "bw get password lazyplanner-work"
 
 # [appearance]
 # first_day_of_week = "monday"   # "monday" or "sunday"

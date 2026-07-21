@@ -39,9 +39,35 @@ const defaultSyncIntervalMinutes = 15
 // and never writes it (see main.md) — calendar names/colors are server-owned
 // data, and app-remembered state lives in the data dir, not here.
 type Config struct {
-	Server     Server     `toml:"server"`
+	Accounts   []Account  `toml:"account"`
 	Appearance Appearance `toml:"appearance"`
 	Behavior   Behavior   `toml:"behavior"`
+}
+
+// Account is one configured CalDAV account: a unique display Name (the label the
+// :account switcher and status bar use) plus its connection. It embeds Server so
+// the connection fields and their credential logic (ResolvePassword, Configured)
+// are shared with the single-account plumbing.
+type Account struct {
+	Name string `toml:"name"`
+	Server
+}
+
+// ID returns the account's cache-namespacing id, derived from its connection.
+// The vdir cache lives under this id (see AccountID), so it is the stable key
+// used to remember which account was last active across launches.
+func (a Account) ID() string {
+	return AccountID(a.URL, a.Username)
+}
+
+// FirstAccount returns the first configured account, or false when none are
+// configured (a fully-offline run). It is the trivial active-account resolver
+// until the global state file drives last-active selection.
+func (c Config) FirstAccount() (Account, bool) {
+	if len(c.Accounts) == 0 {
+		return Account{}, false
+	}
+	return c.Accounts[0], true
 }
 
 // Server holds the CalDAV connection. Credentials are always a NextCloud app
@@ -138,7 +164,8 @@ func Load() (cfg Config, configured bool, warning string, err error) {
 	if err != nil {
 		return Config{}, false, strings.Join(warns, "; "), fmt.Errorf("reading config %q: %w", path, err)
 	}
-	if _, err := toml.Decode(string(data), &cfg); err != nil {
+	meta, err := toml.Decode(string(data), &cfg)
+	if err != nil {
 		// Fatal by design: the local cache is namespaced by account (server URL +
 		// username), so an unparseable config leaves the account — and thus which
 		// cache to open — unknown. Degrading to defaults would open an empty/wrong
@@ -146,8 +173,38 @@ func Load() (cfg Config, configured bool, warning string, err error) {
 		return Config{}, false, strings.Join(warns, "; "),
 			fmt.Errorf("config %q has a syntax error — fix it and run lazyplanner again: %w", path, err)
 	}
+	// The single [server] section was replaced by named [[account]] blocks. A
+	// leftover [server] would otherwise be silently ignored (leaving zero accounts
+	// with no explanation), so reject it with an actionable migration message.
+	if meta.IsDefined("server") {
+		return Config{}, false, strings.Join(warns, "; "),
+			fmt.Errorf("config %q uses the removed [server] section — rename it to a [[account]] block and give it a name (see the README migration note), then run lazyplanner again", path)
+	}
+	if verr := validateAccounts(cfg.Accounts); verr != nil {
+		return Config{}, false, strings.Join(warns, "; "), fmt.Errorf("config %q: %w", path, verr)
+	}
 	warns = append(warns, appearanceWarnings(cfg.Appearance)...)
 	return cfg, true, strings.Join(warns, "; "), nil
+}
+
+// validateAccounts enforces that every [[account]] has a non-empty name and that
+// names are unique (case-insensitively) — the name is the switch key, so a
+// nameless or ambiguous account can't be selected. Zero accounts is valid (a
+// fully-offline run), so an empty slice passes.
+func validateAccounts(accounts []Account) error {
+	seen := make(map[string]bool, len(accounts))
+	for i, a := range accounts {
+		name := strings.TrimSpace(a.Name)
+		if name == "" {
+			return fmt.Errorf("account #%d has no name — every [[account]] needs a unique name", i+1)
+		}
+		key := strings.ToLower(name)
+		if seen[key] {
+			return fmt.Errorf("duplicate account name %q — account names must be unique", name)
+		}
+		seen[key] = true
+	}
+	return nil
 }
 
 // appearanceWarnings flags unknown [appearance] enum values (a typo like
