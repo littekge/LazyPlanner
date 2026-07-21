@@ -4,6 +4,16 @@
 
 ---
 
+## 2026-07-21 — v1.1.0 step 2: global state file for the last-active account
+
+- Second step of v1.1.0 (TDD). A new cross-account state file at the data-dir root remembers which account was active, so the app reopens it next launch (per-account `state.json` files stay where they are, under each account dir).
+- **`internal/state/global.go`** (new): `Global` struct with `ActiveAccountID` (the `config.AccountID`, empty = no preference), `LoadGlobal`/`SaveGlobal` at `GlobalFileName` (`global.json`). Corrupt/missing → zero `Global` (never blocks startup); writes are atomic (temp+rename).
+- **`internal/state/state.go`**: refactored the capped-read and atomic-write out of `Load`/`Save` into shared unexported helpers `readJSONFile`/`writeJSONFile`, so `State` and `Global` share one implementation (no duplicated read-cap/temp-rename logic). The existing `TestSaveWritesViaTempFile` now exercises the extracted `writeJSONFile` via `Save`, so the atomicity guard covers both types.
+- **Tests** (`internal/state/global_test.go`, new): `TestGlobalRoundTrip`, `TestLoadGlobalMissingIsZero`, `TestLoadGlobalCorruptIsZero` — all RED before the impl, green after.
+- Not yet wired into `cmd` — step 3 (the cmd loop) reads/writes this file to resolve the active account and persist a switch.
+- Full gate green: build, `go test ./...`, vet, staticcheck, gofmt.
+- Files: `internal/state/global.go` (new), `internal/state/state.go`, `internal/state/global_test.go` (new), `log.md`.
+
 ## 2026-07-21 — v1.1.0 step 1: multi-account config schema (`[[account]]` + migration error)
 
 - First implementation step of v1.1.0 account switching (TDD, all tests written/failing before code). Config package now parses the multi-account schema; the single `[server]` section is removed.

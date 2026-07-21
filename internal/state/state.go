@@ -40,16 +40,7 @@ type State struct {
 // startup.
 func Load(path string) State {
 	var s State
-	f, err := os.Open(path)
-	if err != nil {
-		return State{}
-	}
-	defer f.Close()
-	data, err := io.ReadAll(io.LimitReader(f, maxStateFileBytes))
-	if err != nil {
-		return State{}
-	}
-	if err := json.Unmarshal(data, &s); err != nil {
+	if !readJSONFile(path, &s) {
 		return State{}
 	}
 	return s
@@ -59,10 +50,34 @@ func Load(path string) State {
 // It writes to a temp file and renames so a crash never leaves a half-written
 // state file.
 func Save(path string, s State) error {
+	return writeJSONFile(path, s)
+}
+
+// readJSONFile reads and JSON-decodes a state file into v, capping the read so a
+// corrupt/huge file can't exhaust memory or hang startup. It reports success;
+// any failure (missing file, oversized/unreadable, bad JSON) returns false so the
+// caller falls back to a zero value — remembered state must never block startup.
+func readJSONFile(path string, v any) bool {
+	f, err := os.Open(path)
+	if err != nil {
+		return false
+	}
+	defer f.Close()
+	data, err := io.ReadAll(io.LimitReader(f, maxStateFileBytes))
+	if err != nil {
+		return false
+	}
+	return json.Unmarshal(data, v) == nil
+}
+
+// writeJSONFile writes v as indented JSON to path (0600), creating the directory
+// if needed, via a temp file and rename so a crash never leaves a half-written
+// file.
+func writeJSONFile(path string, v any) error {
 	if err := os.MkdirAll(filepath.Dir(path), 0o700); err != nil {
 		return err
 	}
-	data, err := json.MarshalIndent(s, "", "  ")
+	data, err := json.MarshalIndent(v, "", "  ")
 	if err != nil {
 		return err
 	}
