@@ -11,6 +11,7 @@ import (
 )
 
 const pageCommand = "command"
+const pageAccount = "account"
 
 // openCommandLine shows the `:` command input near the top of the screen,
 // optionally prefilled (e.g. "goto "). Enter runs the command, Esc cancels.
@@ -70,6 +71,8 @@ func (a *app) runCommand(line string) {
 			a.setFocus(a.searchWidget())
 		}
 		a.echo(":search " + args)
+	case "account", "acct":
+		a.cmdAccount(args)
 	case "config":
 		a.cmdConfig()
 	case "calendar", "cal":
@@ -82,6 +85,88 @@ func (a *app) runCommand(line string) {
 	default:
 		a.flash("unknown command: " + name)
 	}
+}
+
+// cmdAccount handles ":account [name]": with a name it switches directly, bare it
+// opens the picker. Switching tears the app down and reopens the named account
+// (main's rebuild loop); the cache is per-account, so this is the only safe way.
+func (a *app) cmdAccount(args string) {
+	a.echo(":account")
+	if len(a.accounts) == 0 {
+		a.flash("no accounts configured")
+		return
+	}
+	if args == "" {
+		a.openAccountPicker()
+		return
+	}
+	a.switchAccount(args)
+}
+
+// switchAccount validates a switch target against the configured names
+// (case-insensitively) and, unless it's already active, records the request and
+// winds the UI down so main reopens it. Shared by the command and the picker.
+func (a *app) switchAccount(name string) {
+	name = strings.TrimSpace(name)
+	match := ""
+	for _, n := range a.accounts {
+		if strings.EqualFold(n, name) {
+			match = n
+			break
+		}
+	}
+	if match == "" {
+		a.flash("unknown account: " + name)
+		return
+	}
+	if strings.EqualFold(match, a.activeAccount) {
+		a.flash("already on " + match)
+		return
+	}
+	a.requestSwitch(match)
+}
+
+// requestSwitch records the account to switch to and stops the event loop. Run's
+// clean-exit path then cancels any in-flight sync and best-effort-flushes pending
+// pushes (the same wind-down as quit) before returning the switch to main.
+func (a *app) requestSwitch(name string) {
+	a.switchTo = name
+	a.tv.Stop()
+}
+
+// openAccountPicker shows the configured accounts in a modal list, the active one
+// marked; Enter switches, Esc cancels.
+func (a *app) openAccountPicker() {
+	list := a.accountPickerList()
+	a.openModal(pageAccount, list, 40, len(a.accounts)+2)
+}
+
+// accountPickerList builds the bordered list of accounts for the picker (split
+// out so the display-stress test can draw it directly).
+func (a *app) accountPickerList() *tview.List {
+	list := tview.NewList().ShowSecondaryText(false)
+	list.SetBackgroundColor(tcell.ColorDefault)
+	list.SetMainTextColor(tcell.ColorDefault)
+	list.SetBorder(true).SetBorderColor(accentColor)
+	list.SetTitle(" account ").SetTitleColor(accentColor)
+	active := -1
+	for i, name := range a.accounts {
+		label := name
+		if strings.EqualFold(name, a.activeAccount) {
+			label += "  (active)"
+			active = i
+		}
+		n := name
+		list.AddItem(label, "", 0, func() {
+			a.closeModal(pageAccount)
+			a.switchAccount(n)
+		})
+	}
+	if active >= 0 {
+		list.SetCurrentItem(active)
+	}
+	list.SetDoneFunc(func() { a.closeModal(pageAccount) }) // Esc cancels
+	return list
 }
 
 // cmdConfig opens the config file in $EDITOR (via the callback wired from main),

@@ -659,6 +659,12 @@ func (a *app) updateStatus() {
 		mode += " · " + [...]string{"month", "week", "day"}[a.viewMode]
 	}
 	left := fmt.Sprintf("%s · %s · %d cals · %d tasks", mode, dateStr(a.anchor, a.dateISO), len(a.store.Calendars()), len(a.store.Todos()))
+	// Name the active account only when more than one is configured, so a
+	// single-account run keeps the status line uncluttered. Escaped because
+	// statusLeft has dynamic color tags and a name could contain '['.
+	if len(a.accounts) > 1 && a.activeAccount != "" {
+		left = tview.Escape(a.activeAccount) + " · " + left
+	}
 	if n := len(a.store.LoadErrors()); n > 0 {
 		left += fmt.Sprintf("  [red]!%d load error(s)[-]", n)
 	}

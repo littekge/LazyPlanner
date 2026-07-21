@@ -152,6 +152,11 @@ type app struct {
 	ctx    context.Context
 	cancel context.CancelFunc
 
+	// accounts are the configured account names (for the :account picker); the
+	// status bar names the active one only when more than one is configured.
+	// activeAccount is the running account's name.
+	accounts      []string
+	activeAccount string
 	// switchTo, when non-empty, is the account name the user asked to switch to
 	// (set by the :account command just before stopping the UI). Run returns it so
 	// main tears this app down and reopens the named account. Empty = quit.
@@ -286,7 +291,12 @@ func useTerminalTheme() {
 type Options struct {
 	Store *store.Store
 	Title string
-	Sync  func(context.Context) (sync.SyncResult, error)
+	// Accounts are the configured account names; ActiveAccount is the one this run
+	// opened. With more than one account the status bar shows the active name and
+	// :account can switch between them.
+	Accounts      []string
+	ActiveAccount string
+	Sync          func(context.Context) (sync.SyncResult, error)
 	// SyncIntervalMinutes runs a periodic background sync at this cadence; 0 = off.
 	SyncIntervalMinutes int
 	LeftWidth           int      // remembered left-column width (0 = default)
@@ -338,6 +348,8 @@ func Run(opts Options) (RunResult, error) {
 	a.syncFn = opts.Sync
 	a.saveState = opts.SaveState
 	a.editConfig = opts.EditConfig
+	a.accounts = opts.Accounts
+	a.activeAccount = opts.ActiveAccount
 	a.colorMode = parseColorMode(opts.ColorMode)
 	a.weekStartMonday = parseWeekStartMonday(opts.FirstDayOfWeek)
 	a.viewMode = parseDefaultView(opts.DefaultView)

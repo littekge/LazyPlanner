@@ -4,6 +4,19 @@
 
 ---
 
+## 2026-07-21 — v1.1.0 step 4: `:account` command + picker + status-bar segment
+
+- Fourth step of v1.1.0 (TDD). The account switcher is now user-reachable: `:account` triggers the teardown-and-rebuild wired in step 3.
+- **`internal/ui/command.go`**: `:account`/`:acct` command. `:account <name>` switches directly; bare `:account` opens a picker modal (a bordered `tview.List` of account names, the active one marked `(active)`, Enter switches / Esc cancels). `switchAccount` validates the target against the configured names case-insensitively — unknown → flash, already-active → no-op flash, otherwise `requestSwitch` sets `a.switchTo` and calls `a.tv.Stop()`, so Run's existing clean-exit path (cancel in-flight sync, best-effort `flushOnQuit`) runs before returning the switch to main. No accounts configured → "no accounts configured".
+- **`internal/ui/app.go`**: `Options.Accounts`/`ActiveAccount` and matching `app` fields, wired in `Run`.
+- **`internal/ui/render.go`**: `updateStatus` names the active account (escaped — statusLeft has dynamic color tags) only when more than one account is configured, so single-account/offline runs stay uncluttered.
+- **`internal/ui/help.go`**: `?` help lists `:account` and adds it to the `:` command summary.
+- **`cmd/lazyplanner/main.go`**: `openAccountAndRun` passes `accountNames(cfg)` + `acct.Name` into `ui.Options` (new `accountNames` helper).
+- **Tests**: `internal/ui/account_test.go` (new) — valid switch records the request, case-insensitive match, active-is-noop, unknown flashes, status shows the name only when >1, `:account` dispatch through `runCommand`, no-accounts flash. `internal/ui/displaystress_test.go` — `TestAccountPickerStress` draws the picker with hostile names across the 1×1→400×150 geometry matrix. All RED before impl, green after.
+- **End-to-end smoke via the built binary**: a legacy `[server]` config prints the migration error and exits non-zero; a fresh run generates the `[[account]]` starter template. (The TUI itself can't launch headlessly — no tty — so live switching is verified by the unit tests + deferred to manual/live testing.)
+- Full gate green: build, `go test ./...`, vet, staticcheck, gofmt.
+- Files: `internal/ui/command.go`, `internal/ui/app.go`, `internal/ui/render.go`, `internal/ui/help.go`, `internal/ui/account_test.go` (new), `internal/ui/displaystress_test.go`, `cmd/lazyplanner/main.go`, `log.md`.
+
 ## 2026-07-21 — v1.1.0 step 3: account switch-and-rebuild loop (cmd) + `ui.Run` switch result
 
 - Third step of v1.1.0 (TDD). The app can now, in principle, run any configured account and reopen a different one without exiting — the teardown-and-rebuild mechanism. Nothing triggers a switch yet (that's step 4's `:account` command); this step builds and tests the loop, the resolvers, and the UI return path.

@@ -206,6 +206,16 @@ func runTUILoop(cfg config.Config, globalPath string, openAndRun func(config.Acc
 	}
 }
 
+// accountNames returns the configured account names in file order, for the UI's
+// :account picker and status-bar segment.
+func accountNames(cfg config.Config) []string {
+	names := make([]string, 0, len(cfg.Accounts))
+	for _, a := range cfg.Accounts {
+		names = append(names, a.Name)
+	}
+	return names
+}
+
 // openAccountAndRun opens the account-namespaced cache and remembered UI state,
 // builds the sync closure, and runs the TUI over them, returning the UI's result
 // (quit or a switch request). The cache is namespaced by account so changing the
@@ -244,6 +254,8 @@ func openAccountAndRun(cfg config.Config, acct config.Account) (ui.RunResult, er
 	return ui.Run(ui.Options{
 		Store:               s,
 		Title:               title,
+		Accounts:            accountNames(cfg),
+		ActiveAccount:       acct.Name,
 		Sync:                syncFn,
 		SyncIntervalMinutes: cfg.Behavior.SyncIntervalMinutes,
 		LeftWidth:           uiState.LeftWidth,

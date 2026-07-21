@@ -292,3 +292,16 @@ func TestColorPickerStress(t *testing.T) {
 		drawGeom(t, "colorpicker", picker, g.w, g.h)
 	}
 }
+
+// TestAccountPickerStress draws the :account picker across the geometry matrix
+// with hostile account names, since it is a modal overlay not reached by the main
+// layout's draw paths.
+func TestAccountPickerStress(t *testing.T) {
+	a := newTestApp(t, time.Date(2026, 7, 21, 12, 0, 0, 0, time.UTC))
+	a.accounts = []string{"personal", nastyStrings[0], "work", nastyStrings[len(nastyStrings)-1]}
+	a.activeAccount = "work"
+	list := a.accountPickerList()
+	for _, g := range stressGeoms {
+		drawGeom(t, "accountpicker", list, g.w, g.h)
+	}
+}

@@ -65,9 +65,10 @@ var helpSections = []struct {
 	}},
 	{"Sync & commands", [][2]string{
 		{"r", "sync now (= :sync)"},
-		{": ", "cmd — :sync :view :goto :search :config :calendar :conflicts :q"},
+		{": ", "cmd — :sync :view :goto :search :config :calendar :account :conflicts :q"},
 		{":config", "edit config in $EDITOR, reload on exit"},
 		{":calendar", "new / rename / color / hide / show (`new` opens the create form; `color` with no hex opens the swatch picker)"},
+		{":account", "switch account — `:account <name>`, or bare to pick from a list (multi-account)"},
 		{":conflicts", "resolve items that changed on both sides"},
 		{"?", "this help"},
 	}},
