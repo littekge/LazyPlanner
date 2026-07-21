@@ -457,3 +457,43 @@ func TestAccountID(t *testing.T) {
 		t.Errorf("Account.ID() = %q, want %q", a.ID(), AccountID(a.URL, a.Username))
 	}
 }
+
+func twoAccountConfig() Config {
+	return Config{Accounts: []Account{
+		{Name: "personal", Server: Server{URL: "https://home/dav", Username: "me"}},
+		{Name: "work", Server: Server{URL: "https://work/dav", Username: "emp"}},
+	}}
+}
+
+// TestResolveActiveAccount pins the startup resolver: the account whose id matches
+// the stored last-active id wins; an empty or unmatched id falls back to the first
+// block (a removed/renamed account can't strand the user on nothing).
+func TestResolveActiveAccount(t *testing.T) {
+	cfg := twoAccountConfig()
+	workID := cfg.Accounts[1].ID()
+
+	if got, ok := cfg.ResolveActiveAccount(workID); !ok || got.Name != "work" {
+		t.Errorf("stored work id resolved to %+v/%v, want work", got, ok)
+	}
+	if got, ok := cfg.ResolveActiveAccount(""); !ok || got.Name != "personal" {
+		t.Errorf("empty id resolved to %+v/%v, want the first block personal", got, ok)
+	}
+	if got, ok := cfg.ResolveActiveAccount("deadbeefcafe"); !ok || got.Name != "personal" {
+		t.Errorf("unmatched id resolved to %+v/%v, want first-block fallback personal", got, ok)
+	}
+	if _, ok := (Config{}).ResolveActiveAccount("anything"); ok {
+		t.Error("zero-account config resolved ok = true, want false")
+	}
+}
+
+// TestAccountLookupByName pins the switch-target lookup used by :account: match by
+// name, case-insensitively and trimmed, false when not found.
+func TestAccountLookupByName(t *testing.T) {
+	cfg := twoAccountConfig()
+	if got, ok := cfg.Account("  WORK "); !ok || got.Name != "work" {
+		t.Errorf("Account(\"  WORK \") = %+v/%v, want work (case-insensitive, trimmed)", got, ok)
+	}
+	if _, ok := cfg.Account("nonesuch"); ok {
+		t.Error("Account(nonesuch) ok = true, want false")
+	}
+}

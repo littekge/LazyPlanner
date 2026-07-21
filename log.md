@@ -4,6 +4,18 @@
 
 ---
 
+## 2026-07-21 — v1.1.0 step 3: account switch-and-rebuild loop (cmd) + `ui.Run` switch result
+
+- Third step of v1.1.0 (TDD). The app can now, in principle, run any configured account and reopen a different one without exiting — the teardown-and-rebuild mechanism. Nothing triggers a switch yet (that's step 4's `:account` command); this step builds and tests the loop, the resolvers, and the UI return path.
+- **`internal/config/config.go`**: two pure resolvers — `ResolveActiveAccount(activeID)` (the account matching the stored last-active id, else the first block, so a removed/renamed account can't strand the user) and `Account(name)` (case-insensitive switch-target lookup for `:account`).
+- **`internal/ui/app.go`**: `Run` now returns `(RunResult, error)`; `RunResult.SwitchAccount` is empty for a quit or names the account to switch to. New `app.switchTo` field carries the request (set by step 4's command) and is read on the clean-exit path after `flushOnQuit`.
+- **`cmd/lazyplanner/main.go`**: `runTUI` split into (1) `runTUILoop(cfg, globalPath, openAndRun)` — the switch-and-rebuild state machine: resolves the active account from the global state file, persists the active id before opening (so the file always names the current account), reopens on each switch request, and **falls back to the previously-working account** if a switch target fails to open (a second failure with no fallback left, or an initial-open failure, is fatal); (2) `openAccountAndRun(cfg, acct)` — the per-account wiring (open store/state/sync, run the UI) injected into the loop so the loop is testable without a real store/terminal. `store.Open` holds no OS handles/locks (files are opened per-op), so the old app is simply GC'd on switch — no leak.
+- **`editConfigFn`**: now takes the running `config.Account` and rebuilds sync for the account whose cache id still matches after a reload; a changed/removed active connection flashes "use :account or restart", while an **offline run** (no configured account) reloads cleanly (appearance + warnings) instead of erroring. Fixes the step-1 shim that compared against `FirstAccount` regardless of which account was active.
+- **Tests**: `internal/config/config_test.go` (`TestResolveActiveAccount`, `TestAccountLookupByName`); `cmd/lazyplanner/accountloop_test.go` (new — quit persists active, stored-id resolution, switch reopens + repersists, fallback on failed switch-open, fatal initial-open error, unknown-target quits cleanly). Migrated `TestConfigReloadPreservesLoadWarning` to pass a zero (offline) account. All RED before impl, green after.
+- **Residual (documented)**: the active id is persisted just before open, so a crash in the sub-millisecond window between persisting a switch target and its store opening could, on next launch, try an unopenable target first (fatal). Extremely unlikely; not engineered around.
+- Full gate green: build, `go test ./...`, vet, staticcheck, gofmt.
+- Files: `internal/config/config.go`, `internal/config/config_test.go`, `internal/ui/app.go`, `cmd/lazyplanner/main.go`, `cmd/lazyplanner/accountloop_test.go` (new), `cmd/lazyplanner/configreload_warning_test.go`, `log.md`.
+
 ## 2026-07-21 — v1.1.0 step 2: global state file for the last-active account
 
 - Second step of v1.1.0 (TDD). A new cross-account state file at the data-dir root remembers which account was active, so the app reopens it next launch (per-account `state.json` files stay where they are, under each account dir).

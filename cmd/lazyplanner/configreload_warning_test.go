@@ -48,10 +48,9 @@ func TestConfigReloadPreservesLoadWarning(t *testing.T) {
 	// Use a no-op editor so the reload closure runs without a real $EDITOR.
 	t.Setenv("EDITOR", "true")
 
-	// Server is unconfigured here, so accountID is the empty-server id and
-	// buildSyncFn returns warn=="".
-	accountID := config.AccountID("", "")
-	edit := editConfigFn(cfgPath, nil, accountID, nil)
+	// The run is offline (no configured account), so buildSyncFn returns warn=""
+	// and the reload must still surface config.Load's own warning.
+	edit := editConfigFn(cfgPath, nil, config.Account{}, nil)
 	if edit == nil {
 		t.Fatal("editConfigFn returned nil")
 	}

@@ -152,6 +152,11 @@ type app struct {
 	ctx    context.Context
 	cancel context.CancelFunc
 
+	// switchTo, when non-empty, is the account name the user asked to switch to
+	// (set by the :account command just before stopping the UI). Run returns it so
+	// main tears this app down and reopens the named account. Empty = quit.
+	switchTo string
+
 	// Sync (wired in step 9). syncFn is nil when no server is configured.
 	syncFn      func(context.Context) (sync.SyncResult, error)
 	editConfig  func() (ConfigReload, error)
@@ -316,8 +321,17 @@ type ConfigReload struct {
 	Warning string
 }
 
-// Run builds the TUI and blocks until quit.
-func Run(opts Options) error {
+// RunResult reports why the UI loop returned. An empty SwitchAccount means the
+// user quit; a non-empty one names the account to switch to, which main opens in
+// a fresh app (the teardown-and-rebuild switch — see main.md v1.1.0).
+type RunResult struct {
+	SwitchAccount string
+}
+
+// Run builds the TUI and blocks until the user quits or requests an account
+// switch. On a clean exit it best-effort-flushes pending pushes, then reports
+// whether to quit (empty RunResult) or switch accounts.
+func Run(opts Options) (RunResult, error) {
 	a := newApp(opts.Store, opts.Title, time.Now())
 	defer a.cancel() // on quit, unwind any in-flight background sync cleanly
 	defer a.stopSyncTimer()
@@ -373,10 +387,10 @@ func Run(opts Options) error {
 	a.cancel()
 	a.stopSyncTimer()
 	if runErr != nil {
-		return fmt.Errorf("running tui: %w", runErr)
+		return RunResult{}, fmt.Errorf("running tui: %w", runErr)
 	}
 	a.flushOnQuit()
-	return nil
+	return RunResult{SwitchAccount: a.switchTo}, nil
 }
 
 // newApp assembles the app and its widgets over the store. Wiring (build) and

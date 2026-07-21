@@ -127,10 +127,9 @@ Run a subcommand with -h for its flags; see the README for configuration.
 `, appName, appVersion)
 }
 
-// runTUI loads the config, opens the account-namespaced local cache, and hands
-// it to the UI. It is thin wiring: the UI reads everything through the store.
-// On a first run (no config file) it writes a commented starter config and
-// exits so the user can fill in the [server] connection before launching.
+// runTUI loads the config and runs the account switch-and-rebuild loop. On a
+// first run (no config file) it writes a commented starter config and exits so
+// the user can fill in an [[account]] connection before launching.
 func runTUI() error {
 	cfg, configured, warning, err := config.Load()
 	if err != nil {
@@ -143,7 +142,7 @@ func runTUI() error {
 		}
 		if written {
 			fmt.Fprintf(os.Stderr, "lazyplanner: wrote a starter config to %s\n", path)
-			fmt.Fprintln(os.Stderr, "lazyplanner: edit the [server] section, then run lazyplanner again")
+			fmt.Fprintln(os.Stderr, "lazyplanner: edit the [[account]] section, then run lazyplanner again")
 			return nil
 		}
 	}
@@ -151,20 +150,75 @@ func runTUI() error {
 		fmt.Fprintln(os.Stderr, "lazyplanner:", warning)
 	}
 
-	// Resolve the active account. Until the global state file drives last-active
-	// selection (v1.1.0 step 3), this is the first configured account; a config
-	// with no accounts runs fully offline over the cache.
-	acct, _ := cfg.FirstAccount()
-
-	// The cache is namespaced by account so changing the connection maps to a
-	// separate cache and two accounts' data can never share one directory.
-	dataDir, err := config.AccountDataDir(acct.URL, acct.Username)
+	base, err := config.DataDir()
 	if err != nil {
 		return err
 	}
+	globalPath := filepath.Join(base, state.GlobalFileName)
+
+	return runTUILoop(cfg, globalPath, func(acct config.Account) (ui.RunResult, error) {
+		return openAccountAndRun(cfg, acct)
+	})
+}
+
+// runTUILoop resolves the active account (the last-active id from globalPath, else
+// the first configured account) and runs it, reopening on each :account switch
+// until the user quits. It teardown-and-rebuilds — openAndRun opens a fresh store
+// and UI per account — so no state leaks across accounts (see main.md v1.1.0).
+// openAndRun is injected so the loop is testable without a real store/terminal.
+func runTUILoop(cfg config.Config, globalPath string, openAndRun func(config.Account) (ui.RunResult, error)) error {
+	activeID := state.LoadGlobal(globalPath).ActiveAccountID
+	acct, ok := cfg.ResolveActiveAccount(activeID)
+	var prev config.Account
+	havePrev := false
+	for {
+		// Record the active account before opening it, so the file always names the
+		// current account and the next launch reopens it. Only a real configured
+		// account is remembered — a zero-account offline run has nothing to store.
+		if ok && acct.ID() != activeID {
+			_ = state.SaveGlobal(globalPath, state.Global{ActiveAccountID: acct.ID()})
+			activeID = acct.ID()
+		}
+
+		res, runErr := openAndRun(acct)
+		if runErr != nil {
+			if havePrev {
+				// The switch target failed to open; fall back to the account that was
+				// working (and point the file back at it on the next iteration) rather
+				// than exiting. A second failure with no fallback left is fatal.
+				fmt.Fprintf(os.Stderr, "lazyplanner: opening account %q failed: %v; staying on %q\n", acct.Name, runErr, prev.Name)
+				acct, ok, havePrev = prev, true, false
+				continue
+			}
+			return runErr
+		}
+		if res.SwitchAccount == "" {
+			return nil // quit
+		}
+		next, found := cfg.Account(res.SwitchAccount)
+		if !found {
+			// The UI validates the name before requesting a switch; this guards a
+			// stale request (e.g. the account was removed by a :config edit).
+			return nil
+		}
+		prev, havePrev = acct, true
+		acct, ok = next, true
+	}
+}
+
+// openAccountAndRun opens the account-namespaced cache and remembered UI state,
+// builds the sync closure, and runs the TUI over them, returning the UI's result
+// (quit or a switch request). The cache is namespaced by account so changing the
+// connection maps to a separate cache and two accounts' data can never share one
+// directory.
+func openAccountAndRun(cfg config.Config, acct config.Account) (ui.RunResult, error) {
+	dataDir, err := config.AccountDataDir(acct.URL, acct.Username)
+	if err != nil {
+		return ui.RunResult{}, err
+	}
 	s, err := store.Open(context.Background(), dataDir)
 	if err != nil {
-		return err
+		return ui.RunResult{}, err
 	}
 
 	// Remembered UI state (pane sizes) lives beside the cache, under the data
@@ -172,7 +226,6 @@ func runTUI() error {
 	statePath := filepath.Join(dataDir, state.FileName)
 	uiState := state.Load(statePath)
 
-	accountID := acct.ID()
 	configPath, pathErr := config.ConfigPath()
 
 	// color_mode "truecolor" force-enables tcell's 24-bit output for terminals
@@ -205,7 +258,7 @@ func runTUI() error {
 		SaveState: func(leftWidth, detailWidth int, hidden []string, rowsPerHour int) {
 			_ = state.Save(statePath, state.State{LeftWidth: leftWidth, DetailWidth: detailWidth, HiddenCalendars: hidden, RowsPerHour: rowsPerHour})
 		},
-		EditConfig: editConfigFn(configPath, pathErr, accountID, s),
+		EditConfig: editConfigFn(configPath, pathErr, acct, s),
 	})
 }
 
@@ -213,10 +266,12 @@ func runTUI() error {
 // configured (the app then runs fully offline). A failing password_command is a
 // warning, not a fatal error — the app still opens over the cache.
 // editConfigFn builds the :config callback: open the config file in $EDITOR,
-// reload it, and return a fresh sync closure. It refuses a reload that changes
-// the account (the local cache is account-keyed, so switching accounts safely
-// requires a restart). Returns nil to disable :config when the path is unknown.
-func editConfigFn(configPath string, pathErr error, accountID string, s *store.Store) func() (ui.ConfigReload, error) {
+// reload it, and return a fresh sync closure for the still-running account. The
+// cache is account-keyed, so a reload can only rebuild the sync of the account
+// that's already open (matched by its cache id); changing that account's
+// connection or removing it needs :account or a restart. Returns nil to disable
+// :config when the path is unknown.
+func editConfigFn(configPath string, pathErr error, running config.Account, s *store.Store) func() (ui.ConfigReload, error) {
 	if pathErr != nil || configPath == "" {
 		return nil
 	}
@@ -230,10 +285,24 @@ func editConfigFn(configPath string, pathErr error, accountID string, s *store.S
 		if err != nil {
 			return ui.ConfigReload{}, err
 		}
-		acct, _ := cfg.FirstAccount()
-		if acct.ID() != accountID {
-			return ui.ConfigReload{}, fmt.Errorf("account changed — restart to switch caches")
+		// Find the still-running account by its cache id, and rebuild its sync.
+		var acct config.Account
+		found := false
+		for _, a := range cfg.Accounts {
+			if a.ID() == running.ID() {
+				acct, found = a, true
+				break
+			}
 		}
+		if !found && running.Configured() {
+			// The open account's connection changed or it was removed — the open
+			// cache no longer matches the config. Keep running and tell the user to
+			// switch or restart rather than hot-swapping to a different cache.
+			return ui.ConfigReload{}, fmt.Errorf("the active account's connection changed or it was removed — use :account to switch or restart")
+		}
+		// When found, rebuild sync from the reloaded connection; when the run is
+		// offline (no configured account, nothing to match), stay offline. Either
+		// way the reload still applies appearance changes and surfaces warnings.
 		syncFn, warn := buildSyncFn(acct.Server, s)
 		// Surface config.Load's own warning too (appearance typo, world-readable
 		// password file) — at startup it goes to its own stderr line, but on a

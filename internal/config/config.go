@@ -61,13 +61,41 @@ func (a Account) ID() string {
 }
 
 // FirstAccount returns the first configured account, or false when none are
-// configured (a fully-offline run). It is the trivial active-account resolver
-// until the global state file drives last-active selection.
+// configured (a fully-offline run).
 func (c Config) FirstAccount() (Account, bool) {
 	if len(c.Accounts) == 0 {
 		return Account{}, false
 	}
 	return c.Accounts[0], true
+}
+
+// ResolveActiveAccount picks the account to open at startup: the one whose ID
+// matches activeID (the last-active id from the global state file), else the
+// first configured account. Falling back to the first block means a removed or
+// renamed account can't strand the user on nothing. Returns false only when no
+// accounts are configured (an offline run).
+func (c Config) ResolveActiveAccount(activeID string) (Account, bool) {
+	if activeID != "" {
+		for _, a := range c.Accounts {
+			if a.ID() == activeID {
+				return a, true
+			}
+		}
+	}
+	return c.FirstAccount()
+}
+
+// Account returns the configured account with the given name, matched
+// case-insensitively after trimming (names are unique per validateAccounts). It
+// is the switch-target lookup for the :account command; false when not found.
+func (c Config) Account(name string) (Account, bool) {
+	want := strings.ToLower(strings.TrimSpace(name))
+	for _, a := range c.Accounts {
+		if strings.ToLower(strings.TrimSpace(a.Name)) == want {
+			return a, true
+		}
+	}
+	return Account{}, false
 }
 
 // Server holds the CalDAV connection. Credentials are always a NextCloud app
