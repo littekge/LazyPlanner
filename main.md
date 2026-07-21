@@ -323,9 +323,33 @@ Same charter as v1.0.1: targeted patch-level fixes outside the audit cadence, ea
 - **Week/day time grid: multi-day timed event renders on every day of its span** (2026-07-20) — `splitOccs` bucketed a timed occurrence onto its start day only (the all-day branch already fanned out) and block geometry was time-of-day-blind, so the event vanished after day one. It now fans across every covered day (new `Occurrence.OverlapsDay`) and draws per-day clipped blocks: start time → midnight on the start day, full column on spanned-through days, midnight → end time on the final day. Guards: `internal/ui/multiday_test.go` (`TestTimeGridRendersMultiDayTimedEventOnEveryDay`), `internal/model/calendar_test.go`.
 - **Debounced/periodic sync deferred while a create/edit form is open** (2026-07-20) — the timer-driven push could fire mid-edit; pushing the just-edited resource stores a new pointer, so the open form's version-checked Save read as stale and `commitMutation` tore the form down, discarding everything typed. Both timer triggers now defer while a modal is open (`fireDebouncedSync` re-arms, the periodic tick skips), and `closeModal` re-arms a pending push so a deferred edit syncs promptly. The version-check CAS itself is untouched (it still guards the genuine concurrent-pull clobber); see the Sync-triggers decision for the in-flight residual. Guards: `internal/ui/sync_modal_test.go`.
 
+### v1.1.0 — account switching (planned)
+
+Full multi-account profiles: several configured CalDAV accounts, one **active** at a time, switchable in-app. Goal-level scope (owner decisions 2026-07-21); the detailed design is settled conversationally and written here before implementation begins.
+
+- **Config**: multiple `[[account]]` blocks (a label plus the existing server-connection fields). The current single `[server]` section keeps working as the sole account; the exact schema (and its back-compat rule) is a deep-dive decision.
+- **Switcher**: an in-app `:account` switcher swaps the active profile — calendars, cache, credentials, sync state, and the status indicator — without a restart. The vdir cache is already namespaced by account-id, so account isolation exists by construction; switching must never mix caches or sync sidecars (hard invariant).
+- **One account at a time**: no merged multi-account view — explicitly out of scope for this version.
+- **Deep-dive items**: config schema and validation, per-account credential handling (`password_command`), what happens to an in-flight sync on switch, and state-file scoping (per-account vs global UI state).
+
+### v1.2.0 — SELECT mode (planned)
+
+A vim-style multi-select interaction layer. Goal-level scope (owner decisions 2026-07-21); detailed design before implementation, written here first.
+
+- **Selection domains**: multiple tasks/subtasks in the task tree; multiple days in the calendar; multiple events within a drilled day.
+- **Bulk operations** over a selection: complete/uncomplete, delete, yank & paste (move), and grab (temporal shift).
+- **Mode composition is the design core**: SELECT is reachable from any mode whose context makes a selection meaningful, and modes nest (e.g. DRILL → SELECT → GRAB on several events of one day). Semantics differ per view (month vs week/day) and per domain — the deep-dive must enumerate the full mode-state space, define what each operation means in each domain, and build on the existing `interactionMode` seam, never a parallel mode enum (hard-won guardrail).
+
 ### Future versions
 
-New feature work gets planned here first: talk the version through with an agent, write its scope as a new `### v1.x.0` subsection (feature versions minor-bump; hardening stays patch-level), and only then implement step by step. Known candidates awaiting a version: full `sync-collection` delta sync and multi-account profiles (see Settled Decisions).
+New feature work gets planned here first: talk the version through with an agent, write its scope as a new `### v1.x.0` subsection (feature versions minor-bump; hardening stays patch-level), and only then implement step by step. Known candidates awaiting a version, in no particular order:
+
+- **Configurable keybindings** — a `[keys]` config section (the schema deliberately left room; see Configuration & credentials).
+- **Persistent trash** — undo today is session-scoped; deferred unless it proves needed.
+- **Conflict "keep both as separate items"** — a third resolution besides keep-local/keep-server; needs a new-UID clone.
+- **Detail-pane accordion collapse** — the `+`/`-` accordion only collapses the overview column today.
+- **Mouse click-to-select** in the center agenda board and full-cell click mapping in the calendar grids (the pass-16 accepted UI gap).
+- **Full `sync-collection` delta sync** — **indefinitely deferred** (see the Incremental sync decision for the measured rationale); revisit only if a real pain point appears.
 
 ---
 
@@ -347,7 +371,7 @@ New feature work gets planned here first: talk the version through with an agent
 
 The two **timer-driven** triggers (the debounced push and the periodic tick) are **deferred while a create/edit form is open** — a sync landing then would replace the store pointer the open form captured, so its version-checked Save would read as stale and silently discard the user's typed input. The debounced fire re-arms (retries) while a modal is open, the periodic tick skips that interval, and `closeModal` re-arms the deferred push once the form closes so a still-pending edit syncs promptly. Manual `:sync` is unaffected (it is unreachable while a form holds focus). (Residual: a sync already *in flight* when the form opens can still land — the version-checked write then protects the data, the edit is just skipped.)
 
-**Incremental sync**: each calendar's `getctag` CTag is compared to the last-synced value; an unchanged CTag with no local changes skips the full re-download, so a routine sync of an idle account is cheap (a Pi/large-calendar concern). The full `sync-collection` REPORT (per-resource delta by sync token; the sidecar already carries a `sync_token` field) is a **deliberate deferral** to a future version — the CTag short-circuit already eliminates the common-case cost, and `sync-collection` adds a second server-trust surface (truncated reports, token expiry) that deserves its own hardening pass.
+**Incremental sync**: each calendar's `getctag` CTag is compared to the last-synced value; an unchanged CTag with no local changes skips the full re-download, so a routine sync of an idle account is cheap (a Pi/large-calendar concern). The full `sync-collection` REPORT (per-resource delta by sync token; the sidecar already carries a `sync_token` field) is **indefinitely deferred** (owner decision 2026-07-21). The 2026-07-21 estimate that settled it: a worst-case decade-scale calendar (~10,000 items at ~850 B each) costs roughly **0.5 s of background client CPU on a Pi 5 and ~12–15 MB of transfer** per full re-download (measured: 7.5 µs/event go-ical decode, 7.6 ms reconcile+store at n=10k on the dev machine, derated ~3× for the Pi; sync never blocks the UI) — paid on the sync after each local edit (the stale-CTag rule above) and on remote changes. That is acceptable, so delta sync's second server-trust surface (truncated reports, token expiry — it would need its own hardening pass) isn't worth buying now. Revisit if a real pain point appears: a metered/slow link, a slow server generating full REPORTs, or calendars growing toward the **~40k-item ceiling** where a full download approaches the 64 MiB response cap.
 
 **Read-only calendars**: some server calendars grant no write privilege — notably NextCloud's generated **Contact Birthdays** calendar (`contact_birthdays`), and read-only shares/subscriptions. LazyPlanner **detects** these via a `current-user-privilege-set` PROPFIND during discovery (a calendar lacking `write`/`write-content`/`bind`/`all` is read-only; issued over `internal/caldav`'s own HTTP client since go-webdav's client doesn't expose privileges), caches the flag in the sidecar, and **never writes to them**: the UI blocks create/edit/complete/delete/re-parent (marking the calendar `[ro]`), and sync treats them **pull-only** — mirroring the server one-way and discarding any local change that can't be pushed (matching how the NextCloud web UI itself forbids edits there). A write refused with HTTP **403** is a reactive fallback that flags the calendar read-only even if privilege discovery missed it. This keeps LazyPlanner a well-behaved CalDAV citizen (no futile writes, no silent data loss from the earlier "push → server drops → reconcile deletes locally" cycle).
 

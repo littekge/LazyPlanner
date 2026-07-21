@@ -4,6 +4,13 @@
 
 ---
 
+## 2026-07-21 — Plan: v1.1.0 (account switching) + v1.2.0 (SELECT mode); delta sync indefinitely deferred
+
+- Planned the next minor versions with the owner (goal-level now, per-version deep-dive before each implementation starts). Owner's original outline had v1.1.0 = sync tokens; a feasibility/perf check demoted it (below), shifting the versions up.
+- **Delta-sync estimate (the demotion rationale)**: measured via a scratch benchmark (not committed) through the real `sync.Sync` + go-ical decode — 7.5 µs/event decode (850 B realistic event), 7.6 ms reconcile+store at n=10,000. Worst-case decade-scale calendar (~10k items) ≈ 0.5 s background client CPU on a Pi 5 (~3× derate) + ~12–15 MB transfer per full re-download, paid on the sync after each edit (stale-CTag rule) — acceptable, so `sync-collection`'s second server-trust surface isn't worth buying now. Also confirmed go-webdav's `SyncCollection` lives in its unimportable `internal/` package (a hand-rolled REPORT would be needed, precedent exists). Owner decision: **indefinitely deferred**; recorded in the Incremental-sync Settled Decision with the numbers and revisit triggers (metered link, slow server, ~40k-item response-cap ceiling).
+- **`main.md` Build Plan**: new `### v1.1.0 — account switching (planned)` (multi-account `[[account]]` profiles, in-app `:account` switcher, strictly one active account, no merged view; deep-dive items listed) and `### v1.2.0 — SELECT mode (planned)` (vim-style multi-select — tree tasks / calendar days / drilled events; bulk complete/delete/yank/grab; mode-composition state space + `interactionMode` seam as the design core). Future-versions section now carries the consolidated candidate list (keybindings `[keys]`, persistent trash, conflict keep-both, detail-pane collapse, mouse click-to-select, deferred delta sync) — previously scattered across old log entries.
+- Files: `main.md`, `log.md`.
+
 ## 2026-07-21 — Docs: add the missing v1.0.2 subsection to main.md's Build Plan
 
 - Session-startup doc sweep found one gap: the three 2026-07-20 fixes are labeled v1.0.2 in their commits and log entries, but the Build Plan had no `### v1.0.2` subsection — the version history ended at v1.0.1.
