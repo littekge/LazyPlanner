@@ -59,8 +59,21 @@ func (a *app) scheduleSyncDebounced() {
 		a.syncTimer.Stop()
 	}
 	a.syncTimer = time.AfterFunc(syncDebounce, func() {
-		a.tv.QueueUpdateDraw(func() { a.triggerSync() })
+		a.tv.QueueUpdateDraw(func() { a.fireDebouncedSync() })
 	})
+}
+
+// fireDebouncedSync runs the armed debounced push — unless a create/edit form is
+// open. A sync landing while a form is open replaces the store pointer the form
+// captured, so its version-checked Save reads as stale and silently discards the
+// user's input. While a modal is open the push defers (re-arms) and closeModal
+// fires it once the form closes.
+func (a *app) fireDebouncedSync() {
+	if a.modalOpen() {
+		a.scheduleSyncDebounced()
+		return
+	}
+	a.triggerSync()
 }
 
 // stopSyncTimer cancels a pending debounced push (called on quit).
@@ -83,7 +96,14 @@ func (a *app) startPeriodicSync(interval time.Duration) {
 			case <-a.ctx.Done():
 				return
 			case <-t.C:
-				a.tv.QueueUpdateDraw(func() { a.triggerSync() })
+				a.tv.QueueUpdateDraw(func() {
+					// Skip a periodic tick while a form is open (see fireDebouncedSync);
+					// the next tick — or closeModal's re-armed push — catches up.
+					if a.modalOpen() {
+						return
+					}
+					a.triggerSync()
+				})
 			}
 		}
 	}()

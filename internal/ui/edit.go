@@ -838,6 +838,12 @@ func (a *app) openModal(name string, prim tview.Primitive, width, height int) {
 func (a *app) closeModal(name string) {
 	a.root.RemovePage(name)
 	a.restoreFocus()
+	// A debounced push that fell due while the form was open was deferred
+	// (fireDebouncedSync); re-arm it now so a still-pending local edit syncs
+	// promptly rather than waiting for the next periodic tick.
+	if !a.modalOpen() && a.store != nil && a.store.HasPendingChanges() {
+		a.scheduleSyncDebounced()
+	}
 }
 
 // captureFocus records the focused primitive (and any calendar drill-in state)

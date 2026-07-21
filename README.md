@@ -121,7 +121,7 @@ Once `[server]` is set, LazyPlanner syncs **both ways** automatically:
 
 - on **startup** (the UI opens instantly from cache and refreshes when the sync lands);
 - **periodically** while open (`sync_interval_minutes`, default 15, `0` = off);
-- a few seconds after any local edit (a **debounced** background push, so other devices see changes fast);
+- a few seconds after any local edit (a **debounced** background push, so other devices see changes fast) — deferred while a create/edit form is open, so an automatic sync never discards what you're typing;
 - on **quit** (a best-effort push of anything still pending — skipped instantly when offline or nothing's pending, and time-bounded so a slow network can't delay exit);
 - and on demand with `r` (or the `sync` subcommand below).
 

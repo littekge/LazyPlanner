@@ -4,6 +4,17 @@
 
 ---
 
+## 2026-07-20 — Fix (v1.0.2, Bug 2): debounced/periodic sync deferred while a create/edit form is open
+
+- **Bug**: the debounced push a few seconds after a local edit often fired **while a create/edit form was still open**, silently discarding the user's typed input. Root cause: pushing the just-edited (Dirty) resource makes `CommitPush` store a **new** `*Resource` pointer; the open form captured the old `loc.Prev` pointer, so on Save the version-checked `PutIfUnchanged` sees `cur != loc.Prev`, reports the write **stale**, and `commitMutation`'s stale branch tears down the form (`closeModal`) — losing every keystroke. The `modalOpen()` predicate existed but the sync path never consulted it.
+- **Fix** (gate the *timer-driven* triggers on `!modalOpen()`; the data-safety CAS is left untouched):
+  - `internal/ui/sync.go`: extracted `fireDebouncedSync` — if a modal is open it re-arms (defers) instead of firing; the debounce `AfterFunc` now calls it. The periodic tick skips a tick while a modal is open.
+  - `internal/ui/edit.go`: `closeModal` re-arms the debounced push when a modal is no longer open and `store.HasPendingChanges()`, so a deferred edit syncs promptly rather than waiting for the next periodic tick.
+- **Deliberately unchanged**: `applyMutation`/`PutIfUnchanged` and the stale-CAS — the genuine concurrent-pull-clobber guard (`editclobber_test`) still passes. Manual `:sync`/`r` is unaffected (unreachable while a form holds focus). **Residual** (documented in main.md): a sync already *in flight* when the form opens can still land; the CAS then protects the data and the edit is skipped (not silently clobbered).
+- **Repro-first**: `internal/ui/sync_modal_test.go` — `TestDebouncedSyncDefersWhileModalFormOpen` (fired-while-open → deferred/re-armed; fires after close) and `TestCloseModalRearmsDeferredPushWhenPending`. Both failed against a naive seam; green after the gate. Verified `TestApplyMutationDoesNotClobberConcurrentPull` and all existing sync tests still pass, incl. `-race`.
+- **Docs**: main.md Sync-triggers decision records the defer-while-modal rule + residual; README Syncing bullet notes the debounced push is deferred while a form is open.
+- Files: `internal/ui/sync.go`, `internal/ui/edit.go`, `internal/ui/sync_modal_test.go`, `main.md`, `README.md`, `log.md`. Full gate green (build, `go test ./...`, vet, staticcheck, `-race`).
+
 ## 2026-07-20 — Fix (v1.0.2, Bug 1 week/day): multi-day timed event now renders on every day of its span
 
 - **Bug**: in the week/day hourly time-grid a timed event spanning several days rendered **only on its start day** and vanished on the rest. Root cause: `splitOccs` bucketed a timed occurrence onto `DayStart(o.Start)` alone (the all-day branch beside it fanned across every covered day; the timed branch did not), and `drawBlock`/`hourFloat` were date-blind (time-of-day only), so a block could not span day columns.
