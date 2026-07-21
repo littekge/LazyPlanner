@@ -4,6 +4,18 @@
 
 ---
 
+## 2026-07-20 — Fix (v1.0.2, Bug 1 week/day): multi-day timed event now renders on every day of its span
+
+- **Bug**: in the week/day hourly time-grid a timed event spanning several days rendered **only on its start day** and vanished on the rest. Root cause: `splitOccs` bucketed a timed occurrence onto `DayStart(o.Start)` alone (the all-day branch beside it fanned across every covered day; the timed branch did not), and `drawBlock`/`hourFloat` were date-blind (time-of-day only), so a block could not span day columns.
+- **Fix** (owner-approved: per-day clipped blocks): the event draws on every day it covers, clipped to each column — start day from its start time to the bottom (midnight), spanned-through days fill the whole column, final day from the top (midnight) to its end time.
+  - `internal/model/calendar.go`: new `Occurrence.OverlapsDay(day)` (pure, reuses `overlaps`) — the day-membership test.
+  - `internal/ui/render.go`: `splitOccs` timed branch now fans across `days` via `OverlapsDay` (mirrors the all-day branch, which is left untouched).
+  - `internal/ui/timegridview.go`: `drawBlock` takes the column's `day` and computes date-aware geometry — top = start-time if it starts today else midnight; bottom = end-time if it ends today else bottom-of-day. The start-end time line is now only drawn for a single-day block (a multi-day segment conveys its bounds by where it meets the day edges).
+- **Note**: the drill list (`dayItems`) already returned the full-span occurrence per day (the per-day store query's `baseInstance` uses `overlaps`), so drilling/selection needed no change — only the block bucketing and geometry did.
+- **Repro-first**: `internal/ui/multiday_test.go` — `TestTimeGridRendersMultiDayTimedEventOnEveryDay` runs the real `splitOccs`→`setData`→`Draw` pipeline and asserts the event renders across ≥4 day columns (failed at 1 before the fix). Model guard: `TestOccurrenceOverlapsDay` in `internal/model/calendar_test.go`.
+- **main.md**: documented the multi-day time-grid rendering in the Week/day UI-Design paragraph.
+- Files: `internal/model/calendar.go`, `internal/model/calendar_test.go`, `internal/ui/render.go`, `internal/ui/timegridview.go`, `internal/ui/multiday_test.go`, `main.md`, `log.md`. Full gate green (build, `go test ./...`, vet, staticcheck).
+
 ## 2026-07-20 — Fix (v1.0.2, Bug 1 month): multi-day timed event no longer repeats its start time
 
 - **Bug**: a timed event spanning several days (e.g. 11am 7/23 → 5pm 7/26) rendered its **start time on every day** of the span in the month grid. Root cause: `OccurrencesOn` returns the occurrence unclamped for each overlapping day and `DayAgenda` copied `o.Start` verbatim, so `itemLabel` printed `hourAxisLabel(it.Start.Hour())` identically on every cell — nothing distinguished a continuation day.

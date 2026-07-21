@@ -80,3 +80,30 @@ func TestOccurrencesOn(t *testing.T) {
 		t.Fatalf("got %d occurrences on 7/4, want 2 (%v)", len(got), got)
 	}
 }
+
+// TestOccurrenceOverlapsDay guards the multi-day time-grid fan-out: a timed event
+// spanning several days overlaps every day it covers, and no others.
+func TestOccurrenceOverlapsDay(t *testing.T) {
+	loc := time.UTC
+	// 11:00 7/23 -> 17:00 7/26.
+	occ := model.Occurrence{
+		Start: time.Date(2026, 7, 23, 11, 0, 0, 0, loc),
+		End:   time.Date(2026, 7, 26, 17, 0, 0, 0, loc),
+	}
+	cases := []struct {
+		day  int
+		want bool
+	}{
+		{22, false}, // day before it starts
+		{23, true},  // start day
+		{24, true},  // middle
+		{25, true},  // middle
+		{26, true},  // end day (ends 17:00)
+		{27, false}, // day after it ends
+	}
+	for _, c := range cases {
+		if got := occ.OverlapsDay(date(2026, 7, c.day)); got != c.want {
+			t.Errorf("OverlapsDay(7/%d) = %v, want %v", c.day, got, c.want)
+		}
+	}
+}

@@ -65,6 +65,15 @@ func OccurrencesOn(occs []Occurrence, day time.Time) []Occurrence {
 	return out
 }
 
+// OverlapsDay reports whether this occurrence overlaps the calendar day
+// beginning at day (in day's location) — the half-open span [DayStart(day),
+// +24h). It lets the time-grid place a multi-day timed event on every day it
+// covers, not only the day it starts.
+func (o Occurrence) OverlapsDay(day time.Time) bool {
+	ds := DayStart(day)
+	return overlaps(o.Start, o.End, ds, ds.AddDate(0, 0, 1))
+}
+
 // SameDay reports whether a and b fall on the same calendar day in a's location.
 func SameDay(a, b time.Time) bool {
 	ay, am, ad := a.Date()

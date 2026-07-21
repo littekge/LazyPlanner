@@ -217,8 +217,8 @@ func (a *app) dueTasksByDay(days []time.Time) map[string][]*model.Todo {
 }
 
 // splitOccs buckets a range's occurrences into timed and all-day, keyed by day,
-// for the time-grid. Timed events land on their start day; all-day events mark
-// every day they cover.
+// for the time-grid. Both timed and all-day events land on every day they cover;
+// drawBlock clips a multi-day timed event to each day's column.
 func (a *app) splitOccs(days []time.Time) (timed, allday map[string][]model.Occurrence) {
 	timed = map[string][]model.Occurrence{}
 	allday = map[string][]model.Occurrence{}
@@ -237,8 +237,11 @@ func (a *app) splitOccs(days []time.Time) (timed, allday map[string][]model.Occu
 			}
 			continue
 		}
-		d := model.DayStart(o.Start)
-		timed[dayKey(d)] = append(timed[dayKey(d)], o)
+		for _, d := range days {
+			if o.OverlapsDay(d) {
+				timed[dayKey(d)] = append(timed[dayKey(d)], o)
+			}
+		}
 	}
 	return timed, allday
 }

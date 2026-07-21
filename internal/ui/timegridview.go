@@ -631,7 +631,7 @@ func (tg *timeGridView) Draw(screen tcell.Screen) {
 		for _, p := range places {
 			selected := sel != nil && sel.Event != nil && !sel.Event.AllDay && model.SameDay(day, tg.selected) &&
 				p.Occ.Event == sel.Event && p.Occ.Start.Equal(sel.Start)
-			tg.drawBlock(screen, p, colStart+di*colW, colW, vs, selected)
+			tg.drawBlock(screen, p, day, colStart+di*colW, colW, vs, selected)
 		}
 		// Timed due-task markers, drawn on top at their due time; the cycled task on
 		// the selected day is highlighted.
@@ -666,13 +666,21 @@ func (tg *timeGridView) drawTaskMarker(screen tcell.Screen, t *model.Todo, colX,
 	printStyled(screen, colX, row, colW-1, taskMarkerLabel(t, tg.folderTask(t)), style)
 }
 
-func (tg *timeGridView) drawBlock(screen tcell.Screen, p model.Placement, colX, colW int, vs vScale, selected bool) {
+func (tg *timeGridView) drawBlock(screen tcell.Screen, p model.Placement, day time.Time, colX, colW int, vs vScale, selected bool) {
 	startT := p.Occ.Start.In(time.Local)
 	endT := p.Occ.End.In(time.Local)
-	startHF := hourFloat(startT)
-	endHF := hourFloat(endT)
-	if endHF <= startHF {
-		endHF = hoursPerDay // ends at/after midnight: extend to the bottom of the day
+	// Clip the block to this day's column. A multi-day event begins at midnight
+	// (the top) on the days after it started and runs to midnight (the bottom) on
+	// the days before it ends; only its true start/end days show its actual times.
+	startsToday := model.SameDay(day, startT)
+	endsToday := model.SameDay(day, endT)
+	startHF := 0.0
+	if startsToday {
+		startHF = hourFloat(startT)
+	}
+	endHF := float64(hoursPerDay)
+	if endsToday {
+		endHF = hourFloat(endT)
 	}
 
 	top := vs.row(startHF)
@@ -732,7 +740,9 @@ func (tg *timeGridView) drawBlock(screen tcell.Screen, p model.Placement, colX, 
 		}
 	}
 	printStyled(screen, bx, top, bw, nonEmpty(p.Occ.Event.Summary, "(untitled)"), style)
-	if height >= 2 {
+	// The start-end time line only makes sense on a single-day block; a multi-day
+	// segment's start/end are conveyed by where it meets the day's edges.
+	if height >= 2 && startsToday && endsToday {
 		span := clockStr(startT, tg.clock24) + "-" + clockStr(endT, tg.clock24)
 		printStyled(screen, bx, top+1, bw, span, spanStyle)
 	}
