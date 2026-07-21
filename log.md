@@ -4,6 +4,13 @@
 
 ---
 
+## 2026-07-21 — Design: v1.1.0 account switching detailed build plan
+
+- Deep-dive design session for v1.1.0, all decisions owner-settled; main.md's goal-level v1.1.0 subsection replaced with the full design + 5 build steps.
+- **Key decisions**: (1) **teardown & rebuild** switch — `ui.Run` returns quit-or-switch, the `cmd` loop reopens store/state/sync; hot-swap rejected (captured-pointer cross-account leak class). (2) **`[server]` deprecated outright** — `[[account]]` blocks (unique `name` + existing connection fields); old configs fail with a migration message; caches carry over (account-id derivation unchanged). (3) **Last-active account remembered** by account-id in a new global state file at the data-dir root; corrupt/missing → first block, never fatal. (4) **`:account <name>` + bare-`:account` picker modal**; status bar shows the active account when >1 configured. Plus `:config`-reload interplay (re-parses accounts, never yanks a live store) and failure modes (offline fallback, previous-account fallback on failed open).
+- Grounding for the design: `runTUI` wiring read (single Store + sync closure into `ui.Run`; per-account state file already under each account's data dir; `:config` reload currently refuses account changes — the restriction v1.1.0 lifts).
+- Files: `main.md`, `log.md`.
+
 ## 2026-07-21 — Plan: v1.1.0 (account switching) + v1.2.0 (SELECT mode); delta sync indefinitely deferred
 
 - Planned the next minor versions with the owner (goal-level now, per-version deep-dive before each implementation starts). Owner's original outline had v1.1.0 = sync tokens; a feasibility/perf check demoted it (below), shifting the versions up.

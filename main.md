@@ -323,14 +323,31 @@ Same charter as v1.0.1: targeted patch-level fixes outside the audit cadence, ea
 - **Week/day time grid: multi-day timed event renders on every day of its span** (2026-07-20) — `splitOccs` bucketed a timed occurrence onto its start day only (the all-day branch already fanned out) and block geometry was time-of-day-blind, so the event vanished after day one. It now fans across every covered day (new `Occurrence.OverlapsDay`) and draws per-day clipped blocks: start time → midnight on the start day, full column on spanned-through days, midnight → end time on the final day. Guards: `internal/ui/multiday_test.go` (`TestTimeGridRendersMultiDayTimedEventOnEveryDay`), `internal/model/calendar_test.go`.
 - **Debounced/periodic sync deferred while a create/edit form is open** (2026-07-20) — the timer-driven push could fire mid-edit; pushing the just-edited resource stores a new pointer, so the open form's version-checked Save read as stale and `commitMutation` tore the form down, discarding everything typed. Both timer triggers now defer while a modal is open (`fireDebouncedSync` re-arms, the periodic tick skips), and `closeModal` re-arms a pending push so a deferred edit syncs promptly. The version-check CAS itself is untouched (it still guards the genuine concurrent-pull clobber); see the Sync-triggers decision for the in-flight residual. Guards: `internal/ui/sync_modal_test.go`.
 
-### v1.1.0 — account switching (planned)
+### v1.1.0 — account switching (planned, design complete 2026-07-21)
 
-Full multi-account profiles: several configured CalDAV accounts, one **active** at a time, switchable in-app. Goal-level scope (owner decisions 2026-07-21); the detailed design is settled conversationally and written here before implementation begins.
+Full multi-account profiles: several configured CalDAV accounts, one **active** at a time, switchable in-app without a restart. No merged multi-account view — explicitly out of scope for this version. All decisions below are owner-settled (2026-07-21).
 
-- **Config**: multiple `[[account]]` blocks (a label plus the existing server-connection fields). The current single `[server]` section keeps working as the sole account; the exact schema (and its back-compat rule) is a deep-dive decision.
-- **Switcher**: an in-app `:account` switcher swaps the active profile — calendars, cache, credentials, sync state, and the status indicator — without a restart. The vdir cache is already namespaced by account-id, so account isolation exists by construction; switching must never mix caches or sync sidecars (hard invariant).
-- **One account at a time**: no merged multi-account view — explicitly out of scope for this version.
-- **Deep-dive items**: config schema and validation, per-account credential handling (`password_command`), what happens to an in-flight sync on switch, and state-file scoping (per-account vs global UI state).
+**Config schema (breaking).** `[server]` is removed. Accounts are `[[account]]` blocks: a required unique `name` (the label `:account` and the status bar use) plus the existing connection fields — `url`, `username`, `password` / `password_command` (0600 warning and all current credential rules unchanged). A config still containing `[server]` fails at load with a clear migration message (rename it to `[[account]]`, add `name`). The cache location is untouched — the account-id derivation (URL+username) doesn't change — so existing caches carry over with zero migration. Zero accounts = today's fully-offline mode. Duplicate names or a nameless block = load error (config ambiguity stays fatal by design). The first-run template generates one commented `[[account]]` block.
+
+**Active-account memory.** A new tiny **global** state file at the data-dir root (per-account state files stay where they are) records the last-active **account-id** — the id, not the name, so renaming a block keeps the memory. Startup: the stored id if it matches a configured account, else the first block. Corrupt/missing global state is never fatal — first block. Written on each successful switch.
+
+**Switch mechanics (teardown & rebuild).** `ui.Run` gains a return value: quit or "switch to account X". On `:account X` the UI validates the name, then winds down exactly like quit — cancel the sync context, stop timers, run the existing time-bounded best-effort flush of pending pushes — and returns. The `cmd` loop (still thin wiring: load config → resolve account → run UI → repeat on switch) reopens the new account's store, state, and sync closure. The undo stack and all view state die with the old App, same as quit. A live hot-swap of the store inside the App was rejected: every captured pointer (timers, undo, modals) becomes a cross-account leak risk — the rebuild makes leakage impossible by construction, and its cost is imperceptible. Unpushed changes that miss the flush stay in that account's cache and sync when it's next active.
+
+**UX.** `:account <name>` switches directly; bare `:account` opens a picker modal (existing form-modal pattern) listing accounts with the active one marked. The status bar shows the active account name whenever more than one account is configured. Switching to the current account is a no-op flash; an unknown name is an error flash; `:account` with no accounts configured errors cleanly.
+
+**`:config` interplay.** Reload today refuses account changes; it now re-parses the account list (picker/status bar update live). If the *active* account's connection changed or it was removed, the session keeps running on its in-memory connection with a flash advising a switch/restart — a reload never yanks a live store.
+
+**Failure modes.** A failing `password_command` on the switch target behaves like startup: warning, the account opens offline over its cache. A failed store-open on switch: the loop reports and falls back to reopening the previous account (which just worked); if even that fails, exit with the error.
+
+**Build steps** (each with tests, its own commit, full gate):
+
+1. **Config**: `[[account]]` parse + validation + `[server]` migration error + template rewrite.
+2. **Global state file**: last-active-id read/write, corrupt-tolerant.
+3. **cmd loop**: account resolution (stored-id → first-block fallback), `ui.Run` switch-result plumbing, rebuild loop, previous-account fallback.
+4. **UI**: `:account` command + picker modal + status-bar segment + wind-down path reusing the quit flush; display-stress coverage for the new modal.
+5. **Docs ripple**: README (Configuration/Usage/keybindings), main.md Settled Decisions rewritten in place (Account model → multi-account one-active; Config → `[[account]]` schema + migration note).
+
+**Testing constraint**: all verification is headless (config parse, loop logic, UI dispatch, flush-on-switch mirroring the quit-flush tests); live two-account end-to-end sync is deferred until the CalDAV server is back.
 
 ### v1.2.0 — SELECT mode (planned)
 
