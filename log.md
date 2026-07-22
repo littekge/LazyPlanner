@@ -4,6 +4,15 @@
 
 ---
 
+## 2026-07-22 — Docs: recurrence-creation gap acknowledged; full-form Repeat field deferred
+
+- Investigation (owner question): as of v1.1.0 a recurring task/event **cannot be created in-app** — quick-add has no recurrence tokens and neither full form has a repeat field (`internal/ui/itemforms.go`); the rule itself is also not rewritable (scope pickers edit occurrences, never the RRULE). Recurrence support is manage-existing only.
+- Root cause of the miss: a spec seam — build step 8 built creation before recurrence existed, step 11 was scoped to *editing* semantics, and no design section ever specified recurrence creation. Four feature-promise/spec-diff audits (10, 13, 17, 18) passed it legitimately: the code conforms to the spec; the hole is spec≠intent, invisible to spec-diff. The one catchable thread — main.md listing recurrence as a surfaced event field while the Creation section claimed the full form "edits every field" — spans distant sections, and the audit method extracts promises row-by-row rather than composing them.
+- **main.md** updated in place: the Creation section's "edits every field" corrected (recurrence rule excepted; quick-add v1.2.0 becomes the first in-app creation path); Future versions gains a **Recurrence-rule UI in the full forms** candidate (owner deferral 2026-07-22).
+- Follow-up noted for the next feature-promise audit pass: add a lifecycle × surfaced-field completeness matrix (every surfaced field reachable at create and edit) to the method set — it catches this class mechanically.
+- No code change.
+- Files: `main.md`, `log.md`.
+
 ## 2026-07-22 — Design: v1.2.0 quick-add parser improvements detailed build plan
 
 - Planned v1.2.0 in detail with the owner (brainstorming session; all decisions owner-settled) and wrote the full design into `main.md`'s v1.2.0 Build Plan subsection, replacing the goal-level stub.
