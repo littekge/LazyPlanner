@@ -62,7 +62,12 @@ Run `lazyplanner` with no arguments to open the TUI (seed the cache with `import
 **Creating & editing.** Create actions live under the **`i` prefix** (a which-key hint pops up after `i`); the object letter picks the type — `t` task, `e` event, `s` subtask, `c` calendar, `l` list — and a **capital** `T`/`E`/`S` opens the full form instead of the one-line quick-add (calendars and lists always open their form).
 
 - A subtask is created under the selected task, in its parent's own list; calendars/lists are created **offline-first** (they appear now, hit the server on the next sync) with a **Color** field and swatch picker so they're colored from the start.
-- Quick-add parses smart tokens and leaves anything ambiguous in the title: dates (`fri`, `jul 20`, `7/20`, `2026-07-20`), times (`3pm`, `15:00` — a bare number stays a number), `!high`/`!1`–`!9` priority, `#tag`.
+- Quick-add parses smart tokens and leaves anything ambiguous in the title:
+  - **date** — `today`, `fri`, `jul 20`, `7/20`, `2026-07-20`; relative `next fri`, `next week`/`next month`, `in 3 days`/`weeks`/`months`.
+  - **time** — `3pm`, `3:30pm`, `15:00`, or a range `5-6pm` / `14:00-15:30` (an event gets the end; a task uses the start). A bare number is never a time.
+  - **repeat** — `daily`/`weekly`/`monthly`/`yearly`, `every mon`, `every jul 20` (sets the date itself when you don't type one). This is the way to create a recurring item.
+  - **`!` priority** (`!high`/`!1`–`!9`), **`#tag`**, and **`@location`** (`@home` or `@"room 204"`).
+  - An obvious typo (`!hgh`, `next tuedsay`, `25:00`) keeps the input open with a warning — submit the same text again to keep it as-is.
 - Creation is **locked to the calendar's type** (events only on `[events]`/`[both]`, tasks only on `[tasks]`/`[both]`); an unconfirmed `[?]` calendar blocks creation until a sync settles it, unless you force it with **`i!`** (e.g. `i!e`) — read-only and known-wrong-type are never forced.
 - `e` edits the selected item (or, with the Calendars/Tasks panel focused, that calendar/list's name + color); `s` quick-sets one field (`sp` priority, `sd` due); `d` deletes (a folder removes its whole subtree, after a confirm).
 

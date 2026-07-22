@@ -35,6 +35,15 @@ var helpSections = []struct {
 		{"i c / i l", "new calendar / task list"},
 		{"i ! e / i ! t", "force-create on an unknown-type [?] calendar"},
 	}},
+	{"Quick-add tokens", [][2]string{
+		{"date", "today, fri, jul 20, 7/20, 2026-07-20; next fri, next week/month, in 3 days"},
+		{"time", "3pm, 3:30pm, 15:00; range 5-6pm / 14:00-15:30 (event end; task uses the start)"},
+		{"repeat", "daily/weekly/monthly/yearly, every mon, every jul 20"},
+		{"! priority", "!high / !med / !low or !1–!9"},
+		{"#tag", "a category tag"},
+		{"@location", "@home or @\"room 204\""},
+		{"(rest)", "unmatched text becomes the title; an obvious typo re-prompts with a warning"},
+	}},
 	{"Edit & organize", [][2]string{
 		{"e", "edit selected (full form); on the Calendars/Tasks pane, edit the calendar/list (name + color)"},
 		{"s p / s d", "quick-set task priority / due date"},

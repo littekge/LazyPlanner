@@ -4,6 +4,16 @@
 
 ---
 
+## 2026-07-22 — v1.2.0 step 6: docs ripple (help / README / main.md) — v1.2.0 build complete
+
+- Final v1.2.0 build step — no code, docs brought current with the shipped grammar.
+- **`:help`** (`internal/ui/help.go`): added a **Quick-add tokens** section (date / time / repeat / `!`priority / `#tag` / `@location` / rest) after the Create section.
+- **README.md**: expanded the quick-add bullet (Usage) into a token list covering relative dates, time ranges, recurrence (noting it's the way to create a recurring item), `@location`, and the typo re-prompt.
+- **main.md**: the `Creation: quick-add` design section **rewritten in place** to describe the full shipped grammar (date/time-range/recurrence/priority-tag-location slots, the anchoring rule, the obvious-error warning + keep-open re-prompt, and that the full form still can't rewrite a rule → v1.3.0). Current State updated (v1.2.0 implemented 2026-07-22, awaiting the owner's release; v1.3.0 next) and the v1.2.0 Build Plan subsection flipped from "(planned)" to "(implemented 2026-07-22)" with a Status line.
+- **v1.2.0 is feature-complete**: all six build steps implemented repro-first with green full gates. Verified headlessly (boundary tables, the adversarial zero-warning table, extended fuzz with the warning-only-with-anchor invariant, UI create + re-prompt tests). Awaiting the owner's release/tag.
+- Full gate green (`go test ./...`, `go vet ./...`, `staticcheck ./...`, `go build ./...`).
+- Files: `internal/ui/help.go`, `README.md`, `main.md`, `log.md`.
+
 ## 2026-07-22 — v1.2.0 step 5: quick-add obvious-error warnings + keep-open re-prompt
 
 - Implemented the fifth v1.2.0 build step — the parser now returns `Warnings []string` alongside the normal result; parsing never blocks (a failed token still falls to the title). Warnings fire **only on an unmistakable intent anchor**.
