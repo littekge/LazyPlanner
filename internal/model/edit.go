@@ -43,6 +43,7 @@ type TodoDraft struct {
 	Categories  []string
 	ParentUID   string // "" = root task
 	Completed   bool
+	Recur       *RecurSpec // non-nil serializes an RRULE (creation only)
 }
 
 // EventDraft is the set of known VEVENT fields the editor writes; all other
@@ -54,6 +55,7 @@ type EventDraft struct {
 	Start       time.Time
 	End         time.Time // exclusive end (iCal DTEND semantics)
 	AllDay      bool
+	Recur       *RecurSpec // non-nil serializes an RRULE (creation only)
 }
 
 // NewTodoObject builds a fresh single-VTODO calendar object from d.
@@ -270,6 +272,12 @@ func applyTodo(comp *ical.Component, d TodoDraft, now time.Time) {
 	}
 
 	setParent(comp, d.ParentUID)
+	// Recurrence is set only on creation (d.Recur non-nil). An edit carries a nil
+	// Recur and must not touch an existing RRULE (iron rule: preserve what we
+	// don't rewrite); rewriting a rule is a separate planned feature.
+	if d.Recur != nil {
+		comp.Props.SetRecurrenceRule(d.Recur.ROption())
+	}
 	touch(comp, now)
 }
 
@@ -288,6 +296,13 @@ func applyEvent(comp *ical.Component, d EventDraft, now time.Time) {
 		setDateOrTime(comp, ical.PropDateTimeEnd, d.End, d.AllDay)
 	} else {
 		comp.Props.Del(ical.PropDateTimeEnd)
+	}
+
+	// Recurrence is set only on creation (d.Recur non-nil). An edit carries a nil
+	// Recur and must not touch an existing RRULE (iron rule: preserve what we
+	// don't rewrite); rewriting a rule is a separate planned feature.
+	if d.Recur != nil {
+		comp.Props.SetRecurrenceRule(d.Recur.ROption())
 	}
 
 	bumpSequence(comp)

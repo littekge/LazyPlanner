@@ -4,7 +4,77 @@ import (
 	"strconv"
 	"strings"
 	"time"
+
+	"github.com/teambition/rrule-go"
 )
+
+// RecurFreq is a quick-add recurrence frequency (the subset the parser emits).
+type RecurFreq int
+
+// Quick-add recurrence frequencies.
+const (
+	FreqDaily RecurFreq = iota
+	FreqWeekly
+	FreqMonthly
+	FreqYearly
+)
+
+// RecurSpec is a parsed simple-recurrence rule. It is deliberately small — a
+// frequency plus, for the two anchored forms, the weekday ("every mon") or
+// month/day ("every jul 20") the series lands on. It is not a raw RRULE string;
+// ROption turns it into one, and the anchoring rule (applyRecurAnchor) uses the
+// weekday/month-day to set the start/due when no explicit date was typed.
+type RecurSpec struct {
+	Freq        RecurFreq
+	Weekday     time.Weekday // valid when HasWeekday ("every <weekday>")
+	HasWeekday  bool
+	Month       time.Month // valid when HasMonthDay ("every <month> <day>")
+	Day         int
+	HasMonthDay bool
+}
+
+// ROption builds the rrule-go option for this spec. DTSTART anchors the series
+// (set by the caller on the component), so the rule itself carries only the
+// frequency and, for "every <weekday>", a BYDAY — "every <month> <day>" needs
+// no BYMONTH/BYMONTHDAY because a yearly rule from the anchored DTSTART already
+// recurs on that date.
+func (r RecurSpec) ROption() *rrule.ROption {
+	o := &rrule.ROption{}
+	switch r.Freq {
+	case FreqDaily:
+		o.Freq = rrule.DAILY
+	case FreqWeekly:
+		o.Freq = rrule.WEEKLY
+	case FreqMonthly:
+		o.Freq = rrule.MONTHLY
+	case FreqYearly:
+		o.Freq = rrule.YEARLY
+	}
+	if r.HasWeekday {
+		o.Byweekday = []rrule.Weekday{weekdayToRRule(r.Weekday)}
+	}
+	return o
+}
+
+// weekdayToRRule maps a time.Weekday to its rrule-go equivalent.
+func weekdayToRRule(wd time.Weekday) rrule.Weekday {
+	switch wd {
+	case time.Monday:
+		return rrule.MO
+	case time.Tuesday:
+		return rrule.TU
+	case time.Wednesday:
+		return rrule.WE
+	case time.Thursday:
+		return rrule.TH
+	case time.Friday:
+		return rrule.FR
+	case time.Saturday:
+		return rrule.SA
+	default:
+		return rrule.SU
+	}
+}
 
 // QuickAdd is the result of parsing a one-line quick-add entry. The parser is
 // deliberately conservative and predictable: a token becomes a date, time,
@@ -33,7 +103,8 @@ type QuickAdd struct {
 	HasEnd    bool // a time range was given (start-end); EndHour/EndMinute valid
 	EndHour   int
 	EndMinute int
-	Priority  int // 0 = none
+	Recur     *RecurSpec // nil = non-recurring
+	Priority  int        // 0 = none
 	Tags      []string
 }
 
@@ -65,6 +136,14 @@ func ParseQuickAdd(input string, now time.Time, loc *time.Location) QuickAdd {
 			}
 		}
 
+		if qa.Recur == nil {
+			if spec, consumed, ok := parseRecur(tokens, i); ok {
+				qa.Recur = spec
+				i += consumed - 1
+				continue
+			}
+		}
+
 		if !qa.HasTime {
 			if sh, sm, eh, em, ok := parseTimeRange(tok); ok {
 				qa.HasTime = true
@@ -92,8 +171,31 @@ func ParseQuickAdd(input string, now time.Time, loc *time.Location) QuickAdd {
 		titleTokens = append(titleTokens, tok)
 	}
 
+	qa.applyRecurAnchor(today, loc)
+
 	qa.Title = strings.Join(titleTokens, " ")
 	return qa
+}
+
+// applyRecurAnchor implements the recurrence anchoring rule: when a recurrence
+// form implies a specific date ("every mon", "every jul 20") and no explicit
+// date was typed, the recurrence sets the date itself. An explicit date always
+// wins (it is left untouched here), and the bare/every-unit forms imply no date
+// (the caller's context day is used via At).
+func (qa *QuickAdd) applyRecurAnchor(today time.Time, loc *time.Location) {
+	if qa.Recur == nil || qa.HasDate {
+		return
+	}
+	switch {
+	case qa.Recur.HasWeekday:
+		qa.HasDate = true
+		qa.Date = nextWeekday(today, qa.Recur.Weekday)
+	case qa.Recur.HasMonthDay:
+		if d, ok := rollForwardMonthDay(today, qa.Recur.Month, qa.Recur.Day, loc); ok {
+			qa.HasDate = true
+			qa.Date = d
+		}
+	}
 }
 
 // At combines a QuickAdd's date and time onto base (used when no explicit date
@@ -296,6 +398,55 @@ func parseDate(tokens []string, i int, today time.Time, loc *time.Location) (tim
 	}
 
 	return time.Time{}, 0, false
+}
+
+// parseRecur reads a simple-recurrence phrase starting at tokens[i], returning
+// the spec, how many tokens it consumed, and whether it matched. Forms: bare
+// daily/weekly/monthly/yearly (1 token); "every day/week/month/year" (2);
+// "every <weekday>" (2, weekly on that day); "every <month> <day>" (3, yearly
+// on that date). Anything else — "everyone", a trailing "every", "every so
+// often" — is not a recurrence and leaves the words in the title.
+func parseRecur(tokens []string, i int) (*RecurSpec, int, bool) {
+	switch strings.ToLower(tokens[i]) {
+	case "daily":
+		return &RecurSpec{Freq: FreqDaily}, 1, true
+	case "weekly":
+		return &RecurSpec{Freq: FreqWeekly}, 1, true
+	case "monthly":
+		return &RecurSpec{Freq: FreqMonthly}, 1, true
+	case "yearly":
+		return &RecurSpec{Freq: FreqYearly}, 1, true
+	case "every":
+		return parseEveryRecur(tokens, i)
+	}
+	return nil, 0, false
+}
+
+// parseEveryRecur handles the multi-token "every …" recurrence forms.
+func parseEveryRecur(tokens []string, i int) (*RecurSpec, int, bool) {
+	if i+1 >= len(tokens) {
+		return nil, 0, false
+	}
+	next := strings.ToLower(tokens[i+1])
+	switch next {
+	case "day":
+		return &RecurSpec{Freq: FreqDaily}, 2, true
+	case "week":
+		return &RecurSpec{Freq: FreqWeekly}, 2, true
+	case "month":
+		return &RecurSpec{Freq: FreqMonthly}, 2, true
+	case "year":
+		return &RecurSpec{Freq: FreqYearly}, 2, true
+	}
+	if wd, ok := weekday(next); ok {
+		return &RecurSpec{Freq: FreqWeekly, Weekday: wd, HasWeekday: true}, 2, true
+	}
+	if mon, ok := monthName(next); ok && i+2 < len(tokens) {
+		if day, err := strconv.Atoi(tokens[i+2]); err == nil && day >= 1 && day <= 31 {
+			return &RecurSpec{Freq: FreqYearly, Month: mon, Day: day, HasMonthDay: true}, 3, true
+		}
+	}
+	return nil, 0, false
 }
 
 func weekday(s string) (time.Weekday, bool) {

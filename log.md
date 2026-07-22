@@ -4,6 +4,18 @@
 
 ---
 
+## 2026-07-22 — v1.2.0 step 3: quick-add simple recurrence
+
+- Implemented the third v1.2.0 build step — simple recurrence in the quick-add parser. **This is the first in-app way to create a recurring item** (closing the gap acknowledged 2026-07-22).
+- Grammar (one slot, first match wins, events and tasks alike): bare `daily`/`weekly`/`monthly`/`yearly`, `every day/week/month/year`, `every <weekday>` (weekly on that day, `BYDAY`), and `every <month> <day>` (yearly on that date).
+- **Anchoring rule** (`applyRecurAnchor`, run after the token loop so an explicit date parsed anywhere wins): a form implying a specific date sets the start/due when none was typed — `every mon` → the soonest Monday, `every jul 20` → the next Jul 20; bare/`every <unit>` forms imply no date (the context day is used via `At`). An explicit date always wins and anchors the series.
+- New model types (`internal/model/quickadd.go`): `RecurFreq` + `FreqDaily/Weekly/Monthly/Yearly`, `RecurSpec` (Freq + optional Weekday / Month+Day), `RecurSpec.ROption()` (rrule-go option — DTSTART anchors the series, so the rule carries only FREQ and, for weekday forms, BYDAY), and `weekdayToRRule`. `QuickAdd` gained `Recur *RecurSpec`; parser helpers `parseRecur`/`parseEveryRecur`. Model stays pure (rrule-go already a model dependency).
+- **Serialization**: `EventDraft`/`TodoDraft` gained `Recur *RecurSpec`; `applyEvent`/`applyTodo` set the RRULE via `SetRecurrenceRule` **only when non-nil** — an edit (nil Recur) never touches an existing RRULE (iron rule; rewriting a rule is the planned v1.3.0 feature). `isRecurring` already flags the created object from RRULE presence, so the existing single-live-instance-todo and scope-picker machinery keys off it with no changes.
+- **UI wiring** (`internal/ui/edit.go`): `createEvent`/`createTask` pass `qa.Recur` into the draft.
+- **Repro-first (TDD)**: `internal/model/quickadd_recur_test.go` (new) — the full grammar table incl. anchoring + explicit-date-wins + the `daily standup 9am` accepted trade-off + non-matches (`everyone`, trailing `every`, `every so often`); `RRuleString` per form; and an event+todo serialize-back-as-recurring check. `internal/ui/quickrecur_test.go` (new) — `createEvent`/`createTask` produce recurring objects with the right RRULE, event anchored to Monday not the base day.
+- Full gate green (`go test ./...`, `go vet ./...`, `staticcheck ./...`).
+- Files: `internal/model/quickadd.go`, `internal/model/edit.go`, `internal/ui/edit.go`, `internal/model/quickadd_recur_test.go` (new), `internal/ui/quickrecur_test.go` (new), `log.md`.
+
 ## 2026-07-22 — v1.2.0 step 2: quick-add time ranges
 
 - Implemented the second v1.2.0 build step — time ranges in the quick-add parser. One `start-end` token where at least one half carries a colon or am/pm fills the first-time-wins slot; two bare numbers (`3-4`) never read as a time.

@@ -226,6 +226,7 @@ func (a *app) createTask(calID, parentUID, text string) {
 		Priority:   qa.Priority,
 		Categories: qa.Tags,
 		ParentUID:  parentUID,
+		Recur:      qa.Recur,
 	}
 	if qa.HasDate || qa.HasTime {
 		when, allDay := qa.At(model.DayStart(a.now), a.loc)
@@ -264,6 +265,7 @@ func (a *app) createEvent(calID string, base time.Time, text string) {
 		Start:   start,
 		End:     end,
 		AllDay:  allDay,
+		Recur:   qa.Recur,
 	}, a.now)
 	if err != nil {
 		a.flashErr("Add", err)
