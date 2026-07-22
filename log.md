@@ -4,6 +4,16 @@
 
 ---
 
+## 2026-07-21 — Fix (Pass 18 canaries): close the 4 escaped mutation-canary holes
+
+- Pass 18 reported 4/4 canary escapes — test-net holes, not code bugs (the code is correct). Added a boundary regression test for each and **verified each catches its mutation** (applied the mutation → RED, reverted → GREEN), so the guards aren't vacuous:
+  1. **`internal/config` `permissionWarning`** — `permission_warning_test.go`: a group-readable `0o640` config must warn (a password-bearing file). Mutation `0o077→0o007` (other-only mask) drops the group bit → test RED.
+  2. **`internal/state` `Save`/`SaveGlobal`** — `state_mode_test.go`: both write `0o600` (shared `writeJSONFile`); the mode contract was unasserted. Mutation `0o600→0o644` → test RED (Unix-only; `runtime.GOOS` guard).
+  3. **`cmd/lazyplanner` `components()`** — `calendar_helpers_test.go`: pins default↔VEVENT, `--tasks`↔VTODO, `--both`↔both (+ previously-uncovered `slugify` and `joinWarnings`). Mutation swapping `--tasks` to VEVENT → test RED.
+  4. **`internal/ui` `treeNodeAtY`** — `treenodeaty_test.go`: a click exactly one row past the last node (idx==len). Mutation `idx >= len`→`idx > len` indexes `visible[len]` and panics the TUI → test RED (caught via recover, reported cleanly).
+- All four green on the real code; full gate green (`make check`).
+- Files: `internal/config/permission_warning_test.go` (new), `internal/state/state_mode_test.go` (new), `cmd/lazyplanner/calendar_helpers_test.go` (new), `internal/ui/treenodeaty_test.go` (new), `log.md`.
+
 ## 2026-07-21 — Fix (Pass 18 #2): bound the O(depth²) TOML decode so a crafted config can't hang startup
 
 - **Bug**: `maxConfigBytes` (4 MiB) bounds the config *read*, not the decode *CPU*, and `Load` had no other bound. BurntSushi/toml decodes deeply nested inline tables/arrays in O(depth²) time, so a deeply-nested config well under 4 MiB hangs `Load()`/startup for minutes-to-hours (re-measured this session: depth 500→25 ms, 1000→100 ms, 2000→331 ms, 4000→1.1 s — clean quadratic; a 4 MiB file reaches ~700 K depth). Threat model is a local corrupted/crafted config (not remote), but it defeats the read cap's stated "never hang startup" purpose — fixed for consistency with that invariant.
