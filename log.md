@@ -4,6 +4,14 @@
 
 ---
 
+## 2026-07-22 — v1.1.0 released; post-release verification + docs
+
+- The owner merged `ai-workspace` to `main` and tagged **v1.1.0**; the GitHub release published with the drafted release notes.
+- Verified the release landed cleanly: tag/`main`/`ai-workspace` all at `87965a4`; Release + CI workflows green; all 8 binary assets present; downloaded `lazyplanner_linux_amd64`, checksum matches `sha256sums.txt`, and it runs reporting v1.1.0.
+- **`main.md`** updated in place: Current State and the v1.1.0 Build Plan subsection flipped from "release in progress" to **released 2026-07-22**.
+- Session cleanup: checkout was left on `main` after the owner's release — switched back to `ai-workspace`; no residual worktrees, branches, or stray files.
+- Files: `main.md`, `log.md`.
+
 ## 2026-07-22 — v1.1.0 live verification passed; release prep
 
 - The CalDAV server is back up and the owner ran the live two-account end-to-end sync verification — **passed**. This was the last gate before the v1.1.0 release; the owner tags the release on GitHub.
