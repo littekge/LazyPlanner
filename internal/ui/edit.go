@@ -252,9 +252,12 @@ func (a *app) createEvent(calID string, base time.Time, text string) {
 		return
 	}
 	start, allDay := qa.At(base, a.loc)
-	end := start.Add(time.Hour)
-	if allDay {
+	end := start.Add(time.Hour) // default duration when no end is given
+	switch {
+	case allDay:
 		end = start.AddDate(0, 0, 1)
+	case qa.HasEnd:
+		end = qa.EndAt(start)
 	}
 	obj, err := model.NewEventObject(model.EventDraft{
 		Summary: qa.Title,

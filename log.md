@@ -4,6 +4,17 @@
 
 ---
 
+## 2026-07-22 — v1.2.0 step 2: quick-add time ranges
+
+- Implemented the second v1.2.0 build step — time ranges in the quick-add parser. One `start-end` token where at least one half carries a colon or am/pm fills the first-time-wins slot; two bare numbers (`3-4`) never read as a time.
+- Semantics: a right-side am/pm distributes to a bare left half (`5-6pm` = 5pm–6pm); an ISO date's two dashes never match (`strings.Cut` on the first `-`, rejecting a second dash in the right half); each half parses like `parseClock` except a bare number is read as 24-hour.
+- `QuickAdd` gained `HasEnd`/`EndHour`/`EndMinute` and an `EndAt(start)` helper that places the end on the start's day, rolling to the next day when it is at or before the start (`11pm-1am` crosses midnight).
+- Refactored `parseClock` to share a `parseTimeHalf` core with the new `parseTimeRange`; added `hasTimeMarker`/`ampmSuffix` helpers. Existing `parseClock` behavior (bare number rejected) is unchanged.
+- **UI wiring** (`internal/ui/edit.go`): `createEvent` now applies the range end via `EndAt` (the 1-hour default still applies when no end is given); `createTask` is unchanged — it uses `qa.At` (the start), so a task's due time is the range start and the end is ignored (documented behavior).
+- **Repro-first (TDD)**: `internal/model/quickadd_timerange_test.go` (new) — the range table (distribution, explicit halves, 24-hour, cross-midnight, 12am/12pm, two-bare-numbers, single-time-no-end), the ISO-date-not-a-range guard, and the `EndAt` rollover boundary (after/before/equal). `internal/ui/timerange_test.go` (new) — `createEvent` same-day + cross-midnight rollover, no-range 1-hour default, and `createTask` using the range start (loc pinned to UTC for a deterministic zone).
+- Full gate green (`go test ./...`, `go vet ./...`, `staticcheck ./...`).
+- Files: `internal/model/quickadd.go`, `internal/ui/edit.go`, `internal/model/quickadd_timerange_test.go` (new), `internal/ui/timerange_test.go` (new), `log.md`.
+
 ## 2026-07-22 — v1.2.0 step 1: quick-add relative dates
 
 - Implemented the first v1.2.0 build step — relative dates in the quick-add smart parser (`internal/model/quickadd.go`), extending `parseDate` (no rewrite of the single-pass loop).

@@ -24,14 +24,17 @@ import (
 // time to a context day (e.g. the selected calendar day) rather than assuming
 // today.
 type QuickAdd struct {
-	Title    string
-	HasDate  bool
-	Date     time.Time // local midnight of the parsed date, valid when HasDate
-	HasTime  bool
-	Hour     int
-	Minute   int
-	Priority int // 0 = none
-	Tags     []string
+	Title     string
+	HasDate   bool
+	Date      time.Time // local midnight of the parsed date, valid when HasDate
+	HasTime   bool
+	Hour      int
+	Minute    int
+	HasEnd    bool // a time range was given (start-end); EndHour/EndMinute valid
+	EndHour   int
+	EndMinute int
+	Priority  int // 0 = none
+	Tags      []string
 }
 
 // ParseQuickAdd parses input relative to now (in loc), extracting date, time,
@@ -63,6 +66,13 @@ func ParseQuickAdd(input string, now time.Time, loc *time.Location) QuickAdd {
 		}
 
 		if !qa.HasTime {
+			if sh, sm, eh, em, ok := parseTimeRange(tok); ok {
+				qa.HasTime = true
+				qa.Hour, qa.Minute = sh, sm
+				qa.HasEnd = true
+				qa.EndHour, qa.EndMinute = eh, em
+				continue
+			}
 			if h, m, ok := parseClock(tok); ok {
 				qa.HasTime = true
 				qa.Hour, qa.Minute = h, m
@@ -100,6 +110,18 @@ func (qa QuickAdd) At(base time.Time, loc *time.Location) (when time.Time, allDa
 	return time.Date(y, mo, d, 0, 0, 0, 0, loc), true
 }
 
+// EndAt returns the event end datetime for a parsed time range, placing
+// EndHour:EndMinute on start's day and rolling to the next day when that would
+// be at or before start (a range like 11pm-1am crosses midnight). Only
+// meaningful when HasEnd.
+func (qa QuickAdd) EndAt(start time.Time) time.Time {
+	end := time.Date(start.Year(), start.Month(), start.Day(), qa.EndHour, qa.EndMinute, 0, 0, start.Location())
+	if !end.After(start) {
+		end = end.AddDate(0, 0, 1)
+	}
+	return end
+}
+
 // parsePriority maps the text after "!" to a 1–9 priority, or reports no match.
 func parsePriority(s string) (int, bool) {
 	switch strings.ToLower(s) {
@@ -120,18 +142,76 @@ func parsePriority(s string) (int, bool) {
 // values carrying am/pm or a colon; a bare integer is rejected so day numbers
 // are not mistaken for times.
 func parseClock(tok string) (hour, minute int, ok bool) {
-	s := strings.ToLower(tok)
+	if !hasTimeMarker(tok) {
+		return 0, 0, false // bare number: not a time
+	}
+	return parseTimeHalf(tok, "")
+}
 
-	ampm := ""
-	switch {
-	case strings.HasSuffix(s, "am"):
-		ampm, s = "am", strings.TrimSuffix(s, "am")
-	case strings.HasSuffix(s, "pm"):
-		ampm, s = "pm", strings.TrimSuffix(s, "pm")
+// parseTimeRange parses a "start-end" time-range token into two clock values.
+// It matches only when the token splits into exactly two non-empty halves and
+// at least one half carries a colon or am/pm (so "3-4" — two bare numbers — is
+// never a time, and an ISO date's two dashes never match). A right-side am/pm
+// distributes to a bare left half ("5-6pm" = 5pm–6pm). Each half otherwise
+// parses like parseClock, except a bare number is read as a 24-hour hour.
+func parseTimeRange(tok string) (startH, startM, endH, endM int, ok bool) {
+	left, right, found := strings.Cut(tok, "-")
+	if !found || left == "" || right == "" || strings.Contains(right, "-") {
+		return 0, 0, 0, 0, false
+	}
+	if !hasTimeMarker(left) && !hasTimeMarker(right) {
+		return 0, 0, 0, 0, false
 	}
 
-	if ampm == "" && !strings.Contains(s, ":") {
-		return 0, 0, false // bare number: not a time
+	// A bare left half inherits the right half's am/pm ("5-6pm" -> both pm).
+	leftInherit := ""
+	if !hasTimeMarker(left) {
+		leftInherit = ampmSuffix(right)
+	}
+
+	sh, sm, ok := parseTimeHalf(left, leftInherit)
+	if !ok {
+		return 0, 0, 0, 0, false
+	}
+	eh, em, ok := parseTimeHalf(right, "")
+	if !ok {
+		return 0, 0, 0, 0, false
+	}
+	return sh, sm, eh, em, true
+}
+
+// hasTimeMarker reports whether tok carries an am/pm suffix or a colon — the
+// signal that distinguishes a time from a bare number.
+func hasTimeMarker(tok string) bool {
+	return ampmSuffix(tok) != "" || strings.Contains(tok, ":")
+}
+
+// ampmSuffix returns "am"/"pm" if tok ends with one (case-insensitive), else "".
+func ampmSuffix(tok string) string {
+	s := strings.ToLower(tok)
+	switch {
+	case strings.HasSuffix(s, "am"):
+		return "am"
+	case strings.HasSuffix(s, "pm"):
+		return "pm"
+	}
+	return ""
+}
+
+// parseTimeHalf parses one clock value ("H", "H:M", each optionally suffixed
+// am/pm). When the value carries no am/pm of its own, inherit (""/"am"/"pm") is
+// applied; with no am/pm at all the hour is read as 24-hour. Returns ok=false
+// for any malformed or out-of-range value.
+func parseTimeHalf(tok, inherit string) (hour, minute int, ok bool) {
+	s := strings.ToLower(tok)
+	ampm := ampmSuffix(s)
+	if ampm != "" {
+		s = strings.TrimSuffix(s, ampm)
+	} else {
+		ampm = inherit
+	}
+	if s == "" {
+		return 0, 0, false
 	}
 
 	h, m := 0, 0
