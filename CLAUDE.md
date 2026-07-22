@@ -17,7 +17,7 @@ That is all the project context this file carries. What the program does, every 
 When reading this file for the first time:
 
 1. **Read `main.md`** — the spec: what the program is, all design decisions, the versioned Build Plan (a compressed history of everything done), and the current phase.
-2. **Read `log.md`** — the change log: what has been done recently (at minimum the recent entries).
+2. **Read `log.md`** — the change log: what has been done recently. On startup **READ ONLY** the 10 most recent entries, but parse older logs later if needed.
 3. **Read `notes.md`** — in-progress work. It is normally empty; if it isn't, a previous session ended mid-task — pick that work up (or explicitly hand it back to the owner) before starting anything new.
 4. **Confirm the branch**: `git branch --show-current` must show `ai-workspace` (or a branch off it) — see Git Branching Rules.
 5. Give the user a short summary of the most recently completed task and the recommended next steps.
@@ -36,13 +36,15 @@ Each document has exactly one role. The maintenance rule attached to each is wha
 
 ### `main.md` — WHAT (the master spec)
 
-The single source of truth for the build: project identity, the complete design (all the nitty-gritty detail lives here), all settled decisions, and the versioned Build Plan tracking what has and hasn't been done. 
-- **Maintenance**: when behavior or a design decision changes, update main.md in the same increment — and update **in place**: a decision is rewritten, never left standing next to a newer one that nullifies it (project history belongs to `log.md`; the one exception is the Build Plan, which deliberately records completed versions/steps as history). 
+The single source of truth for the build: project identity, the complete design (all the nitty-gritty detail lives here), all settled decisions, and the versioned Build Plan tracking what has and hasn't been done.
+
+- **Maintenance**: when behavior or a design decision changes, update main.md in the same increment — and update **in place**: a decision is rewritten, never left standing next to a newer one that nullifies it (project history belongs to `log.md`; the one exception is the Build Plan, which deliberately records completed versions/steps as history).
 - Design detail goes in main.md, never duplicated into CLAUDE.md or the README. New feature work is planned as a new `### v1.x.0` subsection under the Build Plan *before* implementation begins.
 
 ### `CLAUDE.md` — HOW (this file)
 
-Agent orientation: workflow, rules, and architecture guardrails, with minimal project context. 
+Agent orientation: workflow, rules, and architecture guardrails, with minimal project context.
+
 - **Maintenance**: update only when the way of working fundamentally changes — a new tool or workflow is adopted, a rule changes, a new hard-won guardrail is discovered. Nothing here may describe the current build state. If you find yourself writing project state or a design detail into this file, it belongs in `main.md`.
 
 ### `README.md` — the end-user guide
@@ -95,7 +97,7 @@ Append an entry **every time you make a change**, newest at the top, in this for
 
 - One entry per distinct group of changes, each with its own heading, even when several entries land on the same day or in the same session. Never append bullets under an existing entry's heading and never let an entry exist as a bare `---`-separated block without a heading.
 - New entries are inserted at the top, directly below the file's intro blockquote. When inserting, do not touch the previous entry — its heading and content must remain intact and byte-identical.
-- After editing `log.md`, verify the result: the number of `## ` headings must equal the number of entries.
+- After editing `log.md`, verify the result: the number of `##` headings must equal the number of entries.
 
 ### `notes.md` — in-progress task state (short-term memory)
 
@@ -135,14 +137,14 @@ characterized by the addition of multiple large features, large breaking changes
 to the codebase, or other major refactoring.
 - **Intermediate Version:** v0.X.0 — denotes a minor release. A minor release
   may consist of the addition of a single large feature, moderate refactoring,
-  additions to existing features, or large groups of bug fixes. 
+  additions to existing features, or large groups of bug fixes.
 - **Minor Version:** v0.0.X — denotes a hotfix. A hotfix consists of only
   targeted bug fixes, no new features or major sweeping patches of bug fixes.
 
 Every permanent feature or fix eventually becomes part of a versioned release.
 The user manually manages releases and tags, **NEVER** edit or add Github tags
 without the users explicit permission. The user defines the current version that
-you work on. 
+you work on.
 
 ## Git Branching Rules
 
