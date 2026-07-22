@@ -4,6 +4,14 @@
 
 ---
 
+## 2026-07-21 — Docs: Pass 18 ledger reconciled to the fixes; notes cleared
+
+- All three Pass 18 findings and all four canary holes are now fixed (four commits above), so the audit record is brought current.
+- **`docs/audit/COVERAGE.md`**: the Sync-engine, feature-promise, multi-account-config-parse, and `:account` rows flipped their Pass 18 findings from **CONFIRMED, UNFIXED** to **FIXED** (with the fix summary + repro path each); the Global-state and switch-loop rows flipped their canary **ESCAPE** notes to **CLOSED**; the Mouse-handling row gained the `treeNodeAtY` boundary-canary closure (last pass → 10,16,18). The blind-spots list marked the three findings + the canary-holes bullet **RESOLVED** (sync-core TOCTOU stays a warm-but-shallow re-sweep target beyond the CommitPush window). The "pass 18 canaries" section retitled **all CLOSED** with each bullet's guard test named and its verified RED mutation.
+- **`notes.md`**: the mid-arc handoff task is complete — cleared back to the empty steady state (resolution lives here in `log.md`).
+- No code change; full gate re-run green as a sanity check.
+- Files: `docs/audit/COVERAGE.md`, `notes.md`, `log.md`.
+
 ## 2026-07-21 — Fix (Pass 18 canaries): close the 4 escaped mutation-canary holes
 
 - Pass 18 reported 4/4 canary escapes — test-net holes, not code bugs (the code is correct). Added a boundary regression test for each and **verified each catches its mutation** (applied the mutation → RED, reverted → GREEN), so the guards aren't vacuous:
