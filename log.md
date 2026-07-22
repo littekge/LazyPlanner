@@ -4,6 +4,15 @@
 
 ---
 
+## 2026-07-22 — Design: v1.2.0 quick-add parser improvements detailed build plan
+
+- Planned v1.2.0 in detail with the owner (brainstorming session; all decisions owner-settled) and wrote the full design into `main.md`'s v1.2.0 Build Plan subsection, replacing the goal-level stub.
+- Scope settled: **time ranges** (`5-6pm`, cross-midnight rollover; tasks use the start), **simple recurrence** (`daily`…, `every <weekday>`, `every <month> <day>`; tasks and events; anchoring rule), **relative dates** (`next <weekday>` = bare+7d, `next week/month`, `in N days/weeks/months`), **`@location`** (quoted multi-word form; stored on tasks too + a task Detail-pane Location row), and **obvious-error warnings** (intent-anchor principle: sigil/anchor-word/fuzzy-follower/shape triggers only; space-delimited tokens only — embedded sigils inert; punctuation runs like `My Event!!!!!` never warn) with a **keep-input-open re-prompt** (identical resubmit accepts as-is).
+- Approach chosen: extend the existing fuzz-hardened single-pass token loop (rewrite and NL-library rejected); `QuickAdd` gains `HasEnd`/`Recur *RecurSpec`/`Location`/`Warnings`.
+- Six build steps defined (relative dates → time ranges → recurrence → location → warnings+UX → docs ripple), each with boundary-class tests, an adversarial zero-warning title table, and an extended fuzz target.
+- No code change; implementation follows owner review of the written plan.
+- Files: `main.md`, `log.md`.
+
 ## 2026-07-22 — Plan: v1.2.0 is now quick-add parser improvements; SELECT mode deferred to v1.3.0
 
 - Owner decision: SELECT mode moves from v1.2.0 to v1.3.0; v1.2.0 becomes improvements to the quick-add auto-parser for event/task creation.
