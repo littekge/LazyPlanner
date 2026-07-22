@@ -59,14 +59,25 @@ func (s *Store) PutRemote(ctx context.Context, calID, name string, obj *model.Pa
 // CommitPush finalizes a successful server write of `pushed` — the exact
 // *Resource the sync goroutine encoded and PUT. Sync runs on a background
 // goroutine while the UI keeps editing on the event loop, so between the PUT
-// starting and this call a local edit may have replaced the resource. Because
-// every mutation swaps in a fresh *Resource (copy-on-write), pointer identity is
-// the concurrency signal: if the current resource is still `pushed`, adopt the
-// server's new ETag/href and mark it clean; if a concurrent edit replaced it,
-// keep that newer content and leave it dirty, but advance the ETag baseline to
-// etag so the next push is conditional on what is now on the server. This avoids
-// the lost update where the stale pushed snapshot was written back as clean,
-// silently reverting the edit and suppressing its push.
+// starting and this call a local edit or delete may have replaced or removed the
+// resource. Because every mutation swaps in a fresh *Resource (copy-on-write),
+// pointer identity is the concurrency signal:
+//
+//   - current resource is still `pushed` → adopt the server's new ETag/href and
+//     mark it clean.
+//   - a concurrent edit replaced it → keep that newer content and leave it dirty,
+//     but advance the ETag baseline to etag so the next push is conditional on
+//     what is now on the server. This avoids the lost update where the stale
+//     pushed snapshot was written back as clean, silently reverting the edit.
+//   - the resource is gone (a concurrent local delete landed mid-push) → honor the
+//     deletion instead of resurrecting it. Our PUT just wrote `pushed` to the
+//     server, so the deletion still has server work to do: ensure a tombstone
+//     carrying the post-PUT href/ETag so the next sync issues the conditional
+//     DELETE. This covers both a delete of a synced resource (Delete already left
+//     a tombstone — advance its ETag to what our PUT put there so the If-Match
+//     matches) and a delete of a never-synced create (Delete left no tombstone
+//     because there was no server identity yet — create one, or the server copy we
+//     just created is re-pulled and silently resurrected).
 func (s *Store) CommitPush(ctx context.Context, calID, name string, pushed *Resource, etag, href string) (*Resource, error) {
 	if err := ctx.Err(); err != nil {
 		return nil, err
@@ -79,12 +90,44 @@ func (s *Store) CommitPush(ctx context.Context, calID, name string, pushed *Reso
 	}
 	s.mu.Lock()
 	defer s.mu.Unlock()
+
+	cs := s.cals[calID]
+	var cur *Resource
+	if cs != nil {
+		cur = cs.resources[name]
+	}
+	if cur == nil {
+		// The resource was deleted on the event loop while our PUT was in flight.
+		// Don't resurrect it; schedule the server-side deletion of what we just wrote.
+		return nil, s.honorMidPushDeleteLocked(cs, calID, name, href, etag)
+	}
+
 	return s.writeResourceLocked(calID, name, func(cur *Resource) *Resource {
-		if cur == nil || cur == pushed {
+		if cur == pushed {
 			return &Resource{Name: name, Object: pushed.Object, ETag: etag, Href: href, Dirty: false}
 		}
 		return &Resource{Name: name, Object: cur.Object, ETag: etag, Href: href, Dirty: true}
 	})
+}
+
+// honorMidPushDeleteLocked records the server-side deletion of a resource that was
+// deleted locally while its push was in flight: it ensures a tombstone carrying the
+// post-PUT href/ETag (creating it for a never-synced create whose local delete left
+// none, or advancing an existing one's ETag), then persists the sidecar. The caller
+// must hold s.mu. A nil cs (the whole calendar was removed) means the collection-level
+// DELETE handles server cleanup, so there is nothing to do.
+func (s *Store) honorMidPushDeleteLocked(cs *calState, calID, name, href, etag string) error {
+	if cs == nil || href == "" {
+		return nil
+	}
+	if cs.tombstones == nil {
+		cs.tombstones = map[string]tombstoneMeta{}
+	}
+	cs.tombstones[name] = tombstoneMeta{Href: href, ETag: etag}
+	if err := writeSidecar(s.root, cs); err != nil {
+		return fmt.Errorf("updating sidecar for %q: %w", calID, err)
+	}
+	return nil
 }
 
 // PullRemote writes a server object into the cache as a clean resource, like

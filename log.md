@@ -4,6 +4,17 @@
 
 ---
 
+## 2026-07-21 — Fix (Pass 18 #1, HIGH): CommitPush no longer resurrects a resource deleted mid-push
+
+- **Bug**: `store.CommitPush` treated `cur == nil` (the event loop deleted the resource while the sync goroutine's PUT was in flight) identically to `cur == pushed` (unchanged) — it rebuilt the resource clean via `writeResourceLocked`, and `stageResourceLocked`'s unconditional `delete(cs.tombstones, name)` then wiped the pending deletion. A user delete landing during a background push was silently, permanently lost (next sync a no-op). Reachable with periodic/debounced sync running.
+- **Fix** (`internal/store/remote.go`): `CommitPush` now reads `cur` under the lock and, when `cur == nil`, honors the deletion instead of resurrecting it — new `honorMidPushDeleteLocked` **ensures a tombstone** carrying the post-PUT href/ETag and persists the sidecar. This covers both push variants that route through `CommitPush`:
+  - **pushUpdate** (synced resource): the local `Delete` already left a tombstone with the *pre-push* ETag; the PUT changed the server ETag, so the tombstone's ETag is **advanced** to the new value or the next conditional DELETE (`If-Match`) would 412.
+  - **pushCreate** (never-synced create, `Href==""`): the local `Delete` left **no** tombstone (no server identity yet), but the create-PUT just made the resource on the server — a tombstone is **created** so the next sync deletes it, else step (B) re-pulls and silently resurrects it.
+  When `cur != nil` the finalize logic is unchanged (clean if still `pushed`, else keep the newer content dirty and advance the ETag baseline).
+- **Repro-first (TDD)**: `internal/store/commitpush_deletemidpush_test.go` (new) — `TestCommitPushDoesNotResurrectDeletedResource` (synced/pushUpdate case, asserts tombstone survives + ETag advances), `TestCommitPushHonorsDeleteOfNeverSyncedCreate` (create/pushCreate case, asserts a tombstone is created with the server href/ETag), and `TestCommitPushDeleteRaceInvariant` (200× concurrent Delete‖CommitPush, ordering-independent invariant: exactly 1 tombstone + 0 resurrected resource; passes under `-race`). All three RED before the fix, green after.
+- Full gate green (`make check`, incl. `-race` on the store seam).
+- Files: `internal/store/remote.go`, `internal/store/commitpush_deletemidpush_test.go` (new), `log.md`.
+
 ## 2026-07-21 — Hardening Pass 18: v1.1.0 multi-account surface + deep sync-core TOCTOU re-sweep
 
 - Ran the `/audit` workflow scoped to the v1.1.0 surface (four targets: `internal/ui` switch/sync race, `cmd/lazyplanner` switch loop, `internal/config` multi-account parse, `internal/state` global file) plus the plan pulled in the long-deferred deep sync-core TOCTOU re-sweep (last deep pass 11). 30 agents, ~1.3M tokens. **Findings are CONFIRMED but UNFIXED — fixing is a separate deliberate step (owner to decide).**
