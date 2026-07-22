@@ -127,6 +127,12 @@ func (a *app) setDuePrompt() {
 			return
 		}
 		qa := model.ParseQuickAdd(text, a.now, a.loc)
+		// A single-field set flashes any obvious-error warning instead of the
+		// keep-open re-prompt the quick-add creators use (main.md).
+		if len(qa.Warnings) > 0 {
+			a.flash("due: " + qa.Warnings[0])
+			return
+		}
 		if !qa.HasDate && !qa.HasTime {
 			a.flash("due: couldn't read a date from " + text)
 			return

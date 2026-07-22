@@ -28,6 +28,7 @@ const (
 	todayColor    = tcell.ColorYellow
 	adjacentColor = tcell.ColorGray
 	eventColor    = tcell.ColorGreen
+	warnColor     = tcell.ColorYellow // quick-add obvious-error re-prompt
 )
 
 // selectionStyle marks the highlighted row in the lists and task tree. Reverse

@@ -1,6 +1,7 @@
 package model
 
 import (
+	"fmt"
 	"strconv"
 	"strings"
 	"time"
@@ -107,6 +108,15 @@ type QuickAdd struct {
 	Location  string
 	Priority  int // 0 = none
 	Tags      []string
+	// Warnings names tokens that look like a mistyped date/time/priority/location
+	// but failed to parse (an "obvious error"). Parsing never blocks on them — the
+	// token still falls to the title — but the UI can offer a keep-open re-prompt.
+	Warnings []string
+}
+
+// warnf appends a formatted warning to the parse result.
+func (qa *QuickAdd) warnf(format string, args ...any) {
+	qa.Warnings = append(qa.Warnings, fmt.Sprintf(format, args...))
 }
 
 // lexQuickAdd splits input into whitespace-delimited tokens, identically to
@@ -146,7 +156,12 @@ func parseLocation(tok string) (string, bool) {
 	}
 	rest := tok[1:]
 	if strings.HasPrefix(rest, `"`) {
-		rest = strings.TrimSuffix(rest[1:], `"`)
+		// A quoted span must close; an unclosed @"… is not a location (the caller
+		// warns on it) so its text isn't silently swallowed.
+		if len(rest) < 2 || !strings.HasSuffix(rest, `"`) {
+			return "", false
+		}
+		rest = rest[1 : len(rest)-1]
 	}
 	rest = strings.TrimSpace(rest)
 	if rest == "" {
@@ -177,14 +192,25 @@ func ParseQuickAdd(input string, now time.Time, loc *time.Location) QuickAdd {
 				continue
 			}
 		case '!':
-			if p, ok := parsePriority(tok[1:]); ok && qa.Priority == 0 {
-				qa.Priority = p
-				continue
+			rest := tok[1:]
+			if p, ok := parsePriority(rest); ok {
+				if qa.Priority == 0 {
+					qa.Priority = p
+					continue
+				}
+				qa.warnf("%q: priority already set — ignored", tok)
+			} else if isAlnum(rest) {
+				qa.warnf("%q looks like a priority (use !1–!9 or !high/!med/!low)", tok)
 			}
 		case '@':
-			if locv, ok := parseLocation(tok); ok && qa.Location == "" {
-				qa.Location = locv
-				continue
+			if locv, ok := parseLocation(tok); ok {
+				if qa.Location == "" {
+					qa.Location = locv
+					continue
+				}
+				// A second @location falls to the title (first-match-wins).
+			} else if strings.HasPrefix(tok, `@"`) && !strings.HasSuffix(tok, `"`) {
+				qa.warnf("%q: unclosed quote (close it with a \")", tok)
 			}
 		}
 
@@ -220,6 +246,7 @@ func ParseQuickAdd(input string, now time.Time, loc *time.Location) QuickAdd {
 			}
 		}
 
+		qa.shapeWarn(tokens, i)
 		titleTokens = append(titleTokens, tok)
 	}
 
@@ -686,4 +713,224 @@ func parseNumericDate(tok string, today time.Time, loc *time.Location) (time.Tim
 		return time.Date(year, time.Month(mon), day, 0, 0, 0, 0, loc), true
 	}
 	return rollForwardMonthDay(today, time.Month(mon), day, loc)
+}
+
+// --- obvious-error warnings ---
+
+// fuzzyVocab is the set of full-word anchor followers a typo is measured
+// against. Short abbreviations are deliberately excluded so a real short word
+// (a name, "acts") isn't flagged; only near-misses to a full spelling warn.
+var fuzzyVocab = []string{
+	"monday", "tuesday", "wednesday", "thursday", "friday", "saturday", "sunday",
+	"january", "february", "march", "april", "may", "june",
+	"july", "august", "september", "october", "november", "december",
+	"day", "days", "week", "weeks", "month", "months", "year", "years",
+}
+
+// shapeWarn appends a warning when the unconsumed token at tokens[i] is an
+// unmistakable mistyped date/time (a "shape trigger") or an anchor word followed
+// by a fuzzy near-miss. It runs only at the title-append point, so a token here
+// is known to have failed every recognizer — a valid value would have been
+// consumed earlier, never reaching this path.
+func (qa *QuickAdd) shapeWarn(tokens []string, i int) {
+	tok := tokens[i]
+	switch {
+	case qa.anchorFuzzyWarn(tokens, i):
+	case looksLikeInvalidClock(tok):
+		qa.warnf("%q is not a valid time", tok)
+	case looksLikeFailedRange(tok):
+		qa.warnf("%q is not a valid time range", tok)
+	case looksLikeInvalidISODate(tok) || looksLikeInvalidMDYDate(tok):
+		qa.warnf("%q is not a valid date", tok)
+	}
+}
+
+// anchorFuzzyWarn warns when tokens[i] is "next"/"every"/"in N" and the follower
+// is a near-miss (Damerau–Levenshtein 1–2) of a weekday/month/unit name. Returns
+// whether it warned.
+func (qa *QuickAdd) anchorFuzzyWarn(tokens []string, i int) bool {
+	switch strings.ToLower(tokens[i]) {
+	case "next", "every":
+		if i+1 < len(tokens) {
+			return qa.fuzzyFollowerWarn(tokens[i+1])
+		}
+	case "in":
+		if i+2 < len(tokens) && isCountToken(tokens[i+1]) {
+			return qa.fuzzyFollowerWarn(tokens[i+2])
+		}
+	}
+	return false
+}
+
+// fuzzyFollowerWarn warns if follower is 4+ chars and within edit distance 1–2 of
+// a fuzzyVocab word (distance 0 is an exact real word — not a typo — and is left
+// silent). Returns whether it warned.
+func (qa *QuickAdd) fuzzyFollowerWarn(follower string) bool {
+	f := strings.ToLower(follower)
+	if len(f) < 4 {
+		return false
+	}
+	best, target := len(f)+99, ""
+	for _, w := range fuzzyVocab {
+		if d := osaDistance(f, w); d < best {
+			best, target = d, w
+		}
+	}
+	if best >= 1 && best <= 2 {
+		qa.warnf("%q: did you mean %q?", follower, target)
+		return true
+	}
+	return false
+}
+
+// isCountToken reports whether s is the 1–3 digit count of an "in N …" phrase.
+func isCountToken(s string) bool {
+	return len(s) >= 1 && len(s) <= 3 && isAllDigits(s)
+}
+
+// isAlnum reports whether s is one or more ASCII letters/digits and nothing else.
+func isAlnum(s string) bool {
+	for _, r := range s {
+		switch {
+		case r >= '0' && r <= '9', r >= 'a' && r <= 'z', r >= 'A' && r <= 'Z':
+		default:
+			return false
+		}
+	}
+	return s != ""
+}
+
+// looksLikeInvalidClock reports whether tok is shaped like a colon time
+// (digits:digits, optional am/pm) but is out of range. A token whose left of the
+// colon isn't all digits — "http://x.com" — is not clock-shaped, so it is safe.
+func looksLikeInvalidClock(tok string) bool {
+	s := strings.ToLower(tok)
+	if a := ampmSuffix(s); a != "" {
+		s = strings.TrimSuffix(s, a)
+	}
+	idx := strings.IndexByte(s, ':')
+	if idx < 0 {
+		return false
+	}
+	if !isAllDigits(s[:idx]) || !isAllDigits(s[idx+1:]) {
+		return false
+	}
+	_, _, ok := parseClock(tok)
+	return !ok
+}
+
+// looksLikeFailedRange reports whether tok is shaped like a time range
+// (one dash, at least one clock-ish half) but fails to parse — "5-6xm", "5pm-".
+// Two bare numbers ("3-4") and hyphenated words ("part-time") are not clock-ish,
+// so they stay silent.
+func looksLikeFailedRange(tok string) bool {
+	if strings.Count(tok, "-") != 1 {
+		return false
+	}
+	if _, _, _, _, ok := parseTimeRange(tok); ok {
+		return false
+	}
+	left, right, _ := strings.Cut(tok, "-")
+	return clockish(left) || clockish(right)
+}
+
+// clockish reports whether a range half looks like a botched clock value: it
+// leads with a digit and then carries a colon or a trailing letter run (a
+// mistyped am/pm like the "xm" in "6xm").
+func clockish(h string) bool {
+	if h == "" || h[0] < '0' || h[0] > '9' {
+		return false
+	}
+	if strings.Contains(h, ":") {
+		return true
+	}
+	j := 0
+	for j < len(h) && h[j] >= '0' && h[j] <= '9' {
+		j++
+	}
+	return j < len(h)
+}
+
+// looksLikeInvalidISODate reports whether tok is shaped like an ISO date
+// (\d{4}-\d{1,2}-\d{1,2}) but is not a real date. The 4-digit-year requirement
+// keeps hyphenated non-dates ("12-34-56") from being flagged.
+func looksLikeInvalidISODate(tok string) bool {
+	parts := strings.Split(tok, "-")
+	if len(parts) != 3 || len(parts[0]) != 4 {
+		return false
+	}
+	for _, p := range parts {
+		if !isAllDigits(p) {
+			return false
+		}
+	}
+	if len(parts[1]) > 2 || len(parts[2]) > 2 {
+		return false
+	}
+	_, err := time.ParseInLocation("2006-1-2", tok, time.UTC)
+	return err != nil
+}
+
+// looksLikeInvalidMDYDate reports whether tok is the three-part slashed date form
+// (m/d/y) with an impossible date. Two-part slashed near-misses ("24/7", "7/45")
+// are plausible titles and stay silent.
+func looksLikeInvalidMDYDate(tok string) bool {
+	parts := strings.Split(tok, "/")
+	if len(parts) != 3 {
+		return false
+	}
+	nums := make([]int, 3)
+	for i, p := range parts {
+		if !isAllDigits(p) {
+			return false
+		}
+		n, err := strconv.Atoi(p)
+		if err != nil {
+			return false
+		}
+		nums[i] = n
+	}
+	mon, day, year := nums[0], nums[1], nums[2]
+	if year < 100 {
+		year += 2000
+	}
+	valid := mon >= 1 && mon <= 12 && day >= 1 && day <= 31 && validYMD(year, time.Month(mon), day)
+	return !valid
+}
+
+// osaDistance is the optimal string alignment (restricted Damerau–Levenshtein)
+// distance between two ASCII strings — Levenshtein plus adjacent transposition,
+// enough to recognise a single typo/swap ("tuedsay" ~ "tuesday", distance 1).
+func osaDistance(a, b string) int {
+	la, lb := len(a), len(b)
+	if la == 0 {
+		return lb
+	}
+	if lb == 0 {
+		return la
+	}
+	prev2 := make([]int, lb+1)
+	prev := make([]int, lb+1)
+	curr := make([]int, lb+1)
+	for j := 0; j <= lb; j++ {
+		prev[j] = j
+	}
+	for i := 1; i <= la; i++ {
+		curr[0] = i
+		for j := 1; j <= lb; j++ {
+			cost := 1
+			if a[i-1] == b[j-1] {
+				cost = 0
+			}
+			m := min(prev[j]+1, curr[j-1]+1, prev[j-1]+cost)
+			if i > 1 && j > 1 && a[i-1] == b[j-2] && a[i-2] == b[j-1] {
+				if t := prev2[j-2] + 1; t < m {
+					m = t
+				}
+			}
+			curr[j] = m
+		}
+		prev2, prev, curr = prev, curr, prev2
+	}
+	return prev[lb]
 }

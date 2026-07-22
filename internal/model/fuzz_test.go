@@ -1,6 +1,7 @@
 package model_test
 
 import (
+	"strings"
 	"testing"
 	"time"
 
@@ -311,6 +312,24 @@ func FuzzRecurrenceMutations(f *testing.F) {
 	})
 }
 
+// hasIntentAnchor reports whether input carries at least one token whose shape
+// could plausibly anchor a warning: a !-prefixed run, an @-prefixed token, an
+// anchor word (next/every/in), or a token containing a date/time separator. It
+// is intentionally coarse and independent of the parser so it can cross-check
+// the "warnings only fire on an intent anchor" invariant.
+func hasIntentAnchor(input string) bool {
+	for _, tok := range strings.Fields(input) {
+		switch lt := strings.ToLower(tok); {
+		case strings.HasPrefix(tok, "!") && len(tok) > 1,
+			strings.HasPrefix(tok, "@"),
+			lt == "next" || lt == "every" || lt == "in",
+			strings.ContainsAny(tok, ":-/"):
+			return true
+		}
+	}
+	return false
+}
+
 // FuzzParseQuickAdd checks the smart parser never panics and always returns a
 // well-formed result: priority within range, any parsed clock in-range, and the
 // derived At() time computed without panic. The parser must leave ambiguous
@@ -321,6 +340,13 @@ func FuzzParseQuickAdd(f *testing.F) {
 		"jul 20 meeting", "7/20/2026 !3 #work", "2026-07-20 15:00",
 		"!9 !1 fri sat 3:30pm 9am", "#", "!", "###tag", "!!!", "12:99",
 		"25:00", "0/0 99/99", "  ", "\t\n", "mon tue wed", "tod tom tmr",
+		// v1.2.0 grammar: relative dates, time ranges, recurrence, location, warnings.
+		"call next fri", "ship in 3 days", "x next month", "in 999 months",
+		"meeting 5-6pm", "party 11pm-1am", "sync 14:00-15:30", "5-6xm", "5pm-",
+		"standup daily", "gym every mon", "party every jul 20", "rent monthly",
+		"lunch @cafeteria", "class @\"room 204\" 9am", "x @\"unclosed",
+		"task !hgh", "next tuedsay", "in 3 dayz", "2026-07-40", "2/30/2026",
+		"My Event!!!!!", "email bob@example.com", "24/7 support", "http://x.com",
 	}
 	for _, s := range seeds {
 		f.Add(s)
@@ -343,7 +369,24 @@ func FuzzParseQuickAdd(f *testing.F) {
 				t.Fatalf("minute %d out of range for input %q", qa.Minute, input)
 			}
 		}
-		// At must not panic for either the parsed-date or context-day path.
-		qa.At(base, fuzzLoc)
+		if qa.HasEnd {
+			if qa.EndHour < 0 || qa.EndHour > 23 || qa.EndMinute < 0 || qa.EndMinute > 59 {
+				t.Fatalf("end %d:%02d out of range for input %q", qa.EndHour, qa.EndMinute, input)
+			}
+		}
+		// At must not panic for either the parsed-date or context-day path; EndAt
+		// must not panic when a range was parsed.
+		start, _ := qa.At(base, fuzzLoc)
+		if qa.HasEnd {
+			qa.EndAt(start)
+		}
+
+		// A warning must only ever fire alongside an intent anchor — the whole point
+		// of the warning system is that plausible text is silent. This detector is
+		// deliberately independent of the parser's own warning code (coarse token
+		// shapes over strings.Fields), so a false positive on clean text is caught.
+		if len(qa.Warnings) > 0 && !hasIntentAnchor(input) {
+			t.Fatalf("warning(s) %v fired with no intent anchor in %q", qa.Warnings, input)
+		}
 	})
 }

@@ -4,6 +4,15 @@
 
 ---
 
+## 2026-07-22 — v1.2.0 step 5: quick-add obvious-error warnings + keep-open re-prompt
+
+- Implemented the fifth v1.2.0 build step — the parser now returns `Warnings []string` alongside the normal result; parsing never blocks (a failed token still falls to the title). Warnings fire **only on an unmistakable intent anchor**.
+- Four warning classes (`internal/model/quickadd.go`): (1) `!`+alphanumerics that fail the priority parse (`!hgh`,`!t`,`!0`) or a duplicate priority token — punctuation runs (`!!!!`, `!`, `!?`) stay silent; (2) an unclosed `@"…` quote (`parseLocation` now *requires* the closing quote, so an unclosed span no longer silently becomes a location — a behavior tightening from step 4); (3) anchor-word fuzzy follower — `next X`/`every X`/`in N X` where X (≥4 chars) is Damerau–Levenshtein 1–2 from a weekday/month/unit full name (`osaDistance`; distance 0 = a real word, silent); (4) shape triggers — impossible colon-times (`25:00`,`12:99`; `http://…` safe), failed range shapes (`5-6xm`,`5pm-`), impossible ISO dates (`2026-07-40`, 4-digit-year-gated), and impossible three-part `m/d/y` (two-part slashed near-misses like `24/7`/`7/45` stay silent).
+- **Keep-open re-prompt UX** (`internal/ui/edit.go`): the three quick-add creators route through a new `promptQuickAdd` — on submit with warnings nothing is created, the input stays open showing the first warning (accent → `warnColor`), and it remembers the warned text; an *identical* resubmit accepts as-is, any edit re-parses fresh, `Esc` cancels. Decision extracted to the pure `quickAddShouldReprompt`. `sd` (quick-set due) flashes the warning instead (no re-prompt), per spec.
+- **Testing**: `internal/model/quickadd_warn_test.go` (new) — the **adversarial zero-warning title table asserted verbatim** (`My Event!!!!!`, `do it !`, `email bob@example.com`, `24/7 support`, `plan next steps fri`, `in 3 acts`, `http://x.com`, …), the positive four-class warning table, correct-spelling-is-silent, and a warning-names-the-token check. `FuzzParseQuickAdd` extended with new-grammar + warning seeds, `HasEnd`/`EndAt` range+panic checks, and a **new invariant** — a warning only ever fires alongside an intent anchor (independent coarse detector `hasIntentAnchor`); ~1M execs clean. `internal/ui/quickwarn_test.go` (new) — the `quickAddShouldReprompt` table and an end-to-end re-prompt drive through the focused input field (first Enter no create, identical resubmit creates, edit-to-clean creates the edited item).
+- Full gate green (`go test ./...`, `go vet ./...`, `staticcheck ./...`); short `go test -fuzz` exploration clean.
+- Files: `internal/model/quickadd.go`, `internal/model/fuzz_test.go`, `internal/ui/edit.go`, `internal/ui/app.go`, `internal/ui/quickfield.go`, `internal/model/quickadd_warn_test.go` (new), `internal/ui/quickwarn_test.go` (new), `log.md`.
+
 ## 2026-07-22 — v1.2.0 step 4: quick-add @location
 
 - Implemented the fourth v1.2.0 build step — an `@location` slot in the quick-add parser (first match wins).

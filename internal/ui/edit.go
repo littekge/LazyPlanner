@@ -112,7 +112,7 @@ func (a *app) addTaskQuick() {
 	if !ok {
 		return
 	}
-	a.promptInput("New task", "Task: ", func(text string) { a.createTask(calID, "", text) })
+	a.promptQuickAdd("New task", "Task: ", func(text string) { a.createTask(calID, "", text) })
 }
 
 // addTaskFull (aT): full create form for a top-level task.
@@ -130,7 +130,7 @@ func (a *app) addEventQuick() {
 	if !ok {
 		return
 	}
-	a.promptInput("New event", "Event: ", func(text string) { a.createEvent(calID, base, text) })
+	a.promptQuickAdd("New event", "Event: ", func(text string) { a.createEvent(calID, base, text) })
 }
 
 // addEventFull (aE): full create form for an event.
@@ -161,7 +161,7 @@ func (a *app) addSubtaskQuick() {
 	if !ok {
 		return
 	}
-	a.promptInput("New subtask", "Subtask: ", func(text string) { a.createTask(calID, parentUID, text) })
+	a.promptQuickAdd("New subtask", "Subtask: ", func(text string) { a.createTask(calID, parentUID, text) })
 }
 
 // addSubtaskFull (iS): full create form for a subtask under the selected task.
@@ -937,6 +937,54 @@ func (a *app) promptInput(title, label string, onAccept func(text string)) {
 		}
 	})
 	a.openModal(pageInput, in, 64, 3)
+}
+
+// quickAddShouldReprompt reports whether a quick-add submit should keep the
+// input open (showing a warning) rather than create: true when the parse
+// produced warnings and this is not an identical resubmit of the already-warned
+// text. Editing the text (text != warnedText) always re-prompts if it still
+// warns; resubmitting the same warned text accepts it as-is.
+func quickAddShouldReprompt(warnings []string, text, warnedText string, haveWarned bool) bool {
+	return len(warnings) > 0 && !(haveWarned && text == warnedText)
+}
+
+// promptQuickAdd is promptInput specialised for the quick-add creators: on Enter
+// it parses the text and, if the parse produced obvious-error warnings, keeps
+// the input open showing the first warning instead of creating anything. Editing
+// the text re-parses fresh; submitting the *identical* warned text again accepts
+// it as-is (the failed tokens stay in the title), matching main.md's keep-open
+// re-prompt. create is the same callback used elsewhere (it re-parses).
+func (a *app) promptQuickAdd(title, label string, create func(text string)) {
+	in := tview.NewInputField().SetLabel(label)
+	in.SetFieldBackgroundColor(tcell.ColorDefault)
+	in.SetFieldTextColor(tcell.ColorDefault)
+	in.SetLabelColor(tcell.ColorDefault)
+	in.SetBackgroundColor(tcell.ColorDefault)
+	in.SetBorder(true)
+	in.SetBorderColor(accentColor)
+	in.SetTitleColor(accentColor)
+	in.SetTitle(" " + title + " ")
+
+	var warnedText string
+	haveWarned := false
+	in.SetDoneFunc(func(key tcell.Key) {
+		switch key {
+		case tcell.KeyEnter:
+			text := in.GetText()
+			qa := model.ParseQuickAdd(text, a.now, a.loc)
+			if quickAddShouldReprompt(qa.Warnings, text, warnedText, haveWarned) {
+				warnedText, haveWarned = text, true
+				in.SetTitleColor(warnColor)
+				in.SetTitle(" ⚠ " + qa.Warnings[0] + " — Enter to keep, edit to change ")
+				return // keep the input open
+			}
+			a.closeModal(pageInput)
+			create(text)
+		case tcell.KeyEscape:
+			a.closeModal(pageInput)
+		}
+	})
+	a.openModal(pageInput, in, 72, 3)
 }
 
 // confirm shows a yes/no modal; onYes runs when the user confirms.
