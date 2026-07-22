@@ -4,6 +4,13 @@
 
 ---
 
+## 2026-07-22 — Plan: v1.3.0 is now the recurrence-rule UI; SELECT mode deferred to v1.4.0
+
+- Owner decision: the recurrence-rule UI (full-form Repeat field + rewriting an existing rule) gets its own version, v1.3.0; SELECT mode moves to v1.4.0.
+- **`main.md`** Build Plan updated: the SELECT-mode subsection renumbered to `### v1.4.0` (content unchanged, deferral noted); a new goal-level `### v1.3.0 — recurrence-rule UI` subsection added; the Future-versions candidate bullet for the recurrence UI removed (now versioned); Current State and the Creation section's cross-reference updated in place.
+- No code change; v1.2.0 implementation is next.
+- Files: `main.md`, `log.md`.
+
 ## 2026-07-22 — Docs: recurrence-creation gap acknowledged; full-form Repeat field deferred
 
 - Investigation (owner question): as of v1.1.0 a recurring task/event **cannot be created in-app** — quick-add has no recurrence tokens and neither full form has a repeat field (`internal/ui/itemforms.go`); the rule itself is also not rewritable (scope pickers edit occurrences, never the RRULE). Recurrence support is manage-existing only.

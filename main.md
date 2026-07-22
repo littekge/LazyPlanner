@@ -44,7 +44,7 @@ LazyPlanner is a terminal-based todo-list and calendar management program. It is
 
 ## Current State
 
-**v1.0.0 is complete** (2026-07-12; all thirteen Build Plan steps), followed by a continuous **hardening & audit phase** (patch-level v1.0.x bug-hunting, resilience, and consistency work) and now **feature versions**: **v1.1.0 (account switching) is released** (implemented 2026-07-21, live-verified and released 2026-07-22), with v1.2.0 (quick-add parser improvements) planned next and SELECT mode deferred to v1.3.0. Audit coverage and residual risk are tracked in `docs/audit/COVERAGE.md`, and the Build Plan below carries a one-line summary of every hardening pass and a subsection per feature version. Sync findings are verified headlessly; the opt-in live CalDAV suite (run against a throwaway test account) is available on demand.
+**v1.0.0 is complete** (2026-07-12; all thirteen Build Plan steps), followed by a continuous **hardening & audit phase** (patch-level v1.0.x bug-hunting, resilience, and consistency work) and now **feature versions**: **v1.1.0 (account switching) is released** (implemented 2026-07-21, live-verified and released 2026-07-22), with v1.2.0 (quick-add parser improvements) planned next, v1.3.0 (recurrence-rule UI) after it, and SELECT mode deferred to v1.4.0. Audit coverage and residual risk are tracked in `docs/audit/COVERAGE.md`, and the Build Plan below carries a one-line summary of every hardening pass and a subsection per feature version. Sync findings are verified headlessly; the opt-in live CalDAV suite (run against a throwaway test account) is available on demand.
 
 ---
 
@@ -165,7 +165,7 @@ Creation targets are keyed to the object, not the focused pane: **create task** 
 
 **Creation is gated by the target calendar's supported component set** — events only on VEVENT-capable calendars, tasks/subtasks only on VTODO-capable lists; a calendar created with "both" supports either. The type must be *known* (declared via the server's `supported-calendar-component-set`, captured on sync, or set explicitly when created in-app): an unconfirmed type blocks creation until a sync settles it (rather than guessing from contents) — with a manual override, `i!`… (e.g. `i!e`), for when the user knows better than the missing metadata. The override applies **only** to the unknown-type case: read-only calendars and a *known* wrong type are never forced. The Calendars overview marks each calendar `[events]`/`[tasks]`/`[both]` (or `[?]` when unknown).
 
-Each create has a **quick-add** form (a one-line smart-parsed input) and a **full form**; the two are reached by distinct keys (quick vs full), folded into the chorded keymap (the `i` prefix; Shift = the full form). Quick-add tokens parsed from the text: dates ("fri", "jul 20", "tomorrow", "7/20", "2026-07-20"), times ("5pm", "3:30pm", "15:00" — a bare number is never a time), `!high`/`!med`/`!low` or `!1`–`!9` priority, `#tag`. Everything unparsed becomes the title. The full form (`e` on an existing item, or the full-create key) edits every field **except the recurrence rule** — the forms have no repeat field, so a recurrence rule cannot be created or rewritten in-app (the scope pickers edit occurrences, never the RRULE itself); quick-add's recurrence tokens (v1.2.0) become the first in-app creation path, and a full-form Repeat field is a deferred Future-versions candidate (owner decision 2026-07-22). Parsing rules must be predictable and documented in `:help` — when in doubt, leave text in the title rather than guess.
+Each create has a **quick-add** form (a one-line smart-parsed input) and a **full form**; the two are reached by distinct keys (quick vs full), folded into the chorded keymap (the `i` prefix; Shift = the full form). Quick-add tokens parsed from the text: dates ("fri", "jul 20", "tomorrow", "7/20", "2026-07-20"), times ("5pm", "3:30pm", "15:00" — a bare number is never a time), `!high`/`!med`/`!low` or `!1`–`!9` priority, `#tag`. Everything unparsed becomes the title. The full form (`e` on an existing item, or the full-create key) edits every field **except the recurrence rule** — the forms have no repeat field, so a recurrence rule cannot be created or rewritten in-app (the scope pickers edit occurrences, never the RRULE itself); quick-add's recurrence tokens (v1.2.0) become the first in-app creation path, and a full-form Repeat field is planned as v1.3.0. Parsing rules must be predictable and documented in `:help` — when in doubt, leave text in the title rather than guess.
 
 **Calendar color** is part of the **create/edit calendar form** (one form for both): a **Color** field with a **"Pick color…"** button that opens a **swatch-grid picker** — a popup of preset color cells (a NextCloud-like palette) navigated with `hjkl`/arrows, `Enter` to pick, plus a "Custom hex…" entry for any other color; the pick is written back into the Color field (which also accepts a typed hex). The picker can nest over the form because modal focus save/restore is a stack. The color is set **at creation** — a new calendar is colored from the start and carries the color in its MKCALENDAR (not left default until manually recolored). The Color field is **pre-seeded with a default palette color** (NextCloud blue) and blank on create falls back to it, so **every created calendar/list always has a color**. The same form edits an existing calendar's name + color via `e` on the Calendars pane — or a task list's via `e` on the Tasks pane (symmetric with `d`, which deletes the focused pane's collection). `:calendar color` with no hex opens the swatch picker directly (a quick recolor), and `:calendar color #rrggbb` still sets one directly. All changes are applied offline-first and pushed on the next sync (MKCALENDAR for a new calendar, `PROPPATCH` for an existing one).
 
@@ -380,9 +380,16 @@ Extend the quick-add smart parser with four grammar additions — time ranges, s
 5. **Warnings + re-prompt UX** — `Warnings`, all trigger classes, the adversarial table, the keep-open submit flow, the fuzz invariant.
 6. **Docs ripple** — `:help`, README quick-add documentation, and the main.md `Creation: quick-add` section rewritten in place.
 
-### v1.3.0 — SELECT mode (planned)
+### v1.3.0 — recurrence-rule UI (planned)
 
-A vim-style multi-select interaction layer. Goal-level scope (owner decisions 2026-07-21; deferred from v1.2.0 to v1.3.0 on 2026-07-22); detailed design before implementation, written here first.
+Close the recurrence-creation gap in the full forms (the gap acknowledged 2026-07-22: quick-add v1.2.0 is otherwise the only in-app way to create a recurring item, and an existing rule can't be rewritten in-app at all). Goal-level scope (owner decision 2026-07-22); detailed design before implementation, written here first.
+
+- A **Repeat field** in the event and task full create/edit forms — at least quick-add's simple set (daily/weekly/monthly/yearly, weekly-on-a-day, yearly-on-a-date).
+- **Rewriting an existing rule** (e.g. weekly → monthly) via the edit form, respecting the scope-picker semantics where they apply.
+
+### v1.4.0 — SELECT mode (planned)
+
+A vim-style multi-select interaction layer. Goal-level scope (owner decisions 2026-07-21; deferred to v1.4.0 on 2026-07-22); detailed design before implementation, written here first.
 
 - **Selection domains**: multiple tasks/subtasks in the task tree; multiple days in the calendar; multiple events within a drilled day.
 - **Bulk operations** over a selection: complete/uncomplete, delete, yank & paste (move), and grab (temporal shift).
@@ -392,7 +399,6 @@ A vim-style multi-select interaction layer. Goal-level scope (owner decisions 20
 
 New feature work gets planned here first: talk the version through with an agent, write its scope as a new `### v1.x.0` subsection (feature versions minor-bump; hardening stays patch-level), and only then implement step by step. Known candidates awaiting a version, in no particular order:
 
-- **Recurrence-rule UI in the full forms** (deferred 2026-07-22) — a Repeat field in the event/task full forms (at least quick-add's simple set), plus rewriting an existing rule; until then quick-add (v1.2.0) is the only in-app way to create a recurring item and changing a rule needs another client.
 - **Configurable keybindings** — a `[keys]` config section (the schema deliberately left room; see Configuration & credentials).
 - **Persistent trash** — undo today is session-scoped; deferred unless it proves needed.
 - **Conflict "keep both as separate items"** — a third resolution besides keep-local/keep-server; needs a new-UID clone.
