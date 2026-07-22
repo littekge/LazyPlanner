@@ -4,6 +4,14 @@
 
 ---
 
+## 2026-07-22 — v1.1.0 live verification passed; release prep
+
+- The CalDAV server is back up and the owner ran the live two-account end-to-end sync verification — **passed**. This was the last gate before the v1.1.0 release; the owner tags the release on GitHub.
+- Pre-release sweep found no blockers: working tree clean, no code TODOs, `notes.md` empty, full gate green (`make check` — build, tests, vet, staticcheck), release diff v1.0.2→HEAD is exactly the 17 v1.1.0 + Pass 18 commits.
+- **`main.md`** updated in place: Current State and the v1.1.0 Build Plan subsection flipped from "pending live verification" to verified/complete (2026-07-22).
+- Release notes for the GitHub release drafted and handed to the owner.
+- Files: `main.md`, `log.md`.
+
 ## 2026-07-21 — Docs: Pass 18 ledger reconciled to the fixes; notes cleared
 
 - All three Pass 18 findings and all four canary holes are now fixed (four commits above), so the audit record is brought current.

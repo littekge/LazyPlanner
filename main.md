@@ -44,7 +44,7 @@ LazyPlanner is a terminal-based todo-list and calendar management program. It is
 
 ## Current State
 
-**v1.0.0 is complete** (2026-07-12; all thirteen Build Plan steps), followed by a continuous **hardening & audit phase** (patch-level v1.0.x bug-hunting, resilience, and consistency work) and now **feature versions**: **v1.1.0 (account switching) is implemented on `ai-workspace`** (2026-07-21; pending live verification + owner release), with v1.2.0 (SELECT mode) planned next. Audit coverage and residual risk are tracked in `docs/audit/COVERAGE.md`, and the Build Plan below carries a one-line summary of every hardening pass and a subsection per feature version. Sync findings are verified headlessly; the opt-in live CalDAV suite (run against a throwaway test account) is available on demand.
+**v1.0.0 is complete** (2026-07-12; all thirteen Build Plan steps), followed by a continuous **hardening & audit phase** (patch-level v1.0.x bug-hunting, resilience, and consistency work) and now **feature versions**: **v1.1.0 (account switching) is complete** (implemented 2026-07-21, live two-account verification passed 2026-07-22; owner release in progress), with v1.2.0 (SELECT mode) planned next. Audit coverage and residual risk are tracked in `docs/audit/COVERAGE.md`, and the Build Plan below carries a one-line summary of every hardening pass and a subsection per feature version. Sync findings are verified headlessly; the opt-in live CalDAV suite (run against a throwaway test account) is available on demand.
 
 ---
 
@@ -323,11 +323,11 @@ Same charter as v1.0.1: targeted patch-level fixes outside the audit cadence, ea
 - **Week/day time grid: multi-day timed event renders on every day of its span** (2026-07-20) — `splitOccs` bucketed a timed occurrence onto its start day only (the all-day branch already fanned out) and block geometry was time-of-day-blind, so the event vanished after day one. It now fans across every covered day (new `Occurrence.OverlapsDay`) and draws per-day clipped blocks: start time → midnight on the start day, full column on spanned-through days, midnight → end time on the final day. Guards: `internal/ui/multiday_test.go` (`TestTimeGridRendersMultiDayTimedEventOnEveryDay`), `internal/model/calendar_test.go`.
 - **Debounced/periodic sync deferred while a create/edit form is open** (2026-07-20) — the timer-driven push could fire mid-edit; pushing the just-edited resource stores a new pointer, so the open form's version-checked Save read as stale and `commitMutation` tore the form down, discarding everything typed. Both timer triggers now defer while a modal is open (`fireDebouncedSync` re-arms, the periodic tick skips), and `closeModal` re-arms a pending push so a deferred edit syncs promptly. The version-check CAS itself is untouched (it still guards the genuine concurrent-pull clobber); see the Sync-triggers decision for the in-flight residual. Guards: `internal/ui/sync_modal_test.go`.
 
-### v1.1.0 — account switching (implemented 2026-07-21 on `ai-workspace`; pending live verification + owner release)
+### v1.1.0 — account switching (complete 2026-07-22)
 
 Full multi-account profiles: several configured CalDAV accounts, one **active** at a time, switchable in-app without a restart. No merged multi-account view — explicitly out of scope for this version. All decisions below are owner-settled (2026-07-21). The settled behavior now also lives in the Account model / Config decisions below (updated in place); this subsection stays as the build record.
 
-**Status**: build steps 1–5 all implemented, each with a repro-first test suite and a green full gate (see `log.md` for the per-step record). Verified headlessly (config parse/migration, resolver logic, the cmd rebuild loop, the UI command/picker/status), plus an end-to-end binary smoke of the migration error and first-run template. **Live two-account end-to-end sync is deferred** until the CalDAV server is back (see the live-server note); the owner tags the release.
+**Status**: build steps 1–5 all implemented, each with a repro-first test suite and a green full gate (see `log.md` for the per-step record). Verified headlessly (config parse/migration, resolver logic, the cmd rebuild loop, the UI command/picker/status), plus an end-to-end binary smoke of the migration error and first-run template. **Live two-account end-to-end sync verified against the real CalDAV server** (owner, 2026-07-22); the owner tags the release.
 
 **Config schema (breaking).** `[server]` is removed. Accounts are `[[account]]` blocks: a required unique `name` (the label `:account` and the status bar use) plus the existing connection fields — `url`, `username`, `password` / `password_command` (0600 warning and all current credential rules unchanged). A config still containing `[server]` fails at load with a clear migration message (rename it to `[[account]]`, add `name`). The cache location is untouched — the account-id derivation (URL+username) doesn't change — so existing caches carry over with zero migration. Zero accounts = today's fully-offline mode. Duplicate names or a nameless block = load error (config ambiguity stays fatal by design). The first-run template generates one commented `[[account]]` block.
 
@@ -349,7 +349,7 @@ Full multi-account profiles: several configured CalDAV accounts, one **active** 
 4. **UI**: `:account` command + picker modal + status-bar segment + wind-down path reusing the quit flush; display-stress coverage for the new modal.
 5. **Docs ripple**: README (Configuration/Usage/keybindings), main.md Settled Decisions rewritten in place (Account model → multi-account one-active; Config → `[[account]]` schema + migration note).
 
-**Testing constraint**: all verification is headless (config parse, loop logic, UI dispatch, flush-on-switch mirroring the quit-flush tests); live two-account end-to-end sync is deferred until the CalDAV server is back.
+**Testing constraint**: all automated verification is headless (config parse, loop logic, UI dispatch, flush-on-switch mirroring the quit-flush tests); live two-account end-to-end sync was verified manually by the owner (2026-07-22) once the CalDAV server returned.
 
 ### v1.2.0 — SELECT mode (planned)
 
