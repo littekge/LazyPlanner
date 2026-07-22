@@ -534,6 +534,9 @@ func (a *app) setTodoDetail(t *model.Todo) {
 	if len(t.Categories) > 0 {
 		fmt.Fprintf(&b, "[gray]Tags[-]      %s\n", tview.Escape(strings.Join(t.Categories, ", ")))
 	}
+	if t.Location != "" {
+		fmt.Fprintf(&b, "[gray]Location[-]  %s\n", tview.Escape(t.Location))
+	}
 	if t.Recurring {
 		fmt.Fprintf(&b, "[gray]Repeats[-]   yes\n")
 	}

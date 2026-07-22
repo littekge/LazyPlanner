@@ -36,6 +36,7 @@ func NewUID() string {
 type TodoDraft struct {
 	Summary     string
 	Description string
+	Location    string
 	HasDue      bool
 	Due         time.Time
 	DueAllDay   bool
@@ -256,6 +257,7 @@ func findComponent(cal *ical.Calendar, uid string) *ical.Component {
 func applyTodo(comp *ical.Component, d TodoDraft, now time.Time) {
 	setTextOrDel(comp, ical.PropSummary, d.Summary)
 	setTextOrDel(comp, ical.PropDescription, d.Description)
+	setTextOrDel(comp, ical.PropLocation, d.Location)
 
 	if d.Priority == PriorityUndefined {
 		comp.Props.Del(ical.PropPriority)

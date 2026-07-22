@@ -4,6 +4,18 @@
 
 ---
 
+## 2026-07-22 — v1.2.0 step 4: quick-add @location
+
+- Implemented the fourth v1.2.0 build step — an `@location` slot in the quick-add parser (first match wins).
+- Forms: `@cafeteria` (single word) and `@"room 204"` (quoted multi-word span). A lone `@` and empty quotes stay in the title (`lunch @ noon`); an embedded `@` is inert (`email bob@example.com`).
+- **Pre-lexer** (`lexQuickAdd`) replaces `strings.Fields` — output is identical except a token-leading `@"…"` span is held together across spaces; an unclosed quote consumes to end-of-input as one token, leaving it detectably unclosed for the v1.2.0 step-5 warning pass. `parseLocation` extracts the value; a quoted span is never re-parsed (so `@"jul 20"` is a location, not a date).
+- `QuickAdd` gained `Location`; the loop handles `@` in the existing sigil switch (first-match-wins).
+- **Model plumbing**: `Todo` gained a `Location` field (parsed from VTODO `LOCATION` in `ParseTodo`); `TodoDraft` gained `Location`, serialized by `applyTodo` via `setTextOrDel` (LOCATION is legal on a VTODO; NextCloud Tasks shows it). `EventDraft`/`applyEvent`/`Event` already carried LOCATION.
+- **UI**: `createEvent`/`createTask` pass `qa.Location`; `setTodoDetail` (`internal/ui/render.go`) gained a `Location` row shown when non-empty (mirrors the event Detail pane).
+- **Repro-first (TDD)**: `internal/model/quickadd_location_test.go` (new) — the location table (single/quoted/bare-@/empty-quotes/quoted-not-a-date/first-match-wins/embedded-@) and a VTODO LOCATION round-trip. `internal/ui/quicklocation_test.go` (new) — location flows into a created event and task, and the task Detail pane shows the row.
+- Full gate green (`go test ./...`, `go vet ./...`, `staticcheck ./...`).
+- Files: `internal/model/quickadd.go`, `internal/model/edit.go`, `internal/model/todo.go`, `internal/ui/edit.go`, `internal/ui/render.go`, `internal/model/quickadd_location_test.go` (new), `internal/ui/quicklocation_test.go` (new), `log.md`.
+
 ## 2026-07-22 — v1.2.0 step 3: quick-add simple recurrence
 
 - Implemented the third v1.2.0 build step — simple recurrence in the quick-add parser. **This is the first in-app way to create a recurring item** (closing the gap acknowledged 2026-07-22).

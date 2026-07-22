@@ -42,6 +42,7 @@ type Todo struct {
 	Priority    int
 	Categories  []string
 	Description string
+	Location    string
 	ParentUID   string
 	Recurring   bool
 
@@ -65,6 +66,7 @@ func ParseTodo(comp *ical.Component, loc *time.Location) (*Todo, error) {
 		Summary:     text(comp.Props, ical.PropSummary),
 		Status:      parseTodoStatus(text(comp.Props, ical.PropStatus)),
 		Description: text(comp.Props, ical.PropDescription),
+		Location:    text(comp.Props, ical.PropLocation),
 		ParentUID:   parentUID(comp),
 		Categories:  categories(comp),
 		Priority:    priority(comp),

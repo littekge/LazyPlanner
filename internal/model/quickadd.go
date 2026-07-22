@@ -104,8 +104,55 @@ type QuickAdd struct {
 	EndHour   int
 	EndMinute int
 	Recur     *RecurSpec // nil = non-recurring
-	Priority  int        // 0 = none
+	Location  string
+	Priority  int // 0 = none
 	Tags      []string
+}
+
+// lexQuickAdd splits input into whitespace-delimited tokens, identically to
+// strings.Fields except that a token-leading @"…" quoted span is held together
+// across spaces (so @"room 204" is one token, a multi-word location). An
+// unclosed quote consumes to the end of the input as one token, leaving it
+// detectably unclosed (a leading @" with no trailing ") for the warning pass.
+func lexQuickAdd(input string) []string {
+	fields := strings.Fields(input)
+	var out []string
+	for i := 0; i < len(fields); i++ {
+		f := fields[i]
+		// A complete single-field quoted span (@"word") needs no merging.
+		if strings.HasPrefix(f, `@"`) && !(len(f) > 2 && strings.HasSuffix(f, `"`)) {
+			merged := f
+			for i+1 < len(fields) {
+				i++
+				merged += " " + fields[i]
+				if strings.HasSuffix(fields[i], `"`) {
+					break
+				}
+			}
+			out = append(out, merged)
+			continue
+		}
+		out = append(out, f)
+	}
+	return out
+}
+
+// parseLocation reads an @location token: @word or @"multi word" (the pre-lexer
+// having already joined a quoted span). A lone @ or empty quotes yield no
+// location, leaving the token in the title ("lunch @ noon").
+func parseLocation(tok string) (string, bool) {
+	if len(tok) < 2 || tok[0] != '@' {
+		return "", false
+	}
+	rest := tok[1:]
+	if strings.HasPrefix(rest, `"`) {
+		rest = strings.TrimSuffix(rest[1:], `"`)
+	}
+	rest = strings.TrimSpace(rest)
+	if rest == "" {
+		return "", false
+	}
+	return rest, true
 }
 
 // ParseQuickAdd parses input relative to now (in loc), extracting date, time,
@@ -119,7 +166,7 @@ func ParseQuickAdd(input string, now time.Time, loc *time.Location) QuickAdd {
 	var qa QuickAdd
 	var titleTokens []string
 
-	tokens := strings.Fields(input)
+	tokens := lexQuickAdd(input)
 	for i := 0; i < len(tokens); i++ {
 		tok := tokens[i]
 
@@ -132,6 +179,11 @@ func ParseQuickAdd(input string, now time.Time, loc *time.Location) QuickAdd {
 		case '!':
 			if p, ok := parsePriority(tok[1:]); ok && qa.Priority == 0 {
 				qa.Priority = p
+				continue
+			}
+		case '@':
+			if locv, ok := parseLocation(tok); ok && qa.Location == "" {
+				qa.Location = locv
 				continue
 			}
 		}
