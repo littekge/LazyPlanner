@@ -187,6 +187,14 @@ func parseDate(tokens []string, i int, today time.Time, loc *time.Location) (tim
 		return today, 1, true
 	case "tomorrow", "tom", "tmr":
 		return today.AddDate(0, 0, 1), 1, true
+	case "next":
+		if d, ok := parseNextDate(tokens, i, today); ok {
+			return d, 2, true
+		}
+	case "in":
+		if d, ok := parseInDate(tokens, i, today); ok {
+			return d, 3, true
+		}
 	}
 
 	if wd, ok := weekday(tok); ok {
@@ -228,6 +236,88 @@ func weekday(s string) (time.Weekday, bool) {
 func nextWeekday(today time.Time, wd time.Weekday) time.Time {
 	delta := (int(wd) - int(today.Weekday()) + 7) % 7
 	return today.AddDate(0, 0, delta)
+}
+
+// parseNextDate handles the two-token "next …" relative forms starting at
+// tokens[i] (which is "next"): "next <weekday>" is the bare-weekday result plus
+// seven days (a single rule with no week-start dependence, so "next fri" typed
+// on a Friday is a full week out), "next week" is today+7, and "next month" is
+// the same day-of-month next month (clamped to that month's last day). Anything
+// else — "next steps", "next year" — is not a date, leaving "next" in the title.
+func parseNextDate(tokens []string, i int, today time.Time) (time.Time, bool) {
+	if i+1 >= len(tokens) {
+		return time.Time{}, false
+	}
+	next := strings.ToLower(tokens[i+1])
+	if wd, ok := weekday(next); ok {
+		return nextWeekday(today, wd).AddDate(0, 0, 7), true
+	}
+	switch next {
+	case "week":
+		return today.AddDate(0, 0, 7), true
+	case "month":
+		return addMonthsClamped(today, 1), true
+	}
+	return time.Time{}, false
+}
+
+// parseInDate handles the three-token "in N days/weeks/months" relative form
+// starting at tokens[i] (which is "in"). N is 1–3 digits; units accept both the
+// plural and singular spellings; months clamp the day-of-month like "next
+// month". A follower that isn't a bounded count + known unit is not a date, so
+// "in room 5" / "in 2026 days" / "in 5 minutes" leave "in" in the title.
+func parseInDate(tokens []string, i int, today time.Time) (time.Time, bool) {
+	if i+2 >= len(tokens) {
+		return time.Time{}, false
+	}
+	countTok := tokens[i+1]
+	if len(countTok) < 1 || len(countTok) > 3 || !isAllDigits(countTok) {
+		return time.Time{}, false
+	}
+	n, err := strconv.Atoi(countTok)
+	if err != nil {
+		return time.Time{}, false
+	}
+	switch strings.ToLower(tokens[i+2]) {
+	case "day", "days":
+		return today.AddDate(0, 0, n), true
+	case "week", "weeks":
+		return today.AddDate(0, 0, 7*n), true
+	case "month", "months":
+		return addMonthsClamped(today, n), true
+	}
+	return time.Time{}, false
+}
+
+// isAllDigits reports whether s is one or more ASCII digits and nothing else.
+func isAllDigits(s string) bool {
+	for _, r := range s {
+		if r < '0' || r > '9' {
+			return false
+		}
+	}
+	return s != ""
+}
+
+// addMonthsClamped adds n months to t keeping the day-of-month, clamped down to
+// the target month's last day when the original day doesn't exist there (Jan 31
+// + 1 month -> Feb 28/29). time.Date's own normalization would instead spill the
+// overflow into the following month, which is not the intended relative-date
+// meaning.
+func addMonthsClamped(t time.Time, n int) time.Time {
+	y, m, d := t.Year(), int(t.Month())-1+n, t.Day()
+	y += m / 12
+	m = m%12 + 1
+	if last := daysInMonth(y, time.Month(m)); d > last {
+		d = last
+	}
+	return time.Date(y, time.Month(m), d, 0, 0, 0, 0, t.Location())
+}
+
+// daysInMonth returns the number of days in the given month (day 0 of the next
+// month is the last day of this one).
+func daysInMonth(year int, mon time.Month) int {
+	return time.Date(year, mon+1, 0, 0, 0, 0, 0, time.UTC).Day()
 }
 
 func monthName(s string) (time.Month, bool) {

@@ -4,6 +4,17 @@
 
 ---
 
+## 2026-07-22 — v1.2.0 step 1: quick-add relative dates
+
+- Implemented the first v1.2.0 build step — relative dates in the quick-add smart parser (`internal/model/quickadd.go`), extending `parseDate` (no rewrite of the single-pass loop).
+- New forms: `next <weekday>` = the bare-weekday result **+7 days** (single rule, no week-start dependence — `next fri` on a Friday is a full week out), `next week` = today+7, `next month` = same day-of-month next month clamped to its last day, and `in N days/weeks/months` (singular units too; N is 1–3 ASCII digits; months clamp like `next month`).
+- Helpers added: `parseNextDate`, `parseInDate`, `isAllDigits`, `addMonthsClamped` (manual day-of-month clamp — `time.Date` would spill Jan 31 + 1 month into March), `daysInMonth`.
+- Conservative by design: an anchor word with no valid follower stays in the title (`meeting in room 5`, `next steps`, `next year`, `in 2026 days`, `in 5 minutes` all parse no date).
+- **Free riders**: `:goto` and `sd` (quick-set due date) call `ParseQuickAdd`, so they gained the whole relative-date family with no UI change.
+- **Repro-first (TDD)**: `internal/model/quickadd_relative_test.go` (new) — main table (both matches and title-fallthrough non-matches), `next fri`-on-a-Friday boundary, and the month-clamp boundary (non-leap Feb 28, leap Feb 29, `in 1 month` parity). All RED before the change (feature missing), green after.
+- Full gate green (`go test ./...`, `go vet ./...`, `staticcheck ./...`).
+- Files: `internal/model/quickadd.go`, `internal/model/quickadd_relative_test.go` (new), `log.md`.
+
 ## 2026-07-22 — Plan: v1.3.0 is now the recurrence-rule UI; SELECT mode deferred to v1.4.0
 
 - Owner decision: the recurrence-rule UI (full-form Repeat field + rewriting an existing rule) gets its own version, v1.3.0; SELECT mode moves to v1.4.0.
