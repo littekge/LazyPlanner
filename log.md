@@ -4,6 +4,13 @@
 
 ---
 
+## 2026-07-22 — Plan: v1.2.0 is now quick-add parser improvements; SELECT mode deferred to v1.3.0
+
+- Owner decision: SELECT mode moves from v1.2.0 to v1.3.0; v1.2.0 becomes improvements to the quick-add auto-parser for event/task creation.
+- **`main.md`** Build Plan updated: the SELECT-mode subsection renumbered to `### v1.3.0` (content unchanged, deferral noted); a new goal-level `### v1.2.0 — quick-add parser improvements` subsection added (detailed design to be written there before implementation); Current State's next-version line updated in place.
+- No code change; detailed v1.2.0 planning is the next step.
+- Files: `main.md`, `log.md`.
+
 ## 2026-07-22 — v1.1.0 released; post-release verification + docs
 
 - The owner merged `ai-workspace` to `main` and tagged **v1.1.0**; the GitHub release published with the drafted release notes.

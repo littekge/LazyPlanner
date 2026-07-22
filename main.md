@@ -44,7 +44,7 @@ LazyPlanner is a terminal-based todo-list and calendar management program. It is
 
 ## Current State
 
-**v1.0.0 is complete** (2026-07-12; all thirteen Build Plan steps), followed by a continuous **hardening & audit phase** (patch-level v1.0.x bug-hunting, resilience, and consistency work) and now **feature versions**: **v1.1.0 (account switching) is released** (implemented 2026-07-21, live-verified and released 2026-07-22), with v1.2.0 (SELECT mode) planned next. Audit coverage and residual risk are tracked in `docs/audit/COVERAGE.md`, and the Build Plan below carries a one-line summary of every hardening pass and a subsection per feature version. Sync findings are verified headlessly; the opt-in live CalDAV suite (run against a throwaway test account) is available on demand.
+**v1.0.0 is complete** (2026-07-12; all thirteen Build Plan steps), followed by a continuous **hardening & audit phase** (patch-level v1.0.x bug-hunting, resilience, and consistency work) and now **feature versions**: **v1.1.0 (account switching) is released** (implemented 2026-07-21, live-verified and released 2026-07-22), with v1.2.0 (quick-add parser improvements) planned next and SELECT mode deferred to v1.3.0. Audit coverage and residual risk are tracked in `docs/audit/COVERAGE.md`, and the Build Plan below carries a one-line summary of every hardening pass and a subsection per feature version. Sync findings are verified headlessly; the opt-in live CalDAV suite (run against a throwaway test account) is available on demand.
 
 ---
 
@@ -351,9 +351,13 @@ Full multi-account profiles: several configured CalDAV accounts, one **active** 
 
 **Testing constraint**: all automated verification is headless (config parse, loop logic, UI dispatch, flush-on-switch mirroring the quit-flush tests); live two-account end-to-end sync was verified manually by the owner (2026-07-22) once the CalDAV server returned.
 
-### v1.2.0 — SELECT mode (planned)
+### v1.2.0 — quick-add parser improvements (planned)
 
-A vim-style multi-select interaction layer. Goal-level scope (owner decisions 2026-07-21); detailed design before implementation, written here first.
+Improve the smart auto-parser behind quick-add event/task creation. Goal-level scope (owner decision 2026-07-22); the detailed design — which tokens/forms the parser gains and the exact parsing rules — is written here before implementation begins. The existing quick-add contract still holds: parsing stays predictable and documented in `:help`, and anything ambiguous is left in the title rather than guessed.
+
+### v1.3.0 — SELECT mode (planned)
+
+A vim-style multi-select interaction layer. Goal-level scope (owner decisions 2026-07-21; deferred from v1.2.0 to v1.3.0 on 2026-07-22); detailed design before implementation, written here first.
 
 - **Selection domains**: multiple tasks/subtasks in the task tree; multiple days in the calendar; multiple events within a drilled day.
 - **Bulk operations** over a selection: complete/uncomplete, delete, yank & paste (move), and grab (temporal shift).
