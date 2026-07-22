@@ -22,6 +22,14 @@ import (
 // exhaust memory or hang startup. A real config is well under a kilobyte.
 const maxConfigBytes = 4 << 20
 
+// maxTOMLNestingDepth caps the structural nesting (inline tables {} and arrays [])
+// the config decoder will accept. BurntSushi/toml decodes deeply nested inline
+// tables in O(depth^2) time, so a crafted/corrupt config of only a few KB — well
+// under maxConfigBytes — can hang Load() for minutes (measured ~1s at depth 4000).
+// A real config nests at most a couple of levels; 64 is far above any legitimate
+// config yet keeps decode cost trivial (64^2 is microseconds).
+const maxTOMLNestingDepth = 64
+
 // configName is the config file LazyPlanner reads under ConfigDir.
 const configName = "config.toml"
 
@@ -192,6 +200,15 @@ func Load() (cfg Config, configured bool, warning string, err error) {
 	if err != nil {
 		return Config{}, false, strings.Join(warns, "; "), fmt.Errorf("reading config %q: %w", path, err)
 	}
+	// Bound the decode before running it: BurntSushi/toml decodes deeply nested
+	// inline tables/arrays in O(depth^2), so a crafted/corrupt config of only a few
+	// KB — well under maxConfigBytes — would otherwise hang Load() (and thus
+	// startup) for minutes. The byte cap bounds size, not decode CPU; this bounds
+	// nesting. A real config nests at most a couple of levels.
+	if derr := checkNestingDepth(data); derr != nil {
+		return Config{}, false, strings.Join(warns, "; "),
+			fmt.Errorf("config %q %w — fix it and run lazyplanner again", path, derr)
+	}
 	meta, err := toml.Decode(string(data), &cfg)
 	if err != nil {
 		// Fatal by design: the local cache is namespaced by account (server URL +
@@ -213,6 +230,80 @@ func Load() (cfg Config, configured bool, warning string, err error) {
 	}
 	warns = append(warns, appearanceWarnings(cfg.Appearance)...)
 	return cfg, true, strings.Join(warns, "; "), nil
+}
+
+// checkNestingDepth scans raw TOML and rejects it if structural bracket nesting
+// (inline tables {} and arrays []) exceeds maxTOMLNestingDepth, guarding the
+// O(depth^2) decoder against a hang. Brackets inside strings and comments do not
+// count. It is a deliberately conservative pre-check, not a full parser: on
+// malformed input it errs toward accepting (and letting toml.Decode report the
+// real error), but a well-formed config's real nesting is shallow, so it never
+// rejects one.
+func checkNestingDepth(data []byte) error {
+	depth := 0
+	for i, n := 0, len(data); i < n; {
+		switch data[i] {
+		case '#': // comment to end of line
+			for i < n && data[i] != '\n' {
+				i++
+			}
+		case '"':
+			if i+2 < n && data[i+1] == '"' && data[i+2] == '"' {
+				i = skipDelimited(data, i+3, '"', true, true)
+			} else {
+				i = skipDelimited(data, i+1, '"', true, false)
+			}
+		case '\'':
+			if i+2 < n && data[i+1] == '\'' && data[i+2] == '\'' {
+				i = skipDelimited(data, i+3, '\'', false, true)
+			} else {
+				i = skipDelimited(data, i+1, '\'', false, false)
+			}
+		case '{', '[':
+			depth++
+			if depth > maxTOMLNestingDepth {
+				return fmt.Errorf("is nested more than %d levels deep — this looks corrupt or maliciously crafted (a real config nests only a couple of levels)", maxTOMLNestingDepth)
+			}
+			i++
+		case '}', ']':
+			if depth > 0 {
+				depth--
+			}
+			i++
+		default:
+			i++
+		}
+	}
+	return nil
+}
+
+// skipDelimited returns the index just past a TOML string that opened at i. quote
+// is the delimiter (" or '); escapes honors backslash escapes (basic strings only);
+// multiline treats the delimiter tripled as the terminator (and spans newlines). A
+// single-line string that hits a newline before its close is treated as ended
+// there (malformed input — toml.Decode reports it; the scan just must not run away).
+func skipDelimited(data []byte, i int, quote byte, escapes, multiline bool) int {
+	for n := len(data); i < n; {
+		c := data[i]
+		if escapes && c == '\\' {
+			i += 2
+			continue
+		}
+		if multiline {
+			if c == quote && i+2 < n && data[i+1] == quote && data[i+2] == quote {
+				return i + 3
+			}
+		} else {
+			if c == quote {
+				return i + 1
+			}
+			if c == '\n' {
+				return i
+			}
+		}
+		i++
+	}
+	return i
 }
 
 // validateAccounts enforces that every [[account]] has a non-empty name and that

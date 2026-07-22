@@ -4,6 +4,14 @@
 
 ---
 
+## 2026-07-21 — Fix (Pass 18 #2): bound the O(depth²) TOML decode so a crafted config can't hang startup
+
+- **Bug**: `maxConfigBytes` (4 MiB) bounds the config *read*, not the decode *CPU*, and `Load` had no other bound. BurntSushi/toml decodes deeply nested inline tables/arrays in O(depth²) time, so a deeply-nested config well under 4 MiB hangs `Load()`/startup for minutes-to-hours (re-measured this session: depth 500→25 ms, 1000→100 ms, 2000→331 ms, 4000→1.1 s — clean quadratic; a 4 MiB file reaches ~700 K depth). Threat model is a local corrupted/crafted config (not remote), but it defeats the read cap's stated "never hang startup" purpose — fixed for consistency with that invariant.
+- **Fix** (`internal/config/config.go`): a deterministic pre-decode guard `checkNestingDepth` scans the raw bytes and rejects structural bracket nesting (`{}`/`[]`) past `maxTOMLNestingDepth` (64) *before* calling `toml.Decode`, returning the same fatal, actionable error style as the syntax-error branch. Chose a depth cap over a decode timeout because it's O(n), deterministic, and testable without timing flakiness. The scanner skips brackets inside strings (basic/literal, single- and multi-line, with escapes) and comments, so it never false-rejects a real config (a password full of braces, a URL with `[]`); 64 is ~32× above any legitimate config (max real nesting ≈ 2 for `[[account]]`) yet keeps decode cost microseconds.
+- **Repro-first (TDD)**: `internal/config/config_decode_bound_test.go` (new) — `TestLoadDoesNotHangOnDeeplyNestedConfig` (a ~120 KB depth-20000 config; asserts `Load` returns within 2 s — RED hung >2 s before the fix, instant after) and `TestCheckNestingDepth` (deterministic boundary: shallow config with brackets only in strings/comments passes, at-cap passes, one-past-cap rejected).
+- Full gate green (`make check`).
+- Files: `internal/config/config.go`, `internal/config/config_decode_bound_test.go` (new), `log.md`.
+
 ## 2026-07-21 — Fix (Pass 18 #3, MED): `:config` reload now refreshes the account list
 
 - **Bug**: `applyConfigReload` (`internal/ui/command.go`) never touched `a.accounts`/`a.activeAccount` (set once in `Run`), and `ConfigReload` carried no account list, so a `:config`-added or -renamed `[[account]]` stayed invisible in the picker + status bar and unreachable via `:account` (flashed "unknown account") until a full process restart — contradicting main.md:340 ("the reload re-parses the account list; picker/status bar update live").
