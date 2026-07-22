@@ -320,7 +320,18 @@ func editConfigFn(configPath string, pathErr error, running config.Account, s *s
 		// password file) — at startup it goes to its own stderr line, but on a
 		// :config reload the single flash string must carry it, or an edit that
 		// introduces the problem is silently accepted.
-		return ui.ConfigReload{Sync: syncFn, ColorMode: cfg.Appearance.ColorMode, Warning: joinWarnings(loadWarn, warn)}, nil
+		//
+		// Carry the refreshed account list + the running account's (possibly
+		// renamed) name so the UI's picker/status/`:account` see a :config-added or
+		// -renamed account live. acct.Name is the running account when found; an
+		// offline run leaves it empty (nothing to mark active).
+		return ui.ConfigReload{
+			Sync:          syncFn,
+			ColorMode:     cfg.Appearance.ColorMode,
+			Warning:       joinWarnings(loadWarn, warn),
+			Accounts:      accountNames(cfg),
+			ActiveAccount: acct.Name,
+		}, nil
 	}
 }
 

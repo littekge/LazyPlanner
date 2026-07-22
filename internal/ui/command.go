@@ -197,6 +197,17 @@ func (a *app) applyConfigReload(res ConfigReload, err error) {
 		a.flash("config: " + err.Error())
 		return
 	}
+	// Adopt the reloaded account list so a :config-added/renamed account is visible
+	// in the picker and status bar and reachable via :account, without a restart.
+	// A reload can't hot-swap the *active* connection (the cache is account-keyed —
+	// editConfigFn errors out above for that), but a rename keeps the cache id, so
+	// the running account's label may still change.
+	if res.Accounts != nil {
+		a.accounts = res.Accounts
+	}
+	if res.ActiveAccount != "" {
+		a.activeAccount = res.ActiveAccount
+	}
 	if res.Sync != nil {
 		a.syncFn = res.Sync
 	}

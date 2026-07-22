@@ -329,6 +329,14 @@ type ConfigReload struct {
 	// Warning, when set, explains why the reloaded connection is offline (e.g. a
 	// failed password_command); the UI flashes it so it isn't lost to stderr.
 	Warning string
+	// Accounts is the reloaded configured account list (file order), so a
+	// :config-added or -renamed account becomes visible in the picker/status and
+	// reachable via :account without a restart. Empty when nothing matched (the
+	// reload failed) — applyConfigReload only adopts it on a successful reload.
+	Accounts []string
+	// ActiveAccount is the running account's (possibly renamed) name after the
+	// reload; the cache id is unchanged, so only the label can differ.
+	ActiveAccount string
 }
 
 // RunResult reports why the UI loop returned. An empty SwitchAccount means the

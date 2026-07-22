@@ -4,6 +4,18 @@
 
 ---
 
+## 2026-07-21 — Fix (Pass 18 #3, MED): `:config` reload now refreshes the account list
+
+- **Bug**: `applyConfigReload` (`internal/ui/command.go`) never touched `a.accounts`/`a.activeAccount` (set once in `Run`), and `ConfigReload` carried no account list, so a `:config`-added or -renamed `[[account]]` stayed invisible in the picker + status bar and unreachable via `:account` (flashed "unknown account") until a full process restart — contradicting main.md:340 ("the reload re-parses the account list; picker/status bar update live").
+- **Scope clarification** (per the notes): this fix only makes a newly-added account **visible/selectable**; the actual switch is still `:account`'s teardown-and-rebuild (unchanged). A reload still **cannot** hot-swap the *active* account's connection — `editConfigFn`'s existing "connection changed or removed → use :account or restart" error is preserved, and on that (or any) reload error `applyConfigReload` returns early without touching the live list.
+- **Fix**:
+  - `ConfigReload` (`internal/ui/app.go`) gains `Accounts []string` + `ActiveAccount string`.
+  - `editConfigFn` (`cmd/lazyplanner/main.go`) populates them on a successful reload: `accountNames(cfg)` and the running account's (possibly renamed — same cache id) `acct.Name`.
+  - `applyConfigReload` adopts `res.Accounts` when non-nil and `res.ActiveAccount` when non-empty, so the picker/status/`:account` see the fresh list.
+- **Repro-first (TDD)**: `internal/ui/configreload_accounts_test.go` (new) — `TestConfigReloadRefreshesAccountList` (an added account becomes reachable: `switchAccount` records it instead of flashing unknown), `TestConfigReloadTracksRenamedActiveAccount` (a renamed active account's label follows), `TestConfigReloadErrorLeavesAccountsUntouched` (a failed reload preserves the live list + flashes). The first two RED before the fix, green after; the third guards the preserved error path.
+- Full gate green (`make check`).
+- Files: `internal/ui/app.go`, `internal/ui/command.go`, `cmd/lazyplanner/main.go`, `internal/ui/configreload_accounts_test.go` (new), `log.md`.
+
 ## 2026-07-21 — Fix (Pass 18 #1, HIGH): CommitPush no longer resurrects a resource deleted mid-push
 
 - **Bug**: `store.CommitPush` treated `cur == nil` (the event loop deleted the resource while the sync goroutine's PUT was in flight) identically to `cur == pushed` (unchanged) — it rebuilt the resource clean via `writeResourceLocked`, and `stageResourceLocked`'s unconditional `delete(cs.tombstones, name)` then wiped the pending deletion. A user delete landing during a background push was silently, permanently lost (next sync a no-op). Reachable with periodic/debounced sync running.
