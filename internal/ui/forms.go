@@ -70,6 +70,24 @@ func (f *caretForm) Draw(screen tcell.Screen) {
 	f.Form.Draw(screen)
 }
 
+// styleModal gives a tview.Modal the shared popup chrome — the modal twin of
+// stylePopup: terminal-default (unified) background and text, a reverse-video
+// active button, and the accent rounded border + accent title every other window
+// carries. tview.Modal draws its Box (border + title) but sets neither the accent
+// color nor a title by default, so a bare confirm reads as a plainer style than
+// the forms; routing all confirms/pickers through here keeps the chrome uniform.
+func styleModal(m *tview.Modal, title string) {
+	m.SetBackgroundColor(tcell.ColorDefault)
+	m.SetTextColor(tcell.ColorDefault)
+	m.SetButtonBackgroundColor(tcell.ColorDefault)
+	m.SetButtonTextColor(tcell.ColorDefault)
+	m.SetButtonActivatedStyle(tcell.StyleDefault.Reverse(true))
+	m.SetBorder(true)
+	m.SetBorderColor(accentColor)
+	m.SetTitle(title)
+	m.SetTitleColor(accentColor)
+}
+
 // stylePopup gives a form the shared popup look: the terminal's default (unified)
 // background, high-contrast default text, an accent rounded border/title, and the
 // focused button reversed. Field focus is shown by the caret, not a field color.

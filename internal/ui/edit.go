@@ -454,7 +454,11 @@ func (a *app) deleteWholeObject(loc store.Located, uid string) {
 		prompt = "Delete \"" + oneLine(what) + "\" and its " + strconv.Itoa(n) + " subtask(s)?"
 	}
 
-	a.confirm(prompt, func() {
+	title := " Delete event "
+	if findTodo(loc.Object, uid) != nil {
+		title = " Delete task "
+	}
+	a.confirm(title, prompt, func() {
 		var ops []undoOp
 		for _, u := range append([]string{uid}, kids...) {
 			l, ok := a.store.Locate(u)
@@ -994,14 +998,15 @@ func (a *app) promptQuickAdd(title, label string, create func(text string)) {
 	a.openModal(pageInput, in, 72, 3)
 }
 
-// confirm shows a yes/no modal; onYes runs when the user confirms.
-func (a *app) confirm(text string, onYes func()) {
-	a.confirmOK(text, "Delete", onYes)
+// confirm shows a yes/no modal with the accent chrome; title names the action
+// (e.g. " Delete task "), onYes runs when the user confirms.
+func (a *app) confirm(title, text string, onYes func()) {
+	a.confirmOK(title, text, "Delete", onYes)
 }
 
 // confirmOK is a confirm with a custom affirmative button label (e.g. "Detach"),
 // for actions that aren't deletions. Cancel is always the other button.
-func (a *app) confirmOK(text, okLabel string, onYes func()) {
+func (a *app) confirmOK(title, text, okLabel string, onYes func()) {
 	modal := tview.NewModal().
 		SetText(text).
 		AddButtons([]string{okLabel, "Cancel"}).
@@ -1011,13 +1016,7 @@ func (a *app) confirmOK(text, okLabel string, onYes func()) {
 				onYes()
 			}
 		})
-	// Shared popup look: terminal-default background, default text, the focused
-	// button reversed.
-	modal.SetBackgroundColor(tcell.ColorDefault)
-	modal.SetTextColor(tcell.ColorDefault)
-	modal.SetButtonBackgroundColor(tcell.ColorDefault)
-	modal.SetButtonTextColor(tcell.ColorDefault)
-	modal.SetButtonActivatedStyle(tcell.StyleDefault.Reverse(true))
+	styleModal(modal, title)
 	a.captureFocus()
 	a.root.AddPage(pageConfirm, modal, true, true)
 	a.tv.SetFocus(modal)

@@ -296,7 +296,11 @@ func (a *app) deleteCollection() {
 	}
 	prompt += "?\nThis also deletes it on the server on the next sync."
 
-	a.confirm(prompt, func() {
+	title := " Delete calendar "
+	if a.mode == modeTasks {
+		title = " Delete list "
+	}
+	a.confirm(title, prompt, func() {
 		if err := a.store.MarkCalendarDeleted(context.Background(), id); err != nil {
 			a.flashErr("Delete", err)
 			return

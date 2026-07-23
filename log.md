@@ -4,6 +4,16 @@
 
 ---
 
+## 2026-07-23 — UI polish: standardize confirmation-dialog chrome
+
+- Confirmation/picker dialogs (`tview.Modal`) looked plainer than the forms and other popups — they lacked the accent rounded border and had no title. Standardized them to match (owner-approved: contextual title per dialog, keep tview.Modal's auto-sizing).
+- **Shared helper** `styleModal(m *tview.Modal, title string)` (`internal/ui/forms.go`) — the modal twin of `stylePopup`: terminal-default background/text, reverse-video active button, **accent border + accent title**. Single source of truth; all five modal sites route through it (previously each repeated the 5-line style block, none set the border/title).
+- **Contextual titles**: `confirm`/`confirmOK` (`edit.go`) gained a leading `title` param. Item delete → ` Delete task ` / ` Delete event ` (from `loc`); calendar/list delete (`calendar.go`) → ` Delete calendar ` / ` Delete list ` (mode-aware); detach task occurrence (`recur_edit.go`) → ` Detach occurrence `; recurring scope picker → ` Recurring event ` / ` Recurring task ` (body simplified to "Apply change to:"); conflict resolve (`conflicts.go`) → ` Resolve conflict `.
+- Behavior unchanged (sizing, buttons, keys); chrome-only. Removed the now-unused `tcell` import from `recur_edit.go`.
+- **Repro-first (TDD)**: `internal/ui/modalstyle_test.go` (new) — `TestConfirmModalHasAccentChrome` asserts a styled modal has its title and renders an accent-colored border cell. RED (undefined `styleModal`) before, green after.
+- Full gate green (`go test ./...`, `go vet ./...`, `staticcheck ./...`, `go build ./...`).
+- Files: `internal/ui/forms.go`, `internal/ui/edit.go`, `internal/ui/calendar.go`, `internal/ui/recur_edit.go`, `internal/ui/conflicts.go`, `internal/ui/modalstyle_test.go` (new), `log.md`.
+
 ## 2026-07-23 — v1.3.0 bugfixes: nested-modal focus softlock + dropdown selection legibility
 
 - Two bugs found in the just-built recurrence UI, fixed repro-first (systematic-debugging → failing test → root-cause fix → guardrail).

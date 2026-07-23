@@ -84,11 +84,7 @@ func (a *app) chooseResolution(list *tview.List, c store.Conflict) {
 			}
 			a.populateConflicts(list)
 		})
-	modal.SetBackgroundColor(tcell.ColorDefault)
-	modal.SetTextColor(tcell.ColorDefault)
-	modal.SetButtonBackgroundColor(tcell.ColorDefault)
-	modal.SetButtonTextColor(tcell.ColorDefault)
-	modal.SetButtonActivatedStyle(tcell.StyleDefault.Reverse(true))
+	styleModal(modal, " Resolve conflict ")
 
 	a.root.AddPage(pageConflictChoose, modal, true, true)
 	a.tv.SetFocus(modal)

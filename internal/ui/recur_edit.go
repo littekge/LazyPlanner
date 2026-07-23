@@ -5,7 +5,6 @@ import (
 	"errors"
 	"time"
 
-	"github.com/gdamore/tcell/v2"
 	"github.com/rivo/tview"
 
 	"github.com/littekge/LazyPlanner/internal/model"
@@ -46,7 +45,7 @@ func (a *app) pickRecurrenceScope(noun string, includeFuture bool, onPick func(r
 	labels = append(labels, "Cancel")
 
 	modal := tview.NewModal().
-		SetText("Recurring " + noun + " — apply change to:").
+		SetText("Apply change to:").
 		AddButtons(labels).
 		SetDoneFunc(func(_ int, label string) {
 			a.closeModal(pageConfirm)
@@ -57,12 +56,7 @@ func (a *app) pickRecurrenceScope(noun string, includeFuture bool, onPick func(r
 				}
 			}
 		})
-	// Shared popup look (matching confirm).
-	modal.SetBackgroundColor(tcell.ColorDefault)
-	modal.SetTextColor(tcell.ColorDefault)
-	modal.SetButtonBackgroundColor(tcell.ColorDefault)
-	modal.SetButtonTextColor(tcell.ColorDefault)
-	modal.SetButtonActivatedStyle(tcell.StyleDefault.Reverse(true))
+	styleModal(modal, " Recurring "+noun+" ")
 	a.captureFocus()
 	a.root.AddPage(pageConfirm, modal, true, true)
 	a.tv.SetFocus(modal)
@@ -142,7 +136,7 @@ func (a *app) editTodoThisOccurrence(loc store.Located, uid string) {
 		return
 	}
 	// This scope splits the task in two, which isn't obvious — confirm first.
-	a.confirmOK("Edit only this occurrence? It becomes a separate one-off task and the recurring series advances to its next occurrence.", "Detach", func() {
+	a.confirmOK(" Detach occurrence ", "Edit only this occurrence? It becomes a separate one-off task and the recurring series advances to its next occurrence.", "Detach", func() {
 		a.editTodoDetachForm(loc, uid, td)
 	})
 }
