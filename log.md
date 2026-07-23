@@ -4,6 +4,16 @@
 
 ---
 
+## 2026-07-23 — Docs: reinstate SELECT as v1.4.0, polish to v1.5.0; de-creep Current State
+
+- Owner reversed the prior day's SELECT-mode decision (main.md, in place): SELECT is too big to drop.
+  - **v1.4.0 is SELECT mode again** — the `### v1.4.0` section rewritten from "polishing & auditing" back to the SELECT-mode scope (multi-select layer, mode-composition core built on `interactionMode`, no parallel enum), moved up from the Future-versions deferred list.
+  - **v1.5.0 is now polishing & auditing** — new `### v1.5.0` section carrying the consolidation/maintenance scope formerly at v1.4.0.
+  - Future-versions intro updated (feature line now closes at v1.4.0; polish is v1.5.0); SELECT removed from the deferred-ideas list.
+- **De-creep the Current State section**: it had been appended to rather than updated in place, narrating each release's implement/verify/release dates. Rewritten tight — states only what's current (v1.0.0–v1.2.0 released, v1.3.0 in progress with two UI items left, v1.4.0 SELECT / v1.5.0 polish ahead). Per-version release history stays in the Build Plan subsections, where it belongs.
+- No code change.
+- Files: `main.md`, `log.md`.
+
 ## 2026-07-23 — Docs: roadmap restructure — fold two items into v1.3.0, scrap SELECT, re-slot v1.4.0
 
 - Owner-directed roadmap change (main.md, in place):

@@ -44,7 +44,11 @@ LazyPlanner is a terminal-based todo-list and calendar management program. It is
 
 ## Current State
 
-**v1.0.0 is complete** (2026-07-12; all thirteen Build Plan steps), followed by a continuous **hardening & audit phase** (patch-level v1.0.x bug-hunting, resilience, and consistency work) and now **feature versions**: **v1.1.0 (account switching) is released** (implemented 2026-07-21, live-verified and released 2026-07-22) and **v1.2.0 (quick-add parser improvements) is released** (all six build steps implemented 2026-07-22, released 2026-07-23). The **v1.3.0 (recurrence-rule UI) core is implemented** (all six build steps, 2026-07-23) plus post-build dialog polish, but **two more UI items remain before release** — a custom-recurrence form redesign and a rigorous confirm for irreversible (calendar/list) deletes. After v1.3.0 ships, the project turns to **polishing & auditing** (v1.4.0); the previously-planned SELECT mode is **deferred** (a sound idea, but out of time for this project). Audit coverage and residual risk are tracked in `docs/audit/COVERAGE.md`, and the Build Plan below carries a one-line summary of every hardening pass and a subsection per feature version. Sync findings are verified headlessly; the opt-in live CalDAV suite (run against a throwaway test account) is available on demand.
+**v1.0.0 through v1.2.0 are released** (see the Build Plan subsections for each). Current work is **v1.3.0 (recurrence-rule UI)**: its core — all six build steps — is implemented plus post-build dialog polish, but **two UI items remain before release** — a custom-recurrence form redesign and a rigorous confirm for irreversible (calendar/list) deletes.
+
+The roadmap past v1.3.0 is two more feature/maintenance versions: **v1.4.0 is SELECT mode** (a vim-style multi-select layer) and **v1.5.0 is final polishing & auditing**.
+
+Running alongside every version is a continuous **hardening & audit phase** (patch-level v1.0.x bug-hunting, resilience, and consistency work); coverage and residual risk are tracked in `docs/audit/COVERAGE.md`, and the Build Plan below carries a one-line summary of every hardening pass and a subsection per feature version. Sync findings are verified headlessly; the opt-in live CalDAV suite (run against a throwaway test account) is available on demand.
 
 ---
 
@@ -448,15 +452,18 @@ Behavior refinements after the six-step build (per-change detail lives in `log.m
 - **Custom-recurrence form redesign.** The Custom… repeat sub-form (`recurcustom.go`) feels cumbersome; rework its layout for a lighter, less dense feel.
 - **Rigorous confirm for irreversible deletes.** Collection deletion (`deleteCollection`, `D`) isn't undoable — it uses the ordinary one-button confirm and pushes no undo op, unlike item deletes. Give calendar/list deletes a stronger, distinct confirmation (e.g. type-to-confirm the name).
 
-### v1.4.0 — polishing & auditing (planned)
+### v1.4.0 — SELECT mode (planned)
 
-The last planned feature work lands in v1.3.0; from there the project is in **maintenance**. v1.4.0 is a consolidation phase — UI/UX polish and a resumed hardening-audit cadence (the continuous audit phase carries on; see the pass ledger and `docs/audit/COVERAGE.md`) rather than a new feature. Scoped in detail when it begins. (This slot was formerly SELECT mode; that feature is deferred — see Future versions.)
+A vim-style multi-select layer: select multiple tasks/subtasks in the tree, days in the calendar, or events within a drilled day, then bulk complete/delete/yank-paste/grab over the selection. The design core is **mode composition** — SELECT is reachable from any context where a selection is meaningful, and modes nest (e.g. DRILL → SELECT → GRAB), built on the existing `interactionMode` seam, **never** a parallel mode enum (hard-won guardrail). Scoped into build steps when it begins.
+
+### v1.5.0 — polishing & auditing (planned)
+
+The last planned feature work lands in v1.4.0; from there the project is in **maintenance**. v1.5.0 is a consolidation phase — UI/UX polish and a resumed hardening-audit cadence (the continuous audit phase carries on; see the pass ledger and `docs/audit/COVERAGE.md`) rather than a new feature. Scoped in detail when it begins.
 
 ### Future versions
 
-With the planned feature line closing at v1.3.0 (v1.4.0 is polish & audit), no further versions are committed. Should feature work resume, it gets planned here first: talk the version through with an agent, write its scope as a new `### v1.x.0` subsection (feature versions minor-bump; hardening stays patch-level), and only then implement step by step. Deferred ideas, in no particular order:
+With the planned feature line closing at v1.4.0 (v1.5.0 is polish & audit), no further versions are committed. Should feature work resume, it gets planned here first: talk the version through with an agent, write its scope as a new `### v1.x.0` subsection (feature versions minor-bump; hardening stays patch-level), and only then implement step by step. Deferred ideas, in no particular order:
 
-- **SELECT mode** (deferred 2026-07-23 — a sound idea, out of time for this project). A vim-style multi-select layer: select multiple tasks/subtasks in the tree, days in the calendar, or events within a drilled day; bulk complete/delete/yank-paste/grab over the selection. The design core is mode composition (SELECT reachable from any context where a selection is meaningful, modes nesting e.g. DRILL → SELECT → GRAB), built on the existing `interactionMode` seam — never a parallel mode enum (hard-won guardrail).
 - **Configurable keybindings** — a `[keys]` config section (the schema deliberately left room; see Configuration & credentials).
 - **Persistent trash** — undo today is session-scoped; deferred unless it proves needed.
 - **Conflict "keep both as separate items"** — a third resolution besides keep-local/keep-server; needs a new-UID clone.
