@@ -4,6 +4,15 @@
 
 ---
 
+## 2026-07-23 — Docs: roadmap restructure — fold two items into v1.3.0, scrap SELECT, re-slot v1.4.0
+
+- Owner-directed roadmap change (main.md, in place):
+  - The two UI items noted earlier (custom-recurrence form redesign; rigorous irreversible-delete confirm) are now **v1.3.0 scope** — moved out of the Future-versions backlog into a **"Planned before release"** group under v1.3.0's Post-Build Incremental Changes. v1.3.0 Status + Current State updated to say two UI items remain before release.
+  - **SELECT mode scrapped as v1.4.0** — the `### v1.4.0 — SELECT mode (planned)` section removed; the idea is preserved, **deferred**, as a candidate under Future versions ("a sound idea, out of time").
+  - **v1.4.0 re-slotted to "polishing & auditing"** (the phase formerly mentally at v1.5.0): a consolidation/maintenance phase, not a new feature; scoped in detail when it begins. Future-versions intro now states the feature line closes at v1.3.0.
+- No code change.
+- Files: `main.md`, `log.md`.
+
 ## 2026-07-23 — Docs: record next-up UI backlog items
 
 - Added two owner-noted UI items to `main.md`'s Future-versions "Known candidates awaiting a version" list (backlog, undesigned): **Custom-recurrence form redesign** (make the Custom… sub-form less cumbersome) and **rigorous confirm for irreversible deletes** (collection delete isn't undoable — verified `deleteCollection` uses the ordinary confirm and pushes no undo op).

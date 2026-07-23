@@ -44,7 +44,7 @@ LazyPlanner is a terminal-based todo-list and calendar management program. It is
 
 ## Current State
 
-**v1.0.0 is complete** (2026-07-12; all thirteen Build Plan steps), followed by a continuous **hardening & audit phase** (patch-level v1.0.x bug-hunting, resilience, and consistency work) and now **feature versions**: **v1.1.0 (account switching) is released** (implemented 2026-07-21, live-verified and released 2026-07-22) and **v1.2.0 (quick-add parser improvements) is released** (all six build steps implemented 2026-07-22, released 2026-07-23). **v1.3.0 (recurrence-rule UI) is implemented** (all six build steps, 2026-07-23) and **awaiting the owner's release**; SELECT mode is next at v1.4.0. Audit coverage and residual risk are tracked in `docs/audit/COVERAGE.md`, and the Build Plan below carries a one-line summary of every hardening pass and a subsection per feature version. Sync findings are verified headlessly; the opt-in live CalDAV suite (run against a throwaway test account) is available on demand.
+**v1.0.0 is complete** (2026-07-12; all thirteen Build Plan steps), followed by a continuous **hardening & audit phase** (patch-level v1.0.x bug-hunting, resilience, and consistency work) and now **feature versions**: **v1.1.0 (account switching) is released** (implemented 2026-07-21, live-verified and released 2026-07-22) and **v1.2.0 (quick-add parser improvements) is released** (all six build steps implemented 2026-07-22, released 2026-07-23). The **v1.3.0 (recurrence-rule UI) core is implemented** (all six build steps, 2026-07-23) plus post-build dialog polish, but **two more UI items remain before release** — a custom-recurrence form redesign and a rigorous confirm for irreversible (calendar/list) deletes. After v1.3.0 ships, the project turns to **polishing & auditing** (v1.4.0); the previously-planned SELECT mode is **deferred** (a sound idea, but out of time for this project). Audit coverage and residual risk are tracked in `docs/audit/COVERAGE.md`, and the Build Plan below carries a one-line summary of every hardening pass and a subsection per feature version. Sync findings are verified headlessly; the opt-in live CalDAV suite (run against a throwaway test account) is available on demand.
 
 ---
 
@@ -399,7 +399,7 @@ Extend the quick-add smart parser with four grammar additions — time ranges, s
 
 ### v1.3.0 — recurrence-rule UI (implemented 2026-07-23)
 
-**Status**: all six build steps implemented repro-first with green full gates (2026-07-23); awaiting the owner's release/tag. Verified headlessly — the model spec↔RRULE round-trip + unrepresentable catalogue, the rewrite primitives (orphan pruning, EXDATE keep, all-day date-only UNTIL, split-with-new-rule), the extended `FuzzRecurrenceMutations`, and the UI seeding/read/sub-form + display-stress + focus-stack tests.
+**Status**: the recurrence-rule UI — all six build steps — is implemented repro-first with green full gates (2026-07-23), followed by post-build dialog polish. **Two UI items remain before release** (see Post-Build Incremental Changes): the custom-recurrence form redesign and the rigorous irreversible-delete confirm. Verified headlessly — the model spec↔RRULE round-trip + unrepresentable catalogue, the rewrite primitives (orphan pruning, EXDATE keep, all-day date-only UNTIL, split-with-new-rule), the extended `FuzzRecurrenceMutations`, and the UI seeding/read/sub-form + display-stress + focus-stack tests.
 
 Close the recurrence-creation gap in the full forms (acknowledged 2026-07-22: quick-add v1.2.0 is otherwise the only in-app way to create a recurring item, and an existing rule can't be rewritten in-app at all). A **Repeat field** in both full forms plus a **Custom… sub-form**, with Google-Calendar-style expressiveness — the owner's benchmark use case is "every week on Tuesday and Thursday until an end date". All decisions owner-settled 2026-07-23.
 
@@ -434,7 +434,7 @@ Close the recurrence-creation gap in the full forms (acknowledged 2026-07-22: qu
 
 #### Post-Build Incremental Changes
 
-Behavior refinements made after the six-step build, each shipped with tests and a green gate (per-change detail lives in `log.md`):
+Behavior refinements after the six-step build (per-change detail lives in `log.md`). **Shipped** items each carry tests and a green gate:
 
 - **Unified dialog chrome.** Every dialog shares one look — the multi-field forms and the confirmation/picker modals alike: an accent rounded border, a contextual title, and the unified terminal-default background with no contrast band. A shared `styleModal` gives the `tview.Modal` confirms/pickers the treatment the forms get from `stylePopup`; each title names the action (` Delete task `, ` Recurring event `, ` Resolve conflict `, …). Selection highlighting is theme-adaptive everywhere, dropdown lists included.
 
@@ -443,20 +443,20 @@ Behavior refinements made after the six-step build, each shipped with tests and 
   - **DRILL**: keys reach the focused field — a text field types normally (so `hjkl` are letters and `←`/`→` move the cursor), `Enter` commits and **advances** (auto-drilling the next text field, but stopping in NORMAL on a dropdown/checkbox/button), and `Esc` returns to NORMAL keeping the value. Opening a dropdown (`Enter` in NORMAL) hands off to tview's native list — navigated with `↑`/`↓` (plus type-ahead), `Enter` selects → NORMAL, `Esc` aborts, no auto-advance. The open list is arrow-only rather than `j`/`k` because tview reinstalls its own key capture on the list each time it opens; `j`/`k` remain the field/button navigators in NORMAL.
   - `Tab`/`Shift-Tab` remain aliases for advance / previous. The NORMAL/DRILL state surfaces through the existing `interactionMode` badge.
 
-### v1.4.0 — SELECT mode (planned)
+**Planned before release** (owner-scoped 2026-07-23; each brainstormed into a detailed plan when picked up, then built repro-first):
 
-A vim-style multi-select interaction layer. Goal-level scope (owner decisions 2026-07-21; deferred to v1.4.0 on 2026-07-22); detailed design before implementation, written here first.
+- **Custom-recurrence form redesign.** The Custom… repeat sub-form (`recurcustom.go`) feels cumbersome; rework its layout for a lighter, less dense feel.
+- **Rigorous confirm for irreversible deletes.** Collection deletion (`deleteCollection`, `D`) isn't undoable — it uses the ordinary one-button confirm and pushes no undo op, unlike item deletes. Give calendar/list deletes a stronger, distinct confirmation (e.g. type-to-confirm the name).
 
-- **Selection domains**: multiple tasks/subtasks in the task tree; multiple days in the calendar; multiple events within a drilled day.
-- **Bulk operations** over a selection: complete/uncomplete, delete, yank & paste (move), and grab (temporal shift).
-- **Mode composition is the design core**: SELECT is reachable from any mode whose context makes a selection meaningful, and modes nest (e.g. DRILL → SELECT → GRAB on several events of one day). Semantics differ per view (month vs week/day) and per domain — the deep-dive must enumerate the full mode-state space, define what each operation means in each domain, and build on the existing `interactionMode` seam, never a parallel mode enum (hard-won guardrail).
+### v1.4.0 — polishing & auditing (planned)
+
+The last planned feature work lands in v1.3.0; from there the project is in **maintenance**. v1.4.0 is a consolidation phase — UI/UX polish and a resumed hardening-audit cadence (the continuous audit phase carries on; see the pass ledger and `docs/audit/COVERAGE.md`) rather than a new feature. Scoped in detail when it begins. (This slot was formerly SELECT mode; that feature is deferred — see Future versions.)
 
 ### Future versions
 
-New feature work gets planned here first: talk the version through with an agent, write its scope as a new `### v1.x.0` subsection (feature versions minor-bump; hardening stays patch-level), and only then implement step by step. Known candidates awaiting a version, in no particular order:
+With the planned feature line closing at v1.3.0 (v1.4.0 is polish & audit), no further versions are committed. Should feature work resume, it gets planned here first: talk the version through with an agent, write its scope as a new `### v1.x.0` subsection (feature versions minor-bump; hardening stays patch-level), and only then implement step by step. Deferred ideas, in no particular order:
 
-- **Custom-recurrence form redesign** (next-up UI) — the Custom… repeat sub-form (`recurcustom.go`) feels cumbersome; rework its layout for a lighter, less dense feel.
-- **Rigorous confirm for irreversible deletes** (next-up UI) — collection deletion (`deleteCollection`, `D`) isn't undoable: it uses the ordinary one-button confirm and pushes no undo op, unlike item deletes. Give calendar/list deletes a stronger, distinct confirmation (e.g. type-to-confirm the name).
+- **SELECT mode** (deferred 2026-07-23 — a sound idea, out of time for this project). A vim-style multi-select layer: select multiple tasks/subtasks in the tree, days in the calendar, or events within a drilled day; bulk complete/delete/yank-paste/grab over the selection. The design core is mode composition (SELECT reachable from any context where a selection is meaningful, modes nesting e.g. DRILL → SELECT → GRAB), built on the existing `interactionMode` seam — never a parallel mode enum (hard-won guardrail).
 - **Configurable keybindings** — a `[keys]` config section (the schema deliberately left room; see Configuration & credentials).
 - **Persistent trash** — undo today is session-scoped; deferred unless it proves needed.
 - **Conflict "keep both as separate items"** — a third resolution besides keep-local/keep-server; needs a new-UID clone.
