@@ -855,9 +855,16 @@ func (a *app) closeModal(name string) {
 
 // captureFocus records the focused primitive (and any calendar drill-in state)
 // before a modal opens.
+//
+// The calendar drill-in state is captured only when this modal is opening over
+// the main layout (no modal already open) — that's the only case the covered
+// focus is the calendar grid. For a modal nested over another modal (e.g. the
+// Custom… repeat sub-form over the item form), the covered focus is the outer
+// modal, so restoreFocus must return there; capturing the calendar drill state
+// then would make restoreFocus re-drill the calendar and strand the outer modal.
 func (a *app) captureFocus() {
 	fs := focusState{prim: a.tv.GetFocus()}
-	if a.mode == modeCalendar {
+	if a.mode == modeCalendar && !a.modalOpen() {
 		if g, ok := a.calendarPrimitive().(calGrid); ok {
 			fs.calDay, fs.calEvent, fs.calIndex = g.drillState()
 		}

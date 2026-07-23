@@ -28,6 +28,12 @@ func (f *caretForm) addInput(label, value string, width int) *tview.InputField {
 
 func (f *caretForm) addDropDown(label string, options []string, initial int) *tview.DropDown {
 	dd := tview.NewDropDown().SetLabel(caretGutter+label).SetOptions(options, nil).SetCurrentOption(initial)
+	// The open list must set a theme-adaptive selected style for the same reason
+	// every tview.List does (see selectionStyle / TestSelectionIsLegible): the
+	// app's terminal-default background makes tview's default selected style
+	// (light bar, terminal-default ink) render illegibly. tcell.StyleDefault keeps
+	// unselected rows on the unified background.
+	dd.SetListStyles(tcell.StyleDefault, selectionStyle)
 	f.AddFormItem(dd)
 	f.labels = append(f.labels, label)
 	return dd

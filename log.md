@@ -4,6 +4,16 @@
 
 ---
 
+## 2026-07-23 — v1.3.0 bugfixes: nested-modal focus softlock + dropdown selection legibility
+
+- Two bugs found in the just-built recurrence UI, fixed repro-first (systematic-debugging → failing test → root-cause fix → guardrail).
+- **Softlock (bug 1)**: saving/closing the Custom… repeat sub-form returned focus to the drilled calendar behind the still-open item form, which then couldn't be reached or closed. **Root cause**: `captureFocus` (`internal/ui/edit.go`) recorded the calendar drill state for *every* modal while `mode == modeCalendar`, including a nested one — so `restoreFocus` re-drilled the calendar and focused the grid past the outer form. **Fix**: capture the drill state only when no modal is already open (`&& !a.modalOpen()`); a nested modal's captured focus now points at the outer modal.
+- **Dropdown legibility (bug 2)**: the recurrence dropdowns rendered the selected row white-on-white — the same class already fixed for `tview.List`, reappearing for `tview.DropDown` (whose embedded list wasn't styled). **Fix**: `caretForm.addDropDown` (`internal/ui/forms.go`) now calls `SetListStyles(tcell.StyleDefault, selectionStyle)`, so every form dropdown (priority, Repeat, the Custom sub-form's Unit/Monthly-by/Ends) is legible.
+- **Guardrail (`CLAUDE.md`)**: the "every List sets `selectionStyle`" bullet broadened to include `DropDown`s via `SetListStyles` (class has now reappeared twice); added a new bullet — a modal nested over another modal must not restore focus to the calendar (`captureFocus` + `!modalOpen()`).
+- **Repro-first**: `internal/ui/recurbugfix_test.go` (new) — `TestNestedModalOverDrilledCalendarKeepsFormFocus` (reproduced the softlock: focus escaped to `*ui.calendarView`) and `TestDropDownSelectionIsLegible` (open-dropdown selected row must be reverse-video). Both RED before, green after.
+- Full gate green (`go test ./...`, `go vet ./...`, `staticcheck ./...`, `go build ./...`).
+- Files: `internal/ui/edit.go`, `internal/ui/forms.go`, `internal/ui/recurbugfix_test.go` (new), `CLAUDE.md`, `log.md`.
+
 ## 2026-07-23 — v1.3.0 step 6: docs ripple — v1.3.0 build complete
 
 - Final v1.3.0 build step — no code, docs brought current with the shipped Repeat field.
