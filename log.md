@@ -4,6 +4,16 @@
 
 ---
 
+## 2026-07-23 — v1.3.0 step 2: RecurSpec decomposer (RRULE → spec, conservative)
+
+- Implemented the second v1.3.0 build step — `RecurSpecFromRule(*rrule.ROption, anchor)` (`internal/model/recurdecompose.go`), the RRULE→spec decomposer that seeds the Repeat form from an existing rule.
+- **Conservative by design**: returns ok=false (rule stays "Custom (kept)", preserved byte-for-byte) for anything outside the vocabulary — BYSETPOS, sub-daily FREQ, BYYEARDAY/BYWEEKNO/BYHOUR/BYMINUTE/BYSECOND/BYEASTER, non-Monday WKST, nth-ordinal on a weekly rule, `MONTHLY;BYDAY=TU` (no ordinal), a 5th/other out-of-range nth, both COUNT and UNTIL, and any BYMONTH on monthly.
+- **Anchor-contradiction rule**: a monthly BYMONTHDAY / nth-weekday, or a yearly BYMONTH/BYMONTHDAY, that disagrees with the DTSTART/DUE date returns ok=false (the editable set derives those from the start date, so a disagreeing rule can't be seeded faithfully). Helpers `decodeMonthly`, `decodeYearly`, `nthMatchesAnchor`, `rruleToWeekday`.
+- **Round-trip identity**: every representable spec survives serialize→parse→decompose unchanged (mirrors the real path — go-ical's `RecurrenceRule()` calls `rrule.StrToROption`).
+- **Repro-first (TDD)**: `internal/model/recurdecompose_test.go` (new) — the round-trip identity table (daily/weekly/monthly-by-day/monthly-nth/last/yearly, interval/count/until), the unrepresentable catalogue (21 cases), and an anchor-consistent-accept complement. RED (undefined) before, green after.
+- Full gate green (`go test ./...`, `go vet ./...`, `staticcheck ./...`, `go build ./...`).
+- Files: `internal/model/recurdecompose.go` (new), `internal/model/recurdecompose_test.go` (new), `log.md`.
+
 ## 2026-07-23 — v1.3.0 step 1: RecurSpec extension (interval, weekday set, monthly nth, end conditions) + humanizer
 
 - Implemented the first v1.3.0 build step — extended `RecurSpec` (`internal/model/quickadd.go`) to the full Google-custom vocabulary, zero-value compatible so quick-add behavior is unchanged.
