@@ -6,6 +6,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/gdamore/tcell/v2"
 	"github.com/rivo/tview"
 
 	"github.com/littekge/LazyPlanner/internal/store"
@@ -226,5 +227,65 @@ func TestCollectionDeleteNameMatches(t *testing.T) {
 				t.Errorf("collectionDeleteNameMatches(%q, %q) = %v, want %v", c.typed, c.target, got, c.want)
 			}
 		})
+	}
+}
+
+// TestCollectionDeleteRequiresTypedName: the collection-delete dialog deletes
+// only when the typed text matches the name — a wrong name keeps the form open
+// and deletes nothing; the correct name (whitespace-padded, to exercise the trim)
+// deletes and closes the modal.
+func TestCollectionDeleteRequiresTypedName(t *testing.T) {
+	a := newRootedTestApp(t, time.Date(2026, 7, 5, 12, 0, 0, 0, time.UTC))
+	a.setMode(modeCalendar)
+	id := a.selectedCalendarID()
+	if id == "" {
+		t.Skip("no calendar in the fixture")
+	}
+	cal, ok := a.store.Calendar(id)
+	if !ok {
+		t.Fatalf("selected calendar %q not found", id)
+	}
+
+	f := a.promptDeleteCollection(id, cal)
+	in, ok := a.tv.GetFocus().(*tview.InputField)
+	if !ok {
+		t.Fatalf("focus after opening the dialog is %T, want the confirm *tview.InputField", a.tv.GetFocus())
+	}
+
+	// NORMAL-mode nav: g → first element (the input), j → the Delete button, Enter → activate.
+	var focus func(tview.Primitive)
+	focus = func(p tview.Primitive) { p.Focus(focus) }
+	activateDelete := func() {
+		focus(f)
+		f.InputHandler()(runeKey('g'), focus)
+		f.InputHandler()(runeKey('j'), focus)
+		f.InputHandler()(keyEv(tcell.KeyEnter), focus)
+	}
+
+	// Wrong name: nothing deleted, form still open.
+	in.SetText("definitely not the name")
+	activateDelete()
+	if _, ok := a.store.Calendar(id); !ok {
+		t.Fatal("a wrong name deleted the calendar")
+	}
+	if name, _ := a.root.GetFrontPage(); name != pageForm {
+		t.Errorf("front page after a wrong name = %q, want the dialog still open (%q)", name, pageForm)
+	}
+
+	// Correct name, whitespace-padded: deleted, modal closed. MarkCalendarDeleted
+	// marks a pendingDelete tombstone (the server DELETE + local removal happen on
+	// the next sync), so Store.Calendar(id) — the internal lookup the sync engine
+	// still needs to find the tombstone — keeps returning it; Calendars(), the
+	// UI-facing list, is where the deletion is observable.
+	in.SetText("  " + cal.DisplayName + "  ")
+	activateDelete()
+	for _, c := range a.store.Calendars() {
+		if c.ID == id {
+			t.Error("typing the correct name did not delete the calendar")
+			break
+		}
+	}
+	if name, _ := a.root.GetFrontPage(); name != pageMain {
+		t.Errorf("front page after delete = %q, want the modal closed (%q)", name, pageMain)
 	}
 }

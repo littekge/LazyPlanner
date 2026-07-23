@@ -299,23 +299,44 @@ func (a *app) deleteCollection() {
 		return
 	}
 
-	prompt := fmt.Sprintf("Delete calendar %q", cal.DisplayName)
-	if n := len(cal.Resources); n > 0 {
-		prompt += fmt.Sprintf(" and its %d item(s)", n)
-	}
-	prompt += "?\nThis also deletes it on the server on the next sync."
+	a.promptDeleteCollection(id, cal)
+}
 
-	title := " Delete calendar "
+// promptDeleteCollection opens the rigorous type-to-confirm dialog for deleting a
+// calendar/list. Unlike an item delete, a collection delete is not undoable (it
+// pushes no undo op), so the user must type the collection's exact name before
+// Delete fires — a stray keystroke can't wipe a whole collection. Returns the form
+// so tests can drive it; the production caller ignores the return.
+func (a *app) promptDeleteCollection(id string, cal store.Calendar) *caretForm {
+	noun := "calendar"
 	if a.mode == modeTasks {
-		title = " Delete list "
+		noun = "list"
 	}
-	a.confirm(title, prompt, func() {
+	title := fmt.Sprintf(" ⚠ Delete %s %q — cannot be undone ", noun, cal.DisplayName)
+	if n := len(cal.Resources); n > 0 {
+		title = fmt.Sprintf(" ⚠ Delete %s %q (%d item(s)) — cannot be undone ", noun, cal.DisplayName, n)
+	}
+
+	f := newCaretForm()
+	nameField := f.addInput("Type name to confirm", "", 0)
+	f.stylePopup()
+	f.AddButton("Delete", func() {
+		if !collectionDeleteNameMatches(nameField.GetText(), cal.DisplayName) {
+			a.flash("Name doesn't match — type it exactly to delete")
+			return // keep the dialog open for another attempt
+		}
 		if err := a.store.MarkCalendarDeleted(context.Background(), id); err != nil {
 			a.flashErr("Delete", err)
 			return
 		}
 		a.refresh("")
+		a.closeModal(pageForm)
 		a.scheduleSyncDebounced()
 		a.flash(fmt.Sprintf("Deleted %q", cal.DisplayName))
 	})
+	f.AddButton("Cancel", func() { a.closeModal(pageForm) })
+	f.SetCancelFunc(func() { a.closeModal(pageForm) })
+	f.SetBorder(true).SetTitle(title)
+	a.openModal(pageForm, f, 62, 7)
+	return f
 }
