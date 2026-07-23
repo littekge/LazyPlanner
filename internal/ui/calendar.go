@@ -262,6 +262,15 @@ func (a *app) applyCalendarColor(calID, hex string) {
 	a.flash("Color set (pushes on next sync)")
 }
 
+// collectionDeleteNameMatches reports whether typed confirms deletion of a
+// collection named name. Trim + case-sensitive: both sides are trimmed so a
+// stored stray space can't make a name impossible to type, but the match is
+// otherwise exact — deleting a collection is not undoable, so the confirmation
+// is deliberately strict.
+func collectionDeleteNameMatches(typed, name string) bool {
+	return strings.TrimSpace(typed) == strings.TrimSpace(name)
+}
+
 // deleteCollection (D) deletes the highlighted calendar (Calendars) or task list
 // (Tasks), with a confirm. The deletion is applied on the server on the next
 // sync (or immediately locally if the calendar was never pushed).

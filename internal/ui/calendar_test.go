@@ -204,3 +204,27 @@ func TestDeleteCollectionNeedsCollectionPane(t *testing.T) {
 		t.Errorf("flash = %q, want a hint to switch panes", got)
 	}
 }
+
+func TestCollectionDeleteNameMatches(t *testing.T) {
+	cases := []struct {
+		name, typed, target string
+		want                bool
+	}{
+		{"exact", "School", "School", true},
+		{"trailing space trimmed", "School ", "School", true},
+		{"leading space trimmed", "  School", "School", true},
+		{"both sides trimmed", "  School  ", "  School  ", true},
+		{"wrong case rejected", "school", "School", false},
+		{"substring rejected", "Scho", "School", false},
+		{"empty rejected", "", "School", false},
+		{"internal spaces significant", "My List", "My List", true},
+		{"internal spaces mismatch", "MyList", "My List", false},
+	}
+	for _, c := range cases {
+		t.Run(c.name, func(t *testing.T) {
+			if got := collectionDeleteNameMatches(c.typed, c.target); got != c.want {
+				t.Errorf("collectionDeleteNameMatches(%q, %q) = %v, want %v", c.typed, c.target, got, c.want)
+			}
+		})
+	}
+}
