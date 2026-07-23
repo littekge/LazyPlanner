@@ -270,6 +270,26 @@ func TestFormTabAliasesAdvance(t *testing.T) {
 	}
 }
 
+// TestFormOpenDropdownReceivesArrowKeys: once a dropdown is open, the form's nav
+// capture must step aside so the native list gets ↑/↓/Enter — otherwise NORMAL
+// swallows the arrows as field navigation and the open list can't be steered.
+func TestFormOpenDropdownReceivesArrowKeys(t *testing.T) {
+	f := newCaretForm()
+	dd := f.addDropDown("Pick", []string{"a", "b", "c"}, 0)
+	f.stylePopup()
+	send := driveForm(t, f)
+
+	send(keyEv(tcell.KeyEnter)) // NORMAL Enter on a dropdown opens it
+	if !dd.IsOpen() {
+		t.Skip("could not open the dropdown in this build")
+	}
+	send(keyEv(tcell.KeyDown))  // move the open list's highlight to option 1
+	send(keyEv(tcell.KeyEnter)) // select it
+	if idx, _ := dd.GetCurrentOption(); idx != 1 {
+		t.Errorf("arrow+Enter in the open dropdown selected option %d, want 1 (arrows not reaching the list)", idx)
+	}
+}
+
 // TestFormNavKeepsAppFocusInSync: navigating with j must move the Application's
 // tracked focus (GetFocus) too, not just the form-internal focus — otherwise a
 // nested modal opened afterwards captures a stale primitive and restores focus to

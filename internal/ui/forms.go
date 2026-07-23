@@ -157,10 +157,26 @@ func (f *caretForm) moveFocus(i int, autoDrill bool) {
 // returning nil swallows the key and returning the event passes it to the focused
 // element's own handler.
 func (f *caretForm) navKey(ev *tcell.EventKey) *tcell.EventKey {
+	// An open dropdown still reports focus through the form (DropDown.HasFocus
+	// forwards to its open list), so this capture runs ahead of the list. Step
+	// aside entirely: the list owns ↑/↓/Enter/Esc and type-ahead until it closes.
+	if dd, ok := f.focusedDropDown(); ok && dd.IsOpen() {
+		return ev
+	}
 	if f.drilled {
 		return f.drillKey(ev)
 	}
 	return f.normalKey(ev)
+}
+
+// focusedDropDown returns the focused element when it is a dropdown.
+func (f *caretForm) focusedDropDown() (*tview.DropDown, bool) {
+	i := f.currentIndex()
+	if i < 0 || i >= f.GetFormItemCount() {
+		return nil, false
+	}
+	dd, ok := f.GetFormItem(i).(*tview.DropDown)
+	return dd, ok
 }
 
 func (f *caretForm) normalKey(ev *tcell.EventKey) *tcell.EventKey {

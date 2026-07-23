@@ -4,6 +4,14 @@
 
 ---
 
+## 2026-07-23 — Bugfix: arrow keys dead in an open form dropdown
+
+- After opening a dropdown in a form, `↑`/`↓` (and Enter) didn't steer the list. **Root cause**: `DropDown.HasFocus()` forwards to its open list, so the `caretForm` stays in the focus chain and its `navKey` input capture runs *ahead* of the open list — in NORMAL it swallowed `↓`/`↑` as field navigation, so the arrows never reached the list.
+- **Fix** (`internal/ui/forms.go`): `navKey` now checks `focusedDropDown().IsOpen()` up front and returns the event unhandled while a dropdown is open, so the native list owns `↑`/`↓`/`Enter`/`Esc` and type-ahead until it closes.
+- **Repro-first (TDD)**: `TestFormOpenDropdownReceivesArrowKeys` (`internal/ui/formnav_test.go`) — open a dropdown, `↓` then `Enter`, assert option 1 is selected. RED (selected 0 — arrows swallowed) before, green after.
+- Full gate green; `go test -race ./internal/ui/` clean.
+- Files: `internal/ui/forms.go`, `internal/ui/formnav_test.go`, `log.md`.
+
 ## 2026-07-23 — Feature: DRILL-mode form navigation
 
 - Implemented the app-wide NORMAL/DRILL input model for the full-screen form dialogs, once in the shared `caretForm` so all four forms (event, task, calendar, Custom repeat) inherit it — replacing tview's Tab-only field movement.
