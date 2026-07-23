@@ -341,3 +341,61 @@ func TestFormDrillSurfacesInModeBadge(t *testing.T) {
 		t.Error("closing the form should reset formDrill")
 	}
 }
+
+// TestFormStripDrillsAndToggles: a weekdayStrip in a caretForm is drilled into by
+// Enter in NORMAL, then Space toggles the focused day and Esc returns to NORMAL —
+// proving the strip participates in the shared DRILL model.
+func TestFormStripDrillsAndToggles(t *testing.T) {
+	a := newRootedTestApp(t, time.Date(2026, 8, 1, 12, 0, 0, 0, time.UTC))
+	f := newCaretForm()
+	strip := newWeekdayStrip("Repeat on")
+	strip.setDays(nil)
+	f.AddFormItem(strip)
+	f.labels = append(f.labels, "Repeat on")
+	f.stylePopup()
+	a.openModal(pageForm, f, 50, 6)
+
+	var focus func(tview.Primitive)
+	focus = func(p tview.Primitive) { p.Focus(focus) }
+	focus(f)
+
+	// NORMAL → Enter drills into the strip.
+	f.InputHandler()(keyEv(tcell.KeyEnter), focus)
+	if !f.drilled {
+		t.Fatal("Enter did not drill into the strip")
+	}
+	// DRILL → Right moves the cursor to Tue, Space toggles it on.
+	f.InputHandler()(keyEv(tcell.KeyRight), focus)
+	f.InputHandler()(runeKey(' '), focus)
+	if got := strip.days(); len(got) != 1 || got[0] != time.Tuesday {
+		t.Fatalf("drilled Right+Space gave days() = %v, want [Tue]", got)
+	}
+	// Esc returns to NORMAL keeping the selection.
+	f.InputHandler()(keyEv(tcell.KeyEscape), focus)
+	if f.drilled {
+		t.Error("Esc did not return to NORMAL")
+	}
+	if got := strip.days(); len(got) != 1 || got[0] != time.Tuesday {
+		t.Errorf("selection lost on Esc: days() = %v, want [Tue]", got)
+	}
+	a.closeModal(pageForm)
+}
+
+// TestCaretFormClearAndReadd: clearItems empties the item list + labels, addExisting
+// re-adds a pre-built item, keeping labels in sync (the relayout primitive).
+func TestCaretFormClearAndReadd(t *testing.T) {
+	f := newCaretForm()
+	a := f.addInput("Alpha", "1", 4)
+	f.addInput("Beta", "2", 4)
+	if f.GetFormItemCount() != 2 || len(f.labels) != 2 {
+		t.Fatalf("setup: items=%d labels=%d, want 2/2", f.GetFormItemCount(), len(f.labels))
+	}
+	f.clearItems()
+	if f.GetFormItemCount() != 0 || len(f.labels) != 0 {
+		t.Fatalf("after clearItems: items=%d labels=%d, want 0/0", f.GetFormItemCount(), len(f.labels))
+	}
+	f.addExisting(a, "Alpha")
+	if f.GetFormItemCount() != 1 || len(f.labels) != 1 || f.labels[0] != "Alpha" {
+		t.Fatalf("after addExisting: items=%d labels=%v, want 1/[Alpha]", f.GetFormItemCount(), f.labels)
+	}
+}

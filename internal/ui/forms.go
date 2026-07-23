@@ -31,14 +31,18 @@ func (f *caretForm) addInput(label, value string, width int) *tview.InputField {
 	return in
 }
 
-func (f *caretForm) addDropDown(label string, options []string, initial int) *tview.DropDown {
+// newFormDropDown builds a dropdown already carrying the theme-adaptive selected
+// style. Centralized so every dropdown (created directly for relayout, or via
+// addDropDown) is legible on the terminal-default background — the selectionStyle
+// guardrail that has shipped broken twice.
+func newFormDropDown(label string, options []string, initial int) *tview.DropDown {
 	dd := tview.NewDropDown().SetLabel(caretGutter+label).SetOptions(options, nil).SetCurrentOption(initial)
-	// The open list must set a theme-adaptive selected style for the same reason
-	// every tview.List does (see selectionStyle / TestSelectionIsLegible): the
-	// app's terminal-default background makes tview's default selected style
-	// (light bar, terminal-default ink) render illegibly. tcell.StyleDefault keeps
-	// unselected rows on the unified background.
 	dd.SetListStyles(tcell.StyleDefault, selectionStyle)
+	return dd
+}
+
+func (f *caretForm) addDropDown(label string, options []string, initial int) *tview.DropDown {
+	dd := newFormDropDown(label, options, initial)
 	f.AddFormItem(dd)
 	f.labels = append(f.labels, label)
 	return dd
@@ -49,6 +53,21 @@ func (f *caretForm) addCheckbox(label string, checked bool) *tview.Checkbox {
 	f.AddFormItem(cb)
 	f.labels = append(f.labels, label)
 	return cb
+}
+
+// clearItems removes all form items (keeping buttons) and resets the caret-gutter
+// label slice, so a relayout can re-add a different subset of the same widgets.
+func (f *caretForm) clearItems() {
+	f.Clear(false)
+	f.labels = f.labels[:0]
+}
+
+// addExisting re-adds a pre-built form item under base label (used for dynamic
+// relayout, where widgets persist across clearItems). Dropdowns passed here must
+// already carry selectionStyle (build them with newFormDropDown).
+func (f *caretForm) addExisting(item tview.FormItem, base string) {
+	f.AddFormItem(item)
+	f.labels = append(f.labels, base)
 }
 
 const (
@@ -69,6 +88,8 @@ func (f *caretForm) Draw(screen tcell.Screen) {
 		case *tview.DropDown:
 			it.SetLabel(gutter + base)
 		case *tview.Checkbox:
+			it.SetLabel(gutter + base)
+		case *weekdayStrip:
 			it.SetLabel(gutter + base)
 		}
 	}
@@ -112,6 +133,19 @@ func (f *caretForm) isTextField(i int) bool {
 	return ok
 }
 
+// isDrillable reports whether NORMAL Enter (and Enter-advance auto-drill) should
+// drill into the element at linear index i: a text field or the weekday strip.
+func (f *caretForm) isDrillable(i int) bool {
+	if f.isTextField(i) {
+		return true
+	}
+	if i < 0 || i >= f.GetFormItemCount() {
+		return false
+	}
+	_, ok := f.GetFormItem(i).(*weekdayStrip)
+	return ok
+}
+
 func (f *caretForm) setDrilled(d bool) {
 	f.drilled = d
 	if f.onDrill != nil {
@@ -150,7 +184,7 @@ func (f *caretForm) moveFocus(i int, autoDrill bool) {
 		i = n - 1
 	}
 	f.focusElement(i)
-	f.setDrilled(autoDrill && f.isTextField(i))
+	f.setDrilled(autoDrill && f.isDrillable(i))
 }
 
 // navKey is the form's input capture: it runs before tview's item delegation, so
@@ -233,6 +267,9 @@ func (f *caretForm) actNormal(cur int, ev *tcell.EventKey) *tcell.EventKey {
 	case *tview.Checkbox:
 		it.SetChecked(!it.IsChecked())
 		f.moveFocus(cur+1, false)
+		return nil
+	case *weekdayStrip:
+		f.setDrilled(true)
 		return nil
 	}
 	return nil
