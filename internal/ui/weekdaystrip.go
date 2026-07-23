@@ -7,8 +7,11 @@ import (
 	"github.com/rivo/tview"
 )
 
+// daysInWeek is the fixed cell count of the strip: one per weekday.
+const daysInWeek = 7
+
 // dayAbbrevs labels the strip cells Monday-first, matching mondayOrder.
-var dayAbbrevs = [7]string{"Mon", "Tue", "Wed", "Thu", "Fri", "Sat", "Sun"}
+var dayAbbrevs = [daysInWeek]string{"Mon", "Tue", "Wed", "Thu", "Fri", "Sat", "Sun"}
 
 // weekdayStrip is a single-row form item for selecting a set of weekdays: seven
 // day cells navigated with ←/→ (or h/l) and toggled with Space. It implements
@@ -21,10 +24,14 @@ type weekdayStrip struct {
 	label      string
 	labelWidth int
 	labelColor tcell.Color
-	selected   [7]bool // index 0..6 == mondayOrder (Monday..Sunday)
-	cursor     int     // focused day cell, 0..6
-	finished   func(tcell.Key)
-	disabled   bool
+	selected   [daysInWeek]bool // index 0..daysInWeek-1 == mondayOrder (Monday..Sunday)
+	cursor     int              // focused day cell, 0..daysInWeek-1
+	// finished is wired via SetFinishedFunc to satisfy tview.FormItem, but never
+	// invoked: the enclosing caretForm's drillKey intercepts Esc/Enter/Tab at the
+	// form level before they reach a drilled field, so the strip itself never
+	// needs to fire it. Kept for interface conformance, not a dropped wire.
+	finished func(tcell.Key)
+	disabled bool
 }
 
 func newWeekdayStrip(label string) *weekdayStrip {
@@ -39,7 +46,7 @@ func (w *weekdayStrip) SetLabel(label string) *weekdayStrip {
 
 // setDays seeds the selected set from a weekday list.
 func (w *weekdayStrip) setDays(days []time.Weekday) {
-	w.selected = [7]bool{}
+	w.selected = [daysInWeek]bool{}
 	for _, d := range days {
 		for i, wd := range mondayOrder {
 			if wd == d {
@@ -108,7 +115,7 @@ func (w *weekdayStrip) Draw(screen tcell.Screen) {
 	// adaptive legibility guardrail); the focused cell is underlined in the accent
 	// color so "which day is focused" reads apart from "which days are on".
 	focused := w.HasFocus()
-	for i := 0; i < 7; i++ {
+	for i := 0; i < daysInWeek; i++ {
 		style := tcell.StyleDefault
 		if w.selected[i] {
 			style = selectionStyle
@@ -156,7 +163,7 @@ func (w *weekdayStrip) moveCursor(delta int) {
 	if w.cursor < 0 {
 		w.cursor = 0
 	}
-	if w.cursor > 6 {
-		w.cursor = 6
+	if w.cursor > daysInWeek-1 {
+		w.cursor = daysInWeek - 1
 	}
 }
