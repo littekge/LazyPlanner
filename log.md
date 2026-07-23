@@ -4,6 +4,12 @@
 
 ---
 
+## 2026-07-23 — Docs: record next-up UI backlog items
+
+- Added two owner-noted UI items to `main.md`'s Future-versions "Known candidates awaiting a version" list (backlog, undesigned): **Custom-recurrence form redesign** (make the Custom… sub-form less cumbersome) and **rigorous confirm for irreversible deletes** (collection delete isn't undoable — verified `deleteCollection` uses the ordinary confirm and pushes no undo op).
+- No code change; captured for a future planning pass (each becomes a `### v1.x.0` subsection when picked up).
+- Files: `main.md`, `log.md`.
+
 ## 2026-07-23 — Bugfix: arrow keys dead in an open form dropdown
 
 - After opening a dropdown in a form, `↑`/`↓` (and Enter) didn't steer the list. **Root cause**: `DropDown.HasFocus()` forwards to its open list, so the `caretForm` stays in the focus chain and its `navKey` input capture runs *ahead* of the open list — in NORMAL it swallowed `↓`/`↑` as field navigation, so the arrows never reached the list.

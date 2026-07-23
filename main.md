@@ -455,6 +455,8 @@ A vim-style multi-select interaction layer. Goal-level scope (owner decisions 20
 
 New feature work gets planned here first: talk the version through with an agent, write its scope as a new `### v1.x.0` subsection (feature versions minor-bump; hardening stays patch-level), and only then implement step by step. Known candidates awaiting a version, in no particular order:
 
+- **Custom-recurrence form redesign** (next-up UI) — the Custom… repeat sub-form (`recurcustom.go`) feels cumbersome; rework its layout for a lighter, less dense feel.
+- **Rigorous confirm for irreversible deletes** (next-up UI) — collection deletion (`deleteCollection`, `D`) isn't undoable: it uses the ordinary one-button confirm and pushes no undo op, unlike item deletes. Give calendar/list deletes a stronger, distinct confirmation (e.g. type-to-confirm the name).
 - **Configurable keybindings** — a `[keys]` config section (the schema deliberately left room; see Configuration & credentials).
 - **Persistent trash** — undo today is session-scoped; deferred unless it proves needed.
 - **Conflict "keep both as separate items"** — a third resolution besides keep-local/keep-server; needs a new-UID clone.
