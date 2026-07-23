@@ -265,7 +265,14 @@ func TestCollectionDeleteRequiresTypedName(t *testing.T) {
 	// Wrong name: nothing deleted, form still open.
 	in.SetText("definitely not the name")
 	activateDelete()
-	if _, ok := a.store.Calendar(id); !ok {
+	found := false
+	for _, c := range a.store.Calendars() {
+		if c.ID == id {
+			found = true
+			break
+		}
+	}
+	if !found {
 		t.Fatal("a wrong name deleted the calendar")
 	}
 	if name, _ := a.root.GetFrontPage(); name != pageForm {

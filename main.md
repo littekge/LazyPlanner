@@ -447,12 +447,7 @@ Behavior refinements after the six-step build (per-change detail lives in `log.m
   - **DRILL**: keys reach the focused field — a text field types normally (so `hjkl` are letters and `←`/`→` move the cursor), `Enter` commits and **advances** (auto-drilling the next text field, but stopping in NORMAL on a dropdown/checkbox/button), and `Esc` returns to NORMAL keeping the value. Opening a dropdown (`Enter` in NORMAL) hands off to tview's native list — navigated with `↑`/`↓` (plus type-ahead), `Enter` selects → NORMAL, `Esc` aborts, no auto-advance. The open list is arrow-only rather than `j`/`k` because tview reinstalls its own key capture on the list each time it opens; `j`/`k` remain the field/button navigators in NORMAL.
   - `Tab`/`Shift-Tab` remain aliases for advance / previous. The NORMAL/DRILL state surfaces through the existing `interactionMode` badge.
 
-- **Rigorous confirm for collection deletes.** Deleting a calendar or task list
-  (`d` on the focused Calendars/Tasks pane) is not undoable, so it no longer uses
-  the one-button confirm: a type-to-confirm dialog requires typing the
-  collection's exact name (trim + case-sensitive) before **Delete** fires — a
-  mismatch flashes and keeps the dialog open. Item deletes stay on the ordinary
-  undoable confirm.
+- **Rigorous confirm for collection deletes.** Deleting a calendar or task list (`d` on the focused Calendars/Tasks pane) is not undoable, so it no longer uses the one-button confirm: a type-to-confirm dialog requires typing the collection's exact name (trim + case-sensitive) before **Delete** fires — a mismatch flashes and keeps the dialog open. Item deletes stay on the ordinary undoable confirm.
 
 **Planned before release** (owner-scoped 2026-07-23; each brainstormed into a detailed plan when picked up, then built repro-first):
 

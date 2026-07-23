@@ -312,10 +312,11 @@ func (a *app) promptDeleteCollection(id string, cal store.Calendar) *caretForm {
 	if a.mode == modeTasks {
 		noun = "list"
 	}
-	title := fmt.Sprintf(" ⚠ Delete %s %q — cannot be undone ", noun, cal.DisplayName)
+	countClause := ""
 	if n := len(cal.Resources); n > 0 {
-		title = fmt.Sprintf(" ⚠ Delete %s %q (%d item(s)) — cannot be undone ", noun, cal.DisplayName, n)
+		countClause = fmt.Sprintf(" (%d item(s))", n)
 	}
+	title := fmt.Sprintf(" ⚠ Delete %s %q%s — cannot be undone ", noun, cal.DisplayName, countClause)
 
 	f := newCaretForm()
 	nameField := f.addInput("Type name to confirm", "", 0)
