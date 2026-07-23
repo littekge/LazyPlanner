@@ -65,7 +65,7 @@ func ordinalWord(n int) string {
 type customRecurFields struct {
 	every       *tview.InputField
 	unit        *tview.DropDown
-	days        [7]*tview.Checkbox
+	strip       *weekdayStrip
 	monthly     *tview.DropDown
 	monthlyOpts []monthlyOption
 	ends        *tview.DropDown
@@ -105,7 +105,10 @@ func (a *app) wireRepeatCustom(dd *tview.DropDown, choices *model.RepeatChoices,
 
 // newCustomRepeatForm builds the Custom repeat field set seeded from seed at
 // anchor (no buttons/border — the caller adds those). Split out so it can be
-// unit-tested and draw-stressed without the running app.
+// unit-tested and draw-stressed without the running app. All widgets are built
+// once here; layoutCustomRepeat then re-adds only the subset relevant to the
+// current Unit/Ends selection, so the widgets (and their values) persist across
+// relayouts.
 func (a *app) newCustomRepeatForm(seed model.RecurSpec, anchor time.Time) (*caretForm, *customRecurFields) {
 	f := newCaretForm()
 	cf := &customRecurFields{}
@@ -114,18 +117,23 @@ func (a *app) newCustomRepeatForm(seed model.RecurSpec, anchor time.Time) (*care
 	if interval < 1 {
 		interval = 1
 	}
-	cf.every = f.addInput("Every", strconv.Itoa(interval), 4)
-	cf.unit = f.addDropDown("Unit", []string{"days", "weeks", "months", "years"}, int(seed.Freq))
-	labels := [7]string{"Mon", "Tue", "Wed", "Thu", "Fri", "Sat", "Sun"}
-	for i := 0; i < 7; i++ {
-		cf.days[i] = f.addCheckbox(labels[i], containsWeekday(seed.Weekdays, mondayOrder[i]))
+	cf.every = tview.NewInputField().SetLabel(caretGutter + "Every").SetText(strconv.Itoa(interval)).SetFieldWidth(4)
+	cf.unit = newFormDropDown("Unit", []string{"days", "weeks", "months", "years"}, int(seed.Freq))
+
+	cf.strip = newWeekdayStrip("Repeat on")
+	if len(seed.Weekdays) > 0 {
+		cf.strip.setDays(seed.Weekdays)
+	} else {
+		cf.strip.setDays([]time.Weekday{anchor.Weekday()}) // same fallback as the read path
 	}
+
 	cf.monthlyOpts = monthlyOptions(anchor)
 	monLabels := make([]string, len(cf.monthlyOpts))
 	for i, o := range cf.monthlyOpts {
 		monLabels[i] = o.label
 	}
-	cf.monthly = f.addDropDown("Monthly by", monLabels, monthlyInitIndex(cf.monthlyOpts, seed))
+	cf.monthly = newFormDropDown("Monthly by", monLabels, monthlyInitIndex(cf.monthlyOpts, seed))
+
 	endsInit, untilStr, countStr := 0, "", ""
 	switch {
 	case seed.Until != nil:
@@ -133,11 +141,51 @@ func (a *app) newCustomRepeatForm(seed model.RecurSpec, anchor time.Time) (*care
 	case seed.Count > 0:
 		endsInit, countStr = 2, strconv.Itoa(seed.Count)
 	}
-	cf.ends = f.addDropDown("Ends", []string{"Never", "On date", "After N times"}, endsInit)
-	cf.until = f.addInput("Until (YYYY-MM-DD)", untilStr, 12)
-	cf.count = f.addInput("Count", countStr, 6)
+	cf.ends = newFormDropDown("Ends", []string{"Never", "On date", "After N times"}, endsInit)
+	cf.until = tview.NewInputField().SetLabel(caretGutter + "Until (YYYY-MM-DD)").SetText(untilStr).SetFieldWidth(12)
+	cf.count = tview.NewInputField().SetLabel(caretGutter + "Count").SetText(countStr).SetFieldWidth(6)
+
 	f.stylePopup()
+
+	// Relayout when the frequency or end condition changes; focus stays on the
+	// dropdown that triggered it so the cursor doesn't jump. (Wired after the
+	// initial options are set above, so this doesn't fire during construction.)
+	cf.unit.SetSelectedFunc(func(string, int) { a.layoutCustomRepeat(f, cf, cf.unit) })
+	cf.ends.SetSelectedFunc(func(string, int) { a.layoutCustomRepeat(f, cf, cf.ends) })
+
+	a.layoutCustomRepeat(f, cf, nil) // initial layout
 	return f, cf
+}
+
+// layoutCustomRepeat re-adds only the fields relevant to the current Unit/Ends
+// selection (Every, Unit and Ends always; the weekday strip only for weeks;
+// "Monthly by" only for months; Until only for "On date"; Count only for
+// "After N times"), then restores focus to focusOn (nil → the first field). The
+// widgets persist across the clear, so values already entered survive.
+func (a *app) layoutCustomRepeat(f *caretForm, cf *customRecurFields, focusOn tview.FormItem) {
+	f.clearItems()
+	f.addExisting(cf.every, "Every")
+	f.addExisting(cf.unit, "Unit")
+	switch unitIdx, _ := cf.unit.GetCurrentOption(); unitIdx {
+	case 1: // weeks
+		f.addExisting(cf.strip, "Repeat on")
+	case 2: // months
+		f.addExisting(cf.monthly, "Monthly by")
+	}
+	f.addExisting(cf.ends, "Ends")
+	switch endsIdx, _ := cf.ends.GetCurrentOption(); endsIdx {
+	case 1: // On date
+		f.addExisting(cf.until, "Until (YYYY-MM-DD)")
+	case 2: // After N times
+		f.addExisting(cf.count, "Count")
+	}
+	// Restore focus to the field that triggered the relayout.
+	for i := 0; i < f.GetFormItemCount(); i++ {
+		if f.GetFormItem(i) == focusOn {
+			f.focusElement(i)
+			return
+		}
+	}
 }
 
 // openCustomRepeat presents the Custom repeat sub-form as a nested modal over the
@@ -164,7 +212,7 @@ func (a *app) openCustomRepeat(seed model.RecurSpec, anchor time.Time, onApply f
 		onCancel()
 	})
 	f.SetBorder(true).SetTitle(" Custom repeat ")
-	a.openModal(pageRepeat, f, 54, 22)
+	a.openModal(pageRepeat, f, 54, 12)
 }
 
 // readCustomRecur reads the sub-form into a RecurSpec, validating the numeric and
@@ -182,11 +230,7 @@ func (a *app) readCustomRecur(cf *customRecurFields, anchor time.Time) (model.Re
 	}
 	switch spec.Freq {
 	case model.FreqWeekly:
-		for i := 0; i < 7; i++ {
-			if cf.days[i].IsChecked() {
-				spec.Weekdays = append(spec.Weekdays, mondayOrder[i])
-			}
-		}
+		spec.Weekdays = cf.strip.days()
 		if len(spec.Weekdays) == 0 {
 			spec.Weekdays = []time.Weekday{anchor.Weekday()} // fall back to the start date's weekday
 		}
@@ -222,14 +266,4 @@ func monthlyInitIndex(opts []monthlyOption, seed model.RecurSpec) int {
 		}
 	}
 	return 0
-}
-
-// containsWeekday reports whether wd is in the set.
-func containsWeekday(set []time.Weekday, wd time.Weekday) bool {
-	for _, w := range set {
-		if w == wd {
-			return true
-		}
-	}
-	return false
 }

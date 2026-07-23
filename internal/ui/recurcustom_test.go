@@ -38,8 +38,7 @@ func TestReadCustomRecur(t *testing.T) {
 		_, cf := a.newCustomRepeatForm(model.RecurSpec{}, customAnchor)
 		cf.every.SetText("2")
 		cf.unit.SetCurrentOption(1) // weeks
-		cf.days[1].SetChecked(true) // Tue
-		cf.days[3].SetChecked(true) // Thu
+		cf.strip.setDays([]time.Weekday{time.Tuesday, time.Thursday})
 		spec, err := a.readCustomRecur(cf, customAnchor)
 		if err != nil {
 			t.Fatal(err)
@@ -158,6 +157,14 @@ func TestCustomRepeatDrawStress(t *testing.T) {
 			drawGeom(t, "custom-repeat", f, g.w, g.h)
 		}
 	}
+
+	// Drawing after a relayout (Unit + Ends changes) must also be panic-free.
+	f, cf := a.newCustomRepeatForm(model.RecurSpec{Freq: model.FreqWeekly}, customAnchor)
+	cf.unit.SetCurrentOption(2) // → months (relayout)
+	cf.ends.SetCurrentOption(1) // → On date (relayout)
+	for _, g := range stressGeoms {
+		drawGeom(t, "custom-repeat-relaid", f, g.w, g.h)
+	}
 }
 
 // TestCustomRepeatFocusStack verifies the sub-form nests over the item form and
@@ -179,5 +186,61 @@ func TestCustomRepeatFocusStack(t *testing.T) {
 	a.closeModal(pageRepeat)
 	if len(a.focusStack) != before {
 		t.Errorf("focus stack = %d, want %d (popped)", len(a.focusStack), before)
+	}
+}
+
+// TestCustomRepeatRelayout: changing Unit/Ends shows only the relevant fields and
+// preserves values already entered in fields that stay visible.
+func TestCustomRepeatRelayout(t *testing.T) {
+	a := newTestApp(t, time.Date(2026, 8, 1, 9, 0, 0, 0, time.UTC))
+
+	// labelsOf returns the base labels currently laid out in the form.
+	labelsOf := func(f *caretForm) []string {
+		out := make([]string, len(f.labels))
+		copy(out, f.labels)
+		return out
+	}
+	has := func(f *caretForm, want string) bool {
+		for _, l := range f.labels {
+			if l == want {
+				return true
+			}
+		}
+		return false
+	}
+
+	f, cf := a.newCustomRepeatForm(model.RecurSpec{Freq: model.FreqWeekly}, customAnchor)
+	// Weekly: the strip shows, "Monthly by" does not.
+	if !has(f, "Repeat on") || has(f, "Monthly by") {
+		t.Fatalf("weekly layout = %v, want the strip and no Monthly by", labelsOf(f))
+	}
+	cf.every.SetText("3") // a value that must survive the relayout
+
+	// Switch Unit → months: strip hides, "Monthly by" shows, Every preserved.
+	cf.unit.SetCurrentOption(2)
+	if has(f, "Repeat on") || !has(f, "Monthly by") {
+		t.Fatalf("monthly layout = %v, want Monthly by and no strip", labelsOf(f))
+	}
+	if got := cf.every.GetText(); got != "3" {
+		t.Errorf("Every = %q after relayout, want preserved %q", got, "3")
+	}
+
+	// Ends → On date reveals Until; → After N reveals Count.
+	cf.ends.SetCurrentOption(1)
+	if !has(f, "Until (YYYY-MM-DD)") || has(f, "Count") {
+		t.Errorf("ends=on-date layout = %v, want Until and no Count", labelsOf(f))
+	}
+	cf.ends.SetCurrentOption(2)
+	if !has(f, "Count") || has(f, "Until (YYYY-MM-DD)") {
+		t.Errorf("ends=after-N layout = %v, want Count and no Until", labelsOf(f))
+	}
+}
+
+// TestCustomRepeatDailyIsMinimal: a daily/never rule shows only Every, Unit, Ends.
+func TestCustomRepeatDailyIsMinimal(t *testing.T) {
+	a := newTestApp(t, time.Date(2026, 8, 1, 9, 0, 0, 0, time.UTC))
+	f, _ := a.newCustomRepeatForm(model.RecurSpec{Freq: model.FreqDaily}, customAnchor)
+	if f.GetFormItemCount() != 3 {
+		t.Errorf("daily/never form has %d fields (%v), want 3 (Every, Unit, Ends)", f.GetFormItemCount(), f.labels)
 	}
 }
