@@ -4,6 +4,13 @@
 
 ---
 
+## 2026-07-23 — v1.2.0 released; post-release verification + docs
+
+- The owner merged `ai-workspace` to `main` and tagged **v1.2.0**; the GitHub release published with the drafted "Smarter Quick-Add" release notes.
+- Verified the release landed cleanly: tag/`main`/`ai-workspace` all at `a043292`; CI (push) green on `main` and the tag; the Release workflow completed successfully; all 8 binary assets present (darwin ×2, linux ×4, windows, `sha256sums.txt`); downloaded `lazyplanner_linux_amd64`, checksum matches `sha256sums.txt`, and it runs reporting `LazyPlanner v1.2.0`. (Benign GitHub Actions annotation only: Node 20 actions auto-upgraded to Node 24.)
+- **`main.md`** updated in place: Current State and the v1.2.0 Build Plan subsection flipped from "implemented, awaiting release" to **released 2026-07-23**.
+- Files: `main.md`, `log.md`.
+
 ## 2026-07-22 — v1.2.0 step 6: docs ripple (help / README / main.md) — v1.2.0 build complete
 
 - Final v1.2.0 build step — no code, docs brought current with the shipped grammar.
