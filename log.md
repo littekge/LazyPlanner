@@ -4,6 +4,14 @@
 
 ---
 
+## 2026-07-23 — Bugfix: confirmation-modal border highlight band
+
+- The confirmation/picker modals showed a highlighted (blue) band around the border. **Root cause**: `tview.Modal`'s constructor sets its embedded `Box` background to `Styles.ContrastBackgroundColor`, but `Modal.SetBackgroundColor` resets only the frame/form — never the Box. So the box fill and the border's background stayed the contrast color (a latent issue predating the chrome work, made visible by the new accent border).
+- **Fix** (`internal/ui/forms.go`): `styleModal` now also calls `m.Box.SetBackgroundColor(tcell.ColorDefault)`, so the border sits on the unified terminal-default background with no band.
+- **Repro-first (TDD)**: `TestConfirmModalHasNoContrastHighlight` (`internal/ui/modalstyle_test.go`) — asserts no drawn cell uses `Styles.ContrastBackgroundColor`. RED (blue cells present) before, green after.
+- Full gate green (`go test ./...`, `go vet ./...`, `staticcheck ./...`, `go build ./...`).
+- Files: `internal/ui/forms.go`, `internal/ui/modalstyle_test.go`, `log.md`.
+
 ## 2026-07-23 — UI polish: standardize confirmation-dialog chrome
 
 - Confirmation/picker dialogs (`tview.Modal`) looked plainer than the forms and other popups — they lacked the accent rounded border and had no title. Standardized them to match (owner-approved: contextual title per dialog, keep tview.Modal's auto-sizing).

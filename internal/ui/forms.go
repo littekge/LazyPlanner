@@ -78,6 +78,11 @@ func (f *caretForm) Draw(screen tcell.Screen) {
 // the forms; routing all confirms/pickers through here keeps the chrome uniform.
 func styleModal(m *tview.Modal, title string) {
 	m.SetBackgroundColor(tcell.ColorDefault)
+	// Modal.SetBackgroundColor resets only the frame/form, leaving the embedded
+	// Box at tview's default ContrastBackgroundColor — which fills the box and the
+	// border's background, drawing a highlighted band around the content. Reset the
+	// Box directly so the border sits on the unified terminal-default background.
+	m.Box.SetBackgroundColor(tcell.ColorDefault)
 	m.SetTextColor(tcell.ColorDefault)
 	m.SetButtonBackgroundColor(tcell.ColorDefault)
 	m.SetButtonTextColor(tcell.ColorDefault)
