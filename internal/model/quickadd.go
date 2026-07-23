@@ -2,6 +2,7 @@ package model
 
 import (
 	"fmt"
+	"sort"
 	"strconv"
 	"strings"
 	"time"
@@ -20,25 +21,49 @@ const (
 	FreqYearly
 )
 
-// RecurSpec is a parsed simple-recurrence rule. It is deliberately small — a
-// frequency plus, for the two anchored forms, the weekday ("every mon") or
-// month/day ("every jul 20") the series lands on. It is not a raw RRULE string;
-// ROption turns it into one, and the anchoring rule (applyRecurAnchor) uses the
-// weekday/month-day to set the start/due when no explicit date was typed.
+// RecurSpec describes a recurrence rule within the vocabulary the app can edit
+// (Google-custom parity): a frequency, an "every N units" interval, and — per
+// frequency — a weekly weekday set, a monthly day-of-month or nth-weekday, or a
+// yearly date, plus an optional end condition (UNTIL or COUNT). It is not a raw
+// RRULE string; ROption turns it into one and Humanize renders it for display.
+//
+// It is zero-value compatible with the quick-add parser, which fills only Freq
+// and (for its two anchored forms) Weekdays or Month/Day. Anything the app can't
+// represent as a RecurSpec is preserved as raw bytes rather than decomposed (see
+// RecurSpecFromRule); the anchoring rule (applyRecurAnchor) uses the weekday /
+// month-day to set the start/due when no explicit date was typed.
 type RecurSpec struct {
-	Freq        RecurFreq
-	Weekday     time.Weekday // valid when HasWeekday ("every <weekday>")
-	HasWeekday  bool
-	Month       time.Month // valid when HasMonthDay ("every <month> <day>")
+	Freq     RecurFreq
+	Interval int // 0/1 = every unit; N = every N units
+
+	// Weekdays is the weekly weekday set (WEEKLY BYDAY). Quick-add's "every mon"
+	// yields a one-element slice; the Custom sub-form may set several. Empty on a
+	// plain weekly rule, which recurs on the anchor's own weekday.
+	Weekdays []time.Weekday
+
+	// Monthly-by-nth-weekday: MonthlyNth is 1..4 or -1 (last) with MonthlyWeekday
+	// the day (e.g. the 4th Tuesday). Zero MonthlyNth means monthly by
+	// day-of-month, derived from the anchor — no BY*, DTSTART carries the day.
+	MonthlyNth     int
+	MonthlyWeekday time.Weekday
+
+	// Month/Day is quick-add's "every <month> <day>" yearly anchor. The full form
+	// derives a yearly rule from the start date instead, leaving these zero.
+	Month       time.Month
 	Day         int
 	HasMonthDay bool
+
+	// End condition — at most one is set. Until (inclusive) serializes UNTIL and
+	// Count > 0 serializes COUNT; both unset means the series never ends.
+	Until *time.Time
+	Count int
 }
 
 // ROption builds the rrule-go option for this spec. DTSTART anchors the series
-// (set by the caller on the component), so the rule itself carries only the
-// frequency and, for "every <weekday>", a BYDAY — "every <month> <day>" needs
-// no BYMONTH/BYMONTHDAY because a yearly rule from the anchored DTSTART already
-// recurs on that date.
+// (set by the caller on the component), so a monthly-by-day-of-month or yearly
+// rule needs no BY* — the anchored DTSTART already recurs on that day-of-month /
+// date. A weekly weekday set becomes BYDAY, and a monthly nth-weekday becomes a
+// single ordinaled BYDAY (e.g. +4TU / -1TU).
 func (r RecurSpec) ROption() *rrule.ROption {
 	o := &rrule.ROption{}
 	switch r.Freq {
@@ -51,10 +76,101 @@ func (r RecurSpec) ROption() *rrule.ROption {
 	case FreqYearly:
 		o.Freq = rrule.YEARLY
 	}
-	if r.HasWeekday {
-		o.Byweekday = []rrule.Weekday{weekdayToRRule(r.Weekday)}
+	if r.Interval > 1 {
+		o.Interval = r.Interval
+	}
+	switch {
+	case r.Freq == FreqWeekly && len(r.Weekdays) > 0:
+		for _, wd := range r.Weekdays {
+			o.Byweekday = append(o.Byweekday, weekdayToRRule(wd))
+		}
+	case r.Freq == FreqMonthly && r.MonthlyNth != 0:
+		w := weekdayToRRule(r.MonthlyWeekday)
+		o.Byweekday = []rrule.Weekday{w.Nth(r.MonthlyNth)}
+	}
+	if r.Until != nil {
+		o.Until = r.Until.UTC().Truncate(time.Second)
+	}
+	if r.Count > 0 {
+		o.Count = r.Count
 	}
 	return o
+}
+
+// Humanize renders the spec as a human-readable phrase for the Repeat dropdown
+// and the Detail pane, e.g. "every 2 weeks on Tue, Thu until Dec 12, 2026". An
+// interval-1 rule renders as a capitalized single word ("Weekly on Tue"); an
+// interval>1 rule as "every N units". anchor supplies the parts the spec derives
+// from the start/due date: a plain monthly rule's day-of-month, a yearly rule's
+// month and day, and a weekly rule with no explicit weekday set.
+func (r RecurSpec) Humanize(anchor time.Time) string {
+	interval := r.Interval
+	if interval < 1 {
+		interval = 1
+	}
+	var b strings.Builder
+	if interval == 1 {
+		b.WriteString([...]string{"Daily", "Weekly", "Monthly", "Yearly"}[r.Freq])
+	} else {
+		fmt.Fprintf(&b, "every %d %s", interval, [...]string{"days", "weeks", "months", "years"}[r.Freq])
+	}
+	switch r.Freq {
+	case FreqWeekly:
+		b.WriteString(" on " + humanizeWeekdays(r.Weekdays, anchor))
+	case FreqMonthly:
+		if r.MonthlyNth != 0 {
+			fmt.Fprintf(&b, " on the %s %s", ordinal(r.MonthlyNth), r.MonthlyWeekday.String())
+		} else {
+			fmt.Fprintf(&b, " on day %d", anchor.Day())
+		}
+	case FreqYearly:
+		fmt.Fprintf(&b, " on %s %d", anchor.Month().String()[:3], anchor.Day())
+	}
+	switch {
+	case r.Until != nil:
+		b.WriteString(" until " + r.Until.Format("Jan 2, 2006"))
+	case r.Count == 1:
+		b.WriteString(" for 1 time")
+	case r.Count > 1:
+		fmt.Fprintf(&b, " for %d times", r.Count)
+	}
+	return b.String()
+}
+
+// humanizeWeekdays renders a weekday set as "Tue, Thu" in Monday-first order,
+// falling back to the anchor's own weekday when the set is empty (a plain weekly
+// rule recurs on the anchor's weekday).
+func humanizeWeekdays(wds []time.Weekday, anchor time.Time) string {
+	if len(wds) == 0 {
+		wds = []time.Weekday{anchor.Weekday()}
+	}
+	sorted := append([]time.Weekday(nil), wds...)
+	sort.Slice(sorted, func(i, j int) bool { return mondayIndex(sorted[i]) < mondayIndex(sorted[j]) })
+	parts := make([]string, len(sorted))
+	for i, wd := range sorted {
+		parts[i] = wd.String()[:3]
+	}
+	return strings.Join(parts, ", ")
+}
+
+// mondayIndex maps a weekday to a Monday-first index (Mon=0 … Sun=6), so a
+// weekday set sorts and displays the way most calendars present a week.
+func mondayIndex(wd time.Weekday) int { return (int(wd) + 6) % 7 }
+
+// ordinal renders a monthly nth-weekday position: 1st–4th, or "last" for -1.
+func ordinal(n int) string {
+	switch n {
+	case -1:
+		return "last"
+	case 1:
+		return "1st"
+	case 2:
+		return "2nd"
+	case 3:
+		return "3rd"
+	default:
+		return fmt.Sprintf("%dth", n)
+	}
 }
 
 // weekdayToRRule maps a time.Weekday to its rrule-go equivalent.
@@ -266,9 +382,11 @@ func (qa *QuickAdd) applyRecurAnchor(today time.Time, loc *time.Location) {
 		return
 	}
 	switch {
-	case qa.Recur.HasWeekday:
+	case len(qa.Recur.Weekdays) > 0:
+		// Quick-add's "every <weekday>" produces exactly one weekday, so anchoring
+		// to Weekdays[0] matches the old single-weekday behavior.
 		qa.HasDate = true
-		qa.Date = nextWeekday(today, qa.Recur.Weekday)
+		qa.Date = nextWeekday(today, qa.Recur.Weekdays[0])
 	case qa.Recur.HasMonthDay:
 		if d, ok := rollForwardMonthDay(today, qa.Recur.Month, qa.Recur.Day, loc); ok {
 			qa.HasDate = true
@@ -518,7 +636,7 @@ func parseEveryRecur(tokens []string, i int) (*RecurSpec, int, bool) {
 		return &RecurSpec{Freq: FreqYearly}, 2, true
 	}
 	if wd, ok := weekday(next); ok {
-		return &RecurSpec{Freq: FreqWeekly, Weekday: wd, HasWeekday: true}, 2, true
+		return &RecurSpec{Freq: FreqWeekly, Weekdays: []time.Weekday{wd}}, 2, true
 	}
 	if mon, ok := monthName(next); ok && i+2 < len(tokens) {
 		if day, err := strconv.Atoi(tokens[i+2]); err == nil && day >= 1 && day <= 31 {

@@ -82,8 +82,13 @@ func TestParseQuickAddRecurrence(t *testing.T) {
 			if qa.Recur.Freq != tc.freq {
 				t.Errorf("Freq = %v, want %v", qa.Recur.Freq, tc.freq)
 			}
-			if qa.Recur.HasWeekday != tc.hasWeekday || (tc.hasWeekday && qa.Recur.Weekday != tc.weekday) {
-				t.Errorf("weekday = (%v,%v), want (%v,%v)", qa.Recur.HasWeekday, qa.Recur.Weekday, tc.hasWeekday, tc.weekday)
+			gotHasWeekday := len(qa.Recur.Weekdays) > 0
+			gotWeekday := time.Weekday(-1)
+			if gotHasWeekday {
+				gotWeekday = qa.Recur.Weekdays[0]
+			}
+			if gotHasWeekday != tc.hasWeekday || (tc.hasWeekday && gotWeekday != tc.weekday) {
+				t.Errorf("weekday = (%v,%v), want (%v,%v)", gotHasWeekday, gotWeekday, tc.hasWeekday, tc.weekday)
 			}
 			if qa.Recur.HasMonthDay != tc.hasMonthDay || (tc.hasMonthDay && (qa.Recur.Month != tc.month || qa.Recur.Day != tc.day)) {
 				t.Errorf("monthday = (%v,%v,%v), want (%v,%v,%v)", qa.Recur.HasMonthDay, qa.Recur.Month, qa.Recur.Day, tc.hasMonthDay, tc.month, tc.day)
@@ -109,8 +114,8 @@ func TestRecurSpecRRuleString(t *testing.T) {
 		{"weekly", RecurSpec{Freq: FreqWeekly}, "FREQ=WEEKLY"},
 		{"monthly", RecurSpec{Freq: FreqMonthly}, "FREQ=MONTHLY"},
 		{"yearly", RecurSpec{Freq: FreqYearly}, "FREQ=YEARLY"},
-		{"every weekday", RecurSpec{Freq: FreqWeekly, HasWeekday: true, Weekday: time.Monday}, "FREQ=WEEKLY;BYDAY=MO"},
-		{"every sunday", RecurSpec{Freq: FreqWeekly, HasWeekday: true, Weekday: time.Sunday}, "FREQ=WEEKLY;BYDAY=SU"},
+		{"every weekday", RecurSpec{Freq: FreqWeekly, Weekdays: []time.Weekday{time.Monday}}, "FREQ=WEEKLY;BYDAY=MO"},
+		{"every sunday", RecurSpec{Freq: FreqWeekly, Weekdays: []time.Weekday{time.Sunday}}, "FREQ=WEEKLY;BYDAY=SU"},
 	}
 	for _, tc := range tests {
 		t.Run(tc.name, func(t *testing.T) {
@@ -126,7 +131,7 @@ func TestRecurSpecRRuleString(t *testing.T) {
 // both events and todos.
 func TestNewObjectsSerializeRecurrence(t *testing.T) {
 	now := time.Date(2026, 7, 6, 9, 0, 0, 0, time.UTC)
-	spec := &RecurSpec{Freq: FreqWeekly, HasWeekday: true, Weekday: time.Monday}
+	spec := &RecurSpec{Freq: FreqWeekly, Weekdays: []time.Weekday{time.Monday}}
 
 	ev, err := NewEventObject(EventDraft{
 		Summary: "Standup",

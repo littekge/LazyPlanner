@@ -4,6 +4,17 @@
 
 ---
 
+## 2026-07-23 — v1.3.0 step 1: RecurSpec extension (interval, weekday set, monthly nth, end conditions) + humanizer
+
+- Implemented the first v1.3.0 build step — extended `RecurSpec` (`internal/model/quickadd.go`) to the full Google-custom vocabulary, zero-value compatible so quick-add behavior is unchanged.
+- **New fields**: `Interval int` (0/1 = every), `Weekdays []time.Weekday` (the old `Weekday`/`HasWeekday` pair migrated into a slice), `MonthlyNth int` (1–4, −1 = last) + `MonthlyWeekday`, `Until *time.Time` / `Count int` (at most one). `Month`/`Day`/`HasMonthDay` (quick-add's "every jul 20" anchor) kept.
+- **`ROption()` extended**: INTERVAL when >1; weekly weekday set → BYDAY; monthly nth-weekday → a single ordinaled BYDAY (`+4TU` / `-1TU`); UNTIL/COUNT. Monthly-by-day-of-month and yearly stay bare (the anchored DTSTART carries the day/date).
+- **New `Humanize(anchor)`**: spec → "every 2 weeks on Tue, Thu until Dec 12, 2026" (interval-1 forms render "Weekly on Tue"). Anchor supplies the derived parts (plain-monthly day-of-month, yearly month/day, empty-weekday-set weekly). Helpers `humanizeWeekdays` (Monday-first sort), `mondayIndex`, `ordinal`.
+- **Migration**: `parseEveryRecur` and `applyRecurAnchor` updated to `Weekdays`; `quickadd_recur_test.go` migrated to the slice field.
+- **Repro-first (TDD)**: `internal/model/recurspec_test.go` (new) — the extended `ROption().RRuleString()` table (interval/weekday-set/nth/last/until/count, bare monthly+yearly) and the `Humanize` table. RED (unknown fields / undefined Humanize) before, green after.
+- Full gate green (`go test ./...`, `go vet ./...`, `staticcheck ./...`, `go build ./...`).
+- Files: `internal/model/quickadd.go`, `internal/model/quickadd_recur_test.go`, `internal/model/recurspec_test.go` (new), `log.md`.
+
 ## 2026-07-23 — Design: v1.3.0 recurrence-rule UI detailed build plan
 
 - Planned v1.3.0 in detail with the owner (brainstorming session; all decisions owner-settled) and wrote the full design into `main.md`'s v1.3.0 Build Plan subsection, replacing the goal-level stub.
