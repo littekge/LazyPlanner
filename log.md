@@ -4,6 +4,15 @@
 
 ---
 
+## 2026-07-23 — Design: v1.3.0 recurrence-rule UI detailed build plan
+
+- Planned v1.3.0 in detail with the owner (brainstorming session; all decisions owner-settled) and wrote the full design into `main.md`'s v1.3.0 Build Plan subsection, replacing the goal-level stub.
+- Scope settled: **Google-custom parity** (owner benchmark: "every week on Tue and Thu until an end date") — frequency + interval + weekly weekday-set + both monthly flavors (day-of-month / nth-weekday incl. last, derived from the start date) + never/until/count ends; a **Repeat dropdown** with date-derived presets in both full forms plus a **Custom… nested sub-form** (color-picker focus-stack precedent); unrepresentable rules show **"Custom (kept)"** and are preserved byte-for-byte unless explicitly overwritten; **rewrite-only-when-changed** (seeded spec == read-back spec → RRULE untouched); Repeat→None drops the rule + EXDATEs/RDATEs/overrides; a changed rule keeps EXDATEs and still-valid overrides, drops orphaned ones (flash reports, undo restores).
+- Approach chosen: extend the existing `RecurSpec` zero-value-compatibly (quick-add unchanged; one shared serialization path) over a parallel form-facing type or raw-RRULE-in-UI — plus a new conservative decomposer (`RecurSpecFromRule`) and humanizer.
+- Six build steps defined (spec extension → decomposer → rewrite primitives → dropdown → sub-form → docs ripple), each with boundary-class tables and the `FuzzRecurrenceMutations` extension.
+- No code change; implementation follows owner review of the written plan.
+- Files: `main.md`, `log.md`.
+
 ## 2026-07-23 — v1.2.0 released; post-release verification + docs
 
 - The owner merged `ai-workspace` to `main` and tagged **v1.2.0**; the GitHub release published with the drafted "Smarter Quick-Add" release notes.
