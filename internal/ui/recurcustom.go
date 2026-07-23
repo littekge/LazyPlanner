@@ -217,7 +217,8 @@ func (a *app) openCustomRepeat(seed model.RecurSpec, anchor time.Time, onApply f
 
 // readCustomRecur reads the sub-form into a RecurSpec, validating the numeric and
 // date fields. Inputs irrelevant to the chosen frequency (weekdays unless weekly,
-// "Monthly by" unless monthly) are ignored, matching the static form.
+// "Monthly by" unless monthly) are not read — the dynamic form only shows the
+// relevant ones.
 func (a *app) readCustomRecur(cf *customRecurFields, anchor time.Time) (model.RecurSpec, error) {
 	n, err := strconv.Atoi(strings.TrimSpace(cf.every.GetText()))
 	if err != nil || n < 1 {

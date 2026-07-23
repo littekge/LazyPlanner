@@ -44,7 +44,7 @@ LazyPlanner is a terminal-based todo-list and calendar management program. It is
 
 ## Current State
 
-**v1.0.0 through v1.2.0 are released** (see the Build Plan subsections for each). Current work is **v1.3.0 (recurrence-rule UI)**: its core — all six build steps — is implemented plus post-build dialog polish, but **two UI items remain before release** — a custom-recurrence form redesign and a rigorous confirm for irreversible (calendar/list) deletes.
+**v1.0.0 through v1.2.0 are released** (see the Build Plan subsections for each). Current work is **v1.3.0 (recurrence-rule UI)**: its core — all six build steps — is implemented, and the post-build dialog polish plus both pre-release UI items (a rigorous confirm for irreversible calendar/list deletes and the Custom recurrence sub-form redesign) have now shipped, so v1.3.0 is **feature-complete and awaiting release**.
 
 The roadmap past v1.3.0 is two more feature/maintenance versions: **v1.4.0 is SELECT mode** (a vim-style multi-select layer) and **v1.5.0 is final polishing & auditing**.
 
