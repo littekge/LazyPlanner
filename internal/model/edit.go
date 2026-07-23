@@ -44,7 +44,11 @@ type TodoDraft struct {
 	Categories  []string
 	ParentUID   string // "" = root task
 	Completed   bool
-	Recur       *RecurSpec // non-nil serializes an RRULE (creation only)
+	// Recurrence control: nil Recur + !RecurRemove leaves an existing RRULE
+	// untouched; a non-nil Recur (re)writes the rule; RecurRemove deletes the rule
+	// and its EXDATE/RDATE. See applyTodo.
+	Recur       *RecurSpec
+	RecurRemove bool
 }
 
 // EventDraft is the set of known VEVENT fields the editor writes; all other
@@ -56,7 +60,11 @@ type EventDraft struct {
 	Start       time.Time
 	End         time.Time // exclusive end (iCal DTEND semantics)
 	AllDay      bool
-	Recur       *RecurSpec // non-nil serializes an RRULE (creation only)
+	// Recurrence control: nil Recur + !RecurRemove leaves an existing RRULE
+	// untouched; a non-nil Recur (re)writes the rule; RecurRemove deletes the rule
+	// and its EXDATE/RDATE. See applyEvent.
+	Recur       *RecurSpec
+	RecurRemove bool
 }
 
 // NewTodoObject builds a fresh single-VTODO calendar object from d.
@@ -274,12 +282,7 @@ func applyTodo(comp *ical.Component, d TodoDraft, now time.Time) {
 	}
 
 	setParent(comp, d.ParentUID)
-	// Recurrence is set only on creation (d.Recur non-nil). An edit carries a nil
-	// Recur and must not touch an existing RRULE (iron rule: preserve what we
-	// don't rewrite); rewriting a rule is a separate planned feature.
-	if d.Recur != nil {
-		comp.Props.SetRecurrenceRule(d.Recur.ROption())
-	}
+	applyRecurrence(comp, d.Recur, d.RecurRemove)
 	touch(comp, now)
 }
 
@@ -300,15 +303,51 @@ func applyEvent(comp *ical.Component, d EventDraft, now time.Time) {
 		comp.Props.Del(ical.PropDateTimeEnd)
 	}
 
-	// Recurrence is set only on creation (d.Recur non-nil). An edit carries a nil
-	// Recur and must not touch an existing RRULE (iron rule: preserve what we
-	// don't rewrite); rewriting a rule is a separate planned feature.
-	if d.Recur != nil {
-		comp.Props.SetRecurrenceRule(d.Recur.ROption())
-	}
+	applyRecurrence(comp, d.Recur, d.RecurRemove)
 
 	bumpSequence(comp)
 	touch(comp, now)
+}
+
+// applyRecurrence writes the component's series-level recurrence per a draft's
+// Recur/RecurRemove pair, on the master component only:
+//   - remove: delete the RRULE and its EXDATE/RDATE (Repeat → None). Sibling
+//     RECURRENCE-ID overrides live in other components and are pruned by the
+//     object-level caller (RewriteEventRule).
+//   - recur non-nil: (re)write the RRULE. rrule-go always renders UNTIL as a
+//     DATE-TIME, but RFC 5545 §3.3.10 requires UNTIL's value type to match a
+//     VALUE=DATE anchor, so an all-day series gets a DATE-only UNTIL.
+//   - neither: leave any existing RRULE untouched (iron rule — a semantically
+//     equal rewrite could still drop oddities like WKST; the UI rewrites only
+//     when the rule actually changed).
+func applyRecurrence(comp *ical.Component, recur *RecurSpec, remove bool) {
+	if remove {
+		comp.Props.Del(ical.PropRecurrenceRule)
+		comp.Props.Del(ical.PropRecurrenceDates)
+		comp.Props.Del(ical.PropExceptionDates)
+		return
+	}
+	if recur == nil {
+		return
+	}
+	comp.Props.SetRecurrenceRule(recur.ROption())
+	if recur.Until != nil && anchorIsDateOnly(comp) {
+		if rp := comp.Props.Get(ical.PropRecurrenceRule); rp != nil {
+			rp.Value = dateOnlyUntil(rp.Value)
+		}
+	}
+}
+
+// anchorIsDateOnly reports whether the component's recurrence anchor (DTSTART, or
+// DUE for a VTODO with no DTSTART) is a VALUE=DATE (all-day) value — the case
+// where UNTIL must also be date-only.
+func anchorIsDateOnly(comp *ical.Component) bool {
+	for _, n := range []string{ical.PropDateTimeStart, ical.PropDue} {
+		if p := comp.Props.Get(n); p != nil {
+			return isDateOnly(p)
+		}
+	}
+	return false
 }
 
 // isCompletedStatus reports whether comp currently carries STATUS:COMPLETED — the

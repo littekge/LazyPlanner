@@ -300,12 +300,36 @@ func FuzzRecurrenceMutations(f *testing.F) {
 				mustEncode(t, capped)
 				mustEncode(t, future)
 			}
+			// v1.3.0 rule-rewrite primitives: rewrite to a new rule, and Repeat→None.
+			evDraft := model.EventDraft{Summary: "x", Start: ev.Start, End: ev.Start.Add(time.Hour), AllDay: ev.AllDay}
+			rewrite := evDraft
+			rewrite.Recur = &model.RecurSpec{Freq: model.FreqWeekly, Interval: 2}
+			if out, _, err := model.RewriteEventRule(p, ev.UID, rewrite, now, fuzzLoc); err == nil {
+				mustEncode(t, out)
+			}
+			remove := evDraft
+			remove.RecurRemove = true
+			if out, _, err := model.RewriteEventRule(p, ev.UID, remove, now, fuzzLoc); err == nil {
+				mustEncode(t, out)
+			}
 		}
 		for _, td := range p.Todos {
 			if td.UID == "" {
 				continue
 			}
 			if out, _, err := model.AdvanceRecurringTodo(p, td.UID, now, fuzzLoc); err == nil {
+				mustEncode(t, out)
+			}
+			// v1.3.0: a todo rule rewrite and Repeat→None through EditTodo.
+			tdDraft := model.TodoDraft{Summary: "x", HasDue: td.HasDue, Due: td.Due}
+			tdRewrite := tdDraft
+			tdRewrite.Recur = &model.RecurSpec{Freq: model.FreqDaily, Count: 5}
+			if out, err := model.EditTodo(p, td.UID, tdRewrite, now, fuzzLoc); err == nil {
+				mustEncode(t, out)
+			}
+			tdRemove := tdDraft
+			tdRemove.RecurRemove = true
+			if out, err := model.EditTodo(p, td.UID, tdRemove, now, fuzzLoc); err == nil {
 				mustEncode(t, out)
 			}
 		}

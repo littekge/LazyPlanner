@@ -499,6 +499,84 @@ func rruleIterationsBefore(master *ical.Component, occ time.Time, loc *time.Loca
 	return n
 }
 
+// RewriteEventRule applies draft d to the recurring event `uid` at scope All: it
+// rewrites (d.Recur) or removes (d.RecurRemove) the master's RRULE and reconciles
+// the sibling RECURRENCE-ID overrides. On removal every override is dropped; on a
+// rule change only orphaned overrides (whose instant no longer occurs under the
+// new rule) are dropped — still-valid overrides and all EXDATEs are kept.
+// droppedOverrides reports how many override components were removed, for the
+// caller's flash. The master's other fields are updated from d like any edit.
+func RewriteEventRule(obj *Parsed, uid string, d EventDraft, now time.Time, loc *time.Location) (result *Parsed, droppedOverrides int, err error) {
+	if loc == nil {
+		loc = time.Local
+	}
+	clone, err := obj.clone(loc)
+	if err != nil {
+		return nil, 0, err
+	}
+	master := masterComponent(clone.Calendar, uid)
+	if master == nil {
+		return nil, 0, fmt.Errorf("model: no recurring master with UID %q", uid)
+	}
+	applyEvent(master, d, now)
+	dropped := reconcileOverrides(clone.Calendar, uid, d.RecurRemove, loc)
+	out, err := Parse(clone.Calendar, loc)
+	if err != nil {
+		return nil, 0, err
+	}
+	return out, dropped, nil
+}
+
+// reconcileOverrides drops RECURRENCE-ID override components of uid orphaned by
+// the master's (already-rewritten) rule: every override when removeAll, else an
+// override whose instant no longer occurs in the master's recurrence set. An
+// override that can't be resolved, or whose set can't be built, is kept — never
+// drop data on uncertainty (iron rule). Returns the dropped count.
+func reconcileOverrides(cal *ical.Calendar, uid string, removeAll bool, loc *time.Location) int {
+	var set *rrule.Set
+	if !removeAll {
+		if master := masterComponent(cal, uid); master != nil {
+			if _, anchor, _, ok := componentAnchor(master, loc); ok {
+				if s, err := componentRecurrenceSet(master, anchor); err == nil {
+					set = s
+				}
+			}
+		}
+	}
+	dropped := 0
+	kept := cal.Children[:0]
+	for _, c := range cal.Children {
+		if text(c.Props, ical.PropUID) == uid {
+			if rid := c.Props.Get(ical.PropRecurrenceID); rid != nil {
+				if removeAll {
+					dropped++
+					continue
+				}
+				if set != nil {
+					if t, err := resolveDateTime(rid, loc); err == nil && !occursInSet(set, t) {
+						dropped++
+						continue
+					}
+				}
+			}
+		}
+		kept = append(kept, c)
+	}
+	cal.Children = kept
+	return dropped
+}
+
+// occursInSet reports whether the recurrence set generates an instant at rid. A
+// degenerate rule that panics rrule-go (ok=false from safeAfter) is treated as
+// "occurs" so the override is kept rather than dropped on uncertainty.
+func occursInSet(set *rrule.Set, rid time.Time) bool {
+	t, ok := safeAfter(set, rid.Add(-time.Second), true)
+	if !ok {
+		return true
+	}
+	return !t.IsZero() && sameInstant(t, rid)
+}
+
 // EditEventOccurrence is the draft-based "edit this occurrence" for an event: it
 // overrides just the instance at occ with d (leaving the series intact).
 func EditEventOccurrence(obj *Parsed, uid string, occ time.Time, allDay bool, d EventDraft, now time.Time, loc *time.Location) (*Parsed, error) {

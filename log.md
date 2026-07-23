@@ -4,6 +4,16 @@
 
 ---
 
+## 2026-07-23 — v1.3.0 step 3: recurrence rewrite primitives (Recur/RecurRemove, orphan pruning, split-with-new-rule)
+
+- Implemented the third v1.3.0 build step — the model write paths for rewriting/removing an existing recurrence rule.
+- **Drafts** (`internal/model/edit.go`): `EventDraft`/`TodoDraft` gained `RecurRemove bool` beside the existing `Recur *RecurSpec`. `applyEvent`/`applyTodo` now route recurrence through a shared `applyRecurrence`: nil + !remove leaves the RRULE untouched (iron rule — a semantically-equal rewrite could drop oddities like WKST), non-nil rewrites it, remove deletes the RRULE + EXDATE + RDATE. All-day series get a DATE-only UNTIL (`anchorIsDateOnly` → `dateOnlyUntil`, RFC 5545 §3.3.10).
+- **Object-level rewrite** (`internal/model/recur_edit.go`): `RewriteEventRule(obj, uid, d, now, loc) (*Parsed, droppedOverrides, err)` applies the draft to the master and reconciles sibling RECURRENCE-ID overrides — drops **all** on Repeat→None, drops only **orphaned** ones (instant no longer in the new recurrence set) on a rule change; EXDATEs and unmodeled props (X-, VALARM) always preserved. Helpers `reconcileOverrides`, `occursInSet` (keeps an override on set-build uncertainty). Todos need no reconciliation (no overrides) so they go through `EditTodo`.
+- **Split-with-new-rule**: `SplitEvent`/`NewSeriesFrom` gained the behavior for free — a draft `Recur` overwrites the copied+rebalanced rule (the explicit count becomes the future series' own end); a nil `Recur` keeps the existing COUNT-rebalance math.
+- **Repro-first (TDD)**: `internal/model/recurrewrite_test.go` (new) — rule change (new RRULE, EXDATE kept, X-/VALARM kept, valid override kept, orphan dropped, count), Repeat→None (all removed, plain event, count), all-day date-only UNTIL, todo rewrite+remove, split with/without a new rule. `FuzzRecurrenceMutations` extended over `RewriteEventRule` (rewrite + remove) and `EditTodo` recur/remove; ~1.6M execs clean.
+- Full gate green (`go test ./...`, `go vet ./...`, `staticcheck ./...`, `go build ./...`).
+- Files: `internal/model/edit.go`, `internal/model/recur_edit.go`, `internal/model/recurrewrite_test.go` (new), `internal/model/fuzz_test.go`, `log.md`.
+
 ## 2026-07-23 — v1.3.0 step 2: RecurSpec decomposer (RRULE → spec, conservative)
 
 - Implemented the second v1.3.0 build step — `RecurSpecFromRule(*rrule.ROption, anchor)` (`internal/model/recurdecompose.go`), the RRULE→spec decomposer that seeds the Repeat form from an existing rule.
