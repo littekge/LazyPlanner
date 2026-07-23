@@ -180,7 +180,7 @@ An **obvious typo** — a `!`+letters that isn't a priority (or a duplicate prio
 
 The **full form** (`e` on an existing item, or the full-create key) edits **every** field, including the recurrence rule via a **Repeat dropdown** (v1.3.0). Its options are built from the item's start/due date: `None`, the anchor-derived presets (`Daily`, `Weekly on <weekday>`, `Monthly on day <n>`, `Yearly on <mon day>`), and `Custom…`.
 
-- **Custom…** opens a nested sub-form for any in-vocabulary rule: an "every N units" interval, a weekly weekday set, monthly by day-of-month **or** by nth/last weekday (derived from the start date, so the rule can't contradict its anchor), yearly, and a `Never` / `On date` / `After N times` end.
+- **Custom…** opens a nested sub-form that shows only the fields relevant to the current selection — Every, Unit and Ends always, re-laid-out live as Unit or Ends changes (values preserved): a weekly rule adds a compact weekday **toggle strip**; a monthly rule adds a "Monthly by" dropdown (day-of-month **or** nth/last weekday, derived from the start date, so the rule can't contradict its anchor); the matching `Ends` choice (`On date` / `After N times`) adds its date or count input.
 - A rule the app can't represent shows as **"Custom rule (kept)"** and is preserved byte-for-byte unless the user explicitly overwrites it; an **unchanged** rule is never rewritten.
 - Picking a rule on a plain item makes it recurring. On a recurring item, scope **All** rewrites the master (keeping EXDATEs, dropping only orphaned per-occurrence edits); scope **this & future** gives the split-off series the new rule; scope **this occurrence** hides the field. `Repeat → None` drops the rule and its exceptions/overrides.
 
@@ -403,7 +403,7 @@ Extend the quick-add smart parser with four grammar additions — time ranges, s
 
 ### v1.3.0 — recurrence-rule UI (implemented 2026-07-23)
 
-**Status**: the recurrence-rule UI — all six build steps — is implemented repro-first with green full gates (2026-07-23), followed by post-build dialog polish. **Two UI items remain before release** (see Post-Build Incremental Changes): the custom-recurrence form redesign and the rigorous irreversible-delete confirm. Verified headlessly — the model spec↔RRULE round-trip + unrepresentable catalogue, the rewrite primitives (orphan pruning, EXDATE keep, all-day date-only UNTIL, split-with-new-rule), the extended `FuzzRecurrenceMutations`, and the UI seeding/read/sub-form + display-stress + focus-stack tests.
+**Status**: the recurrence-rule UI — all six build steps — is implemented repro-first with green full gates (2026-07-23), followed by post-build dialog polish (see Post-Build Incremental Changes) — every UI item scoped before release has now shipped. Verified headlessly — the model spec↔RRULE round-trip + unrepresentable catalogue, the rewrite primitives (orphan pruning, EXDATE keep, all-day date-only UNTIL, split-with-new-rule), the extended `FuzzRecurrenceMutations`, and the UI seeding/read/sub-form + display-stress + focus-stack tests.
 
 Close the recurrence-creation gap in the full forms (acknowledged 2026-07-22: quick-add v1.2.0 is otherwise the only in-app way to create a recurring item, and an existing rule can't be rewritten in-app at all). A **Repeat field** in both full forms plus a **Custom… sub-form**, with Google-Calendar-style expressiveness — the owner's benchmark use case is "every week on Tuesday and Thursday until an end date". All decisions owner-settled 2026-07-23.
 
@@ -449,9 +449,13 @@ Behavior refinements after the six-step build (per-change detail lives in `log.m
 
 - **Rigorous confirm for collection deletes.** Deleting a calendar or task list (`d` on the focused Calendars/Tasks pane) is not undoable, so it no longer uses the one-button confirm: a type-to-confirm dialog requires typing the collection's exact name (trim + case-sensitive) before **Delete** fires — a mismatch flashes and keeps the dialog open. Item deletes stay on the ordinary undoable confirm.
 
-**Planned before release** (owner-scoped 2026-07-23; each brainstormed into a detailed plan when picked up, then built repro-first):
-
-- **Custom-recurrence form redesign.** The Custom… repeat sub-form (`recurcustom.go`) feels cumbersome; rework its layout for a lighter, less dense feel.
+- **Custom repeat sub-form redesign.** The Custom… repeat sub-form now shows only
+  the fields relevant to the current selection — Every, Unit and Ends always, plus
+  the weekday strip only for a weekly rule, "Monthly by" only for monthly, and
+  Until / Count only for the matching "Ends" choice — re-laid-out live as Unit or
+  Ends changes (values preserved). Weekday selection is a single compact toggle
+  strip (a `tview.FormItem` drilled into like any field: `←`/`→` move, Space
+  toggles) in place of seven checkboxes.
 
 ### v1.4.0 — SELECT mode (planned)
 

@@ -35,6 +35,7 @@ var helpSections = []struct {
 		{"Enter", "NORMAL: drill a text field, open a dropdown, toggle a checkbox, or press a button"},
 		{"Enter (in DRILL)", "commit the field and advance to the next"},
 		{"Esc", "DRILL → NORMAL (keeps the value); a second Esc cancels the form"},
+		{"Weekday strip (Custom repeat)", "drill in (Enter), then ←/→ or h/l move, Space toggles a day"},
 	}},
 	{"Create (i prefix)", [][2]string{
 		{"i t / i T", "add task — quick / full form"},

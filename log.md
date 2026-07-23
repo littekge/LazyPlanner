@@ -4,6 +4,16 @@
 
 ---
 
+## 2026-07-23 — v1.3.0: Custom repeat sub-form redesign (dynamic fields + weekday strip)
+
+- Reworked the Custom… repeat sub-form (`internal/ui/recurcustom.go`) from a static 13-field wall into a dynamic form that shows only the fields relevant to the current selection: Every, Unit, Ends always; the weekday strip only for weeks; "Monthly by" only for months; Until/Count only for the matching Ends choice. Unit/Ends changes re-lay-out the form live (`layoutCustomRepeat`, via `caretForm.clearItems`/`addExisting`), preserving values in fields that stay visible. Modal height 22→12.
+- New `weekdayStrip` widget (`internal/ui/weekdaystrip.go`) — a single-row `tview.FormItem` replacing the 7 weekday checkboxes: drilled into via the app-wide NORMAL/DRILL model (Enter drills; `←`/`→` or `h`/`l` move the day cursor; Space toggles; Esc leaves), selected days reverse-video via `selectionStyle`, the focused cell underlined in the accent color.
+- caretForm gained `newFormDropDown` (centralizes the dropdown `selectionStyle` guardrail), `clearItems`/`addExisting` (relayout primitives), `isDrillable` (auto-drill includes the strip), and a `*weekdayStrip` case in `actNormal` + the Draw gutter.
+- **Repro-first**: `weekdaystrip_test.go` (seed/read, cursor+toggle, reverse-video legibility, draw-stress), `formnav_test.go` (strip drills+toggles in a caretForm; clearItems/addExisting), `recurcustom_test.go` (relayout hides/shows the right fields + preserves values; daily is 3 fields; relaid-out draw-stress). Existing read/validation tests updated to the strip API.
+- Docs rippled: `main.md` (item → shipped, both pre-release items now done), `log.md`.
+- Full gate green (`go test ./...`, `go vet ./...`, `staticcheck ./...`, `go build ./...`).
+- Files: `internal/ui/weekdaystrip.go`, `internal/ui/weekdaystrip_test.go`, `internal/ui/forms.go`, `internal/ui/formnav_test.go`, `internal/ui/recurcustom.go`, `internal/ui/recurcustom_test.go`, `main.md`, `log.md`.
+
 ## 2026-07-23 — v1.3.0: rigorous type-to-confirm for collection deletes
 
 - Collection deletes (calendar/list, `d` on the focused Calendars/Tasks pane) are not undoable, so they no longer use the one-button confirm. A new type-to-confirm dialog (`promptDeleteCollection`, `internal/ui/calendar.go`) requires typing the collection's exact name — trim + case-sensitive (`collectionDeleteNameMatches`) — before **Delete** fires; a mismatch flashes "Name doesn't match" and keeps the dialog open. Item deletes (undoable) keep the ordinary confirm.
