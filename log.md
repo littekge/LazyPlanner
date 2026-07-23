@@ -10,7 +10,7 @@
 - Scope settled: **Google-custom parity** (owner benchmark: "every week on Tue and Thu until an end date") — frequency + interval + weekly weekday-set + both monthly flavors (day-of-month / nth-weekday incl. last, derived from the start date) + never/until/count ends; a **Repeat dropdown** with date-derived presets in both full forms plus a **Custom… nested sub-form** (color-picker focus-stack precedent); unrepresentable rules show **"Custom (kept)"** and are preserved byte-for-byte unless explicitly overwritten; **rewrite-only-when-changed** (seeded spec == read-back spec → RRULE untouched); Repeat→None drops the rule + EXDATEs/RDATEs/overrides; a changed rule keeps EXDATEs and still-valid overrides, drops orphaned ones (flash reports, undo restores).
 - Approach chosen: extend the existing `RecurSpec` zero-value-compatibly (quick-add unchanged; one shared serialization path) over a parallel form-facing type or raw-RRULE-in-UI — plus a new conservative decomposer (`RecurSpecFromRule`) and humanizer.
 - Six build steps defined (spec extension → decomposer → rewrite primitives → dropdown → sub-form → docs ripple), each with boundary-class tables and the `FuzzRecurrenceMutations` extension.
-- No code change; implementation follows owner review of the written plan.
+- No code change. The owner reviewed and approved the written plan the same day — implementation (build step 1) is the next session's starting point.
 - Files: `main.md`, `log.md`.
 
 ## 2026-07-23 — v1.2.0 released; post-release verification + docs
