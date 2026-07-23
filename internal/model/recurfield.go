@@ -23,6 +23,7 @@ const (
 	repeatYearly             // preset — "on <anchor month/day>"
 	repeatKept               // representable but not a plain preset; carries its spec
 	repeatKeptRaw            // outside the vocabulary; the raw rule is preserved
+	repeatCustomSet          // a spec built in the Custom… sub-form; carries its spec
 	repeatCustom             // opens the Custom… sub-form
 )
 
@@ -110,12 +111,56 @@ func (rc *RepeatChoices) Resolve(selected int, anchor time.Time) (recur *RecurSp
 		return nil, rc.hadRule
 	case repeatKept, repeatKeptRaw, repeatCustom:
 		return nil, false
+	case repeatCustomSet:
+		// A spec built in the sub-form: a rewrite, unless it happens to equal the
+		// untouched original (then preserve the original bytes — iron rule).
+		spec := opt.spec
+		if rc.hadRule && rc.seededRepr && recurSpecEqual(spec, rc.seeded) {
+			return nil, false
+		}
+		return &spec, false
 	default:
 		spec := presetSpec(opt.kind, anchor)
 		if rc.hadRule && rc.seededRepr && recurSpecEqual(spec, rc.seeded) {
 			return nil, false // unchanged — preserve the original bytes (iron rule)
 		}
 		return &spec, false
+	}
+}
+
+// SetCustom records a spec built in the Custom… sub-form as a selectable,
+// humanized entry (replacing any prior custom entry so the list never grows
+// without bound) and selects it. Returns the entry's index.
+func (rc *RepeatChoices) SetCustom(spec RecurSpec, anchor time.Time) int {
+	opt := repeatOption{label: spec.Humanize(anchor), kind: repeatCustomSet, spec: spec}
+	for i := range rc.options {
+		if rc.options[i].kind == repeatCustomSet {
+			rc.options[i] = opt
+			rc.selected = i
+			return i
+		}
+	}
+	// Insert just before the trailing Custom… entry.
+	at := len(rc.options) - 1
+	rc.options = append(rc.options[:at], append([]repeatOption{opt}, rc.options[at:]...)...)
+	rc.selected = at
+	return at
+}
+
+// SeedSpec returns the spec to seed the Custom… sub-form from the option at idx,
+// and whether it carried a real spec (false for None / kept-raw / Custom… — the
+// caller supplies a plain default).
+func (rc *RepeatChoices) SeedSpec(idx int, anchor time.Time) (RecurSpec, bool) {
+	if idx < 0 || idx >= len(rc.options) {
+		return RecurSpec{}, false
+	}
+	switch opt := rc.options[idx]; opt.kind {
+	case repeatDaily, repeatWeekly, repeatMonthly, repeatYearly:
+		return presetSpec(opt.kind, anchor), true
+	case repeatKept, repeatCustomSet:
+		return opt.spec, true
+	default:
+		return RecurSpec{}, false
 	}
 }
 

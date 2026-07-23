@@ -58,6 +58,7 @@ const (
 	pageConfirm  = "modal-confirm"
 	pageWhichKey = "which-key"
 	pageColor    = "modal-color"
+	pageRepeat   = "modal-repeat" // the Custom… recurrence sub-form, nested over a form
 )
 
 type bordered struct {

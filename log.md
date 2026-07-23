@@ -4,6 +4,16 @@
 
 ---
 
+## 2026-07-23 — v1.3.0 step 5: Custom… recurrence sub-form (nested modal)
+
+- Implemented the fifth v1.3.0 build step — the **Custom… sub-form**, a nested modal over the item form (the color-picker focus-stack precedent) that builds an arbitrary in-vocabulary rule.
+- **Sub-form** (`internal/ui/recurcustom.go`): `Every [N]` + unit dropdown, Mon–Su weekday checkboxes, a **Monthly by** dropdown whose options are **derived from the anchor date** (`on day N` / `on the <nth> <weekday>` / `on the last <weekday>` — so a monthly rule can't contradict its start, Google parity), and an **Ends** dropdown (Never / On date / After N times) with date + count inputs. Static form — inputs irrelevant to the chosen frequency are ignored at read. Validation: interval ≥ 1, until parses, count ≥ 1.
+- **Trigger + write-back** (`wireRepeatCustom`): selecting the Repeat dropdown's `Custom…` entry opens the sub-form seeded from the current selection (`SeedSpec`); OK writes the humanized spec back via `RepeatChoices.SetCustom` (a `repeatCustomSet` entry that `Resolve` treats as a rewrite — unless it equals the untouched seeded rule) and selects it; Cancel restores the prior selection. Guarded against the `SetCurrentOption`→callback re-entry.
+- **Model support** (`internal/model/recurfield.go`): `repeatCustomSet` kind, `SetCustom` (replaces any prior custom entry, no unbounded growth), `SeedSpec`.
+- **Repro-first (TDD)**: `internal/model/recurfield_test.go` extended (SetCustom rewrite/replace/unchanged, SeedSpec). `internal/ui/recurcustom_test.go` (new) — `monthlyOptions` derivation, `readCustomRecur` per frequency + end condition, validation rejects, **display-stress** across 1×1→400×150, and a **focus-stack** nest/unwind test.
+- Full gate green (`go test ./...`, `go vet ./...`, `staticcheck ./...`, `go build ./...`).
+- Files: `internal/ui/recurcustom.go` (new), `internal/ui/recurcustom_test.go` (new), `internal/ui/itemforms.go`, `internal/ui/app.go`, `internal/model/recurfield.go`, `internal/model/recurfield_test.go`, `internal/ui/recurfield_test.go`, `log.md`.
+
 ## 2026-07-23 — v1.3.0 step 4: full-form Repeat dropdown + Detail-pane Repeats row
 
 - Implemented the fourth v1.3.0 build step — a **Repeat dropdown** in both full forms, closing the recurrence-creation gap (a recurring item can now be made in the full form, not just quick-add, and an existing rule can be rewritten).

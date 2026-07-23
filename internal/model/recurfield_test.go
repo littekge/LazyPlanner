@@ -145,6 +145,69 @@ func TestRepeatChoicesResolve(t *testing.T) {
 	})
 }
 
+// TestRepeatChoicesCustom covers the Custom… sub-form support: SetCustom adds a
+// selectable humanized entry that Resolve treats as a rewrite, replacing any prior
+// custom entry rather than duplicating; SeedSpec returns the spec to seed the
+// sub-form from the current selection.
+func TestRepeatChoicesCustom(t *testing.T) {
+	anchor := time.Date(2026, 8, 25, 0, 0, 0, 0, time.UTC) // Tuesday
+
+	t.Run("set custom on a fresh form rewrites", func(t *testing.T) {
+		rc := NewRepeatChoices(compWithRule(t, "", anchor, false), anchor, time.UTC)
+		spec := RecurSpec{Freq: FreqWeekly, Interval: 2, Weekdays: []time.Weekday{time.Tuesday, time.Thursday}}
+		idx := rc.SetCustom(spec, anchor)
+		if rc.Labels()[idx] != "every 2 weeks on Tue, Thu" {
+			t.Errorf("label = %q", rc.Labels()[idx])
+		}
+		if rc.Selected() != idx {
+			t.Errorf("selected = %d, want %d", rc.Selected(), idx)
+		}
+		recur, remove := rc.Resolve(idx, anchor)
+		if recur == nil || recur.Interval != 2 || remove {
+			t.Errorf("resolve = (%+v,%v), want the custom spec", recur, remove)
+		}
+	})
+
+	t.Run("set custom twice replaces, no duplicate", func(t *testing.T) {
+		rc := NewRepeatChoices(compWithRule(t, "", anchor, false), anchor, time.UTC)
+		n0 := len(rc.Labels())
+		rc.SetCustom(RecurSpec{Freq: FreqDaily, Interval: 3}, anchor)
+		n1 := len(rc.Labels())
+		rc.SetCustom(RecurSpec{Freq: FreqDaily, Interval: 4}, anchor)
+		n2 := len(rc.Labels())
+		if n1 != n0+1 || n2 != n1 {
+			t.Errorf("lengths %d→%d→%d, want one added then replaced", n0, n1, n2)
+		}
+		if rc.Labels()[rc.Selected()] != "every 4 days" {
+			t.Errorf("selected label = %q, want every 4 days", rc.Labels()[rc.Selected()])
+		}
+	})
+
+	t.Run("custom equal to the seeded rule is untouched", func(t *testing.T) {
+		rc := NewRepeatChoices(compWithRule(t, "FREQ=WEEKLY;INTERVAL=2;BYDAY=TU,TH", anchor, false), anchor, time.UTC)
+		same := RecurSpec{Freq: FreqWeekly, Interval: 2, Weekdays: []time.Weekday{time.Tuesday, time.Thursday}}
+		idx := rc.SetCustom(same, anchor)
+		recur, remove := rc.Resolve(idx, anchor)
+		if recur != nil || remove {
+			t.Errorf("resolve = (%+v,%v), want untouched (unchanged rule)", recur, remove)
+		}
+	})
+
+	t.Run("seed spec from a preset selection", func(t *testing.T) {
+		rc := NewRepeatChoices(compWithRule(t, "FREQ=WEEKLY;BYDAY=TU", anchor, false), anchor, time.UTC)
+		spec, ok := rc.SeedSpec(rc.Selected(), anchor)
+		if !ok || spec.Freq != FreqWeekly {
+			t.Errorf("SeedSpec = (%+v,%v), want a weekly spec", spec, ok)
+		}
+	})
+	t.Run("seed spec from None is not ok", func(t *testing.T) {
+		rc := NewRepeatChoices(compWithRule(t, "", anchor, false), anchor, time.UTC)
+		if _, ok := rc.SeedSpec(0, anchor); ok {
+			t.Error("SeedSpec(None) ok, want false")
+		}
+	})
+}
+
 func equalStrings(a, b []string) bool {
 	if len(a) != len(b) {
 		return false

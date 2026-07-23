@@ -48,6 +48,12 @@ func (a *app) newTodoForm(td *model.Todo, choices *model.RepeatChoices) (*caretF
 	if choices != nil {
 		fields.repeat = f.addDropDown("Repeat", choices.Labels(), choices.Selected())
 		fields.repeatChoices = choices
+		a.wireRepeatCustom(fields.repeat, choices, func() time.Time {
+			if d, has, err := parseDateField(fields.dueDate.GetText(), a.loc); err == nil && has {
+				return d
+			}
+			return a.now
+		})
 	}
 	fields.priority = f.addDropDown("Priority", priorityOptions, prio)
 	fields.tags = f.addInput("Tags (comma-sep)", tags, 0)
@@ -232,6 +238,12 @@ func (a *app) newEventForm(ev *model.Event, defaultDay time.Time, choices *model
 	if choices != nil {
 		fields.repeat = f.addDropDown("Repeat", choices.Labels(), choices.Selected())
 		fields.repeatChoices = choices
+		a.wireRepeatCustom(fields.repeat, choices, func() time.Time {
+			if d, has, err := parseDateField(fields.startDate.GetText(), a.loc); err == nil && has {
+				return d
+			}
+			return defaultDay
+		})
 	}
 	f.stylePopup()
 	return f, fields

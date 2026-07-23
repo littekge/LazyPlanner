@@ -101,12 +101,10 @@ func TestEventFormRepeatHidden(t *testing.T) {
 // anchor its recurrence.
 func TestTodoFormRepeatNeedsDue(t *testing.T) {
 	a := newTestApp(t, time.Date(2026, 8, 1, 9, 0, 0, 0, time.UTC))
-	base := time.Date(2026, 8, 25, 0, 0, 0, 0, a.loc)
 	_, fields := a.newTodoForm(nil, a.newTodoRepeat(nil))
 	fields.summary.SetText("Chore")
 	fields.repeat.SetCurrentOption(1) // Daily, but no due date set
 	if _, err := a.readTodoDraft(fields); err == nil {
 		t.Error("expected an error requiring a due date for a repeating task")
 	}
-	_ = base
 }
