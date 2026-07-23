@@ -521,6 +521,15 @@ func (a *app) setAgendaItemDetail(it model.AgendaItem) {
 	a.setEventDetail(it.Event)
 }
 
+// recurLabel guards the Detail pane's Repeats row: it falls back to "yes" if the
+// summary is empty (defensive — a flagged-recurring item always summarizes).
+func recurLabel(summary string) string {
+	if summary == "" {
+		return "yes"
+	}
+	return summary
+}
+
 func (a *app) setTodoDetail(t *model.Todo) {
 	var b strings.Builder
 	fmt.Fprintf(&b, "[teal]Task[-]\n%s\n\n", tview.Escape(nonEmpty(t.Summary, "(untitled)")))
@@ -538,7 +547,11 @@ func (a *app) setTodoDetail(t *model.Todo) {
 		fmt.Fprintf(&b, "[gray]Location[-]  %s\n", tview.Escape(t.Location))
 	}
 	if t.Recurring {
-		fmt.Fprintf(&b, "[gray]Repeats[-]   yes\n")
+		anchor := a.now
+		if t.HasDue {
+			anchor = t.Due
+		}
+		fmt.Fprintf(&b, "[gray]Repeats[-]   %s\n", tview.Escape(recurLabel(model.RecurrenceSummary(t.Raw, anchor, a.loc))))
 	}
 	if t.Description != "" {
 		fmt.Fprintf(&b, "\n%s\n", tview.Escape(t.Description))
@@ -561,15 +574,11 @@ func (a *app) setEventDetail(e *model.Event) {
 	if e.Location != "" {
 		fmt.Fprintf(&b, "[gray]Location[-]  %s\n", tview.Escape(e.Location))
 	}
-	var flags []string
 	if e.Recurring {
-		flags = append(flags, "repeats")
+		fmt.Fprintf(&b, "[gray]Repeats[-]   %s\n", tview.Escape(recurLabel(model.RecurrenceSummary(e.Raw, e.Start, a.loc))))
 	}
 	if e.HasAlarm {
-		flags = append(flags, "reminder set")
-	}
-	if len(flags) > 0 {
-		fmt.Fprintf(&b, "[gray]Flags[-]     %s\n", strings.Join(flags, ", "))
+		fmt.Fprintf(&b, "[gray]Flags[-]     %s\n", "reminder set")
 	}
 	if e.Description != "" {
 		fmt.Fprintf(&b, "\n%s\n", tview.Escape(e.Description))

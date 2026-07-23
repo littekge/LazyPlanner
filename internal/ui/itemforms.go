@@ -1,6 +1,7 @@
 package ui
 
 import (
+	"fmt"
 	"strings"
 	"time"
 
@@ -18,9 +19,13 @@ type todoFields struct {
 	summary, desc, dueDate, dueTime, tags *tview.InputField
 	priority                              *tview.DropDown
 	completed                             *tview.Checkbox
+	repeat                                *tview.DropDown      // nil when the Repeat field is hidden
+	repeatChoices                         *model.RepeatChoices // paired with repeat
 }
 
-func (a *app) newTodoForm(td *model.Todo) (*caretForm, *todoFields) {
+// newTodoForm builds the task field set, pre-filled from td (nil = a blank create
+// form). When choices is non-nil a Repeat dropdown is shown, seeded from it.
+func (a *app) newTodoForm(td *model.Todo, choices *model.RepeatChoices) (*caretForm, *todoFields) {
 	summary, desc, tags, dueDate, dueTime := "", "", "", "", ""
 	prio, completed := 0, false
 	if td != nil {
@@ -35,15 +40,18 @@ func (a *app) newTodoForm(td *model.Todo) (*caretForm, *todoFields) {
 		}
 	}
 	f := newCaretForm()
-	fields := &todoFields{
-		summary:   f.addInput("Summary", summary, 0),
-		desc:      f.addInput("Description", desc, 0),
-		dueDate:   f.addInput("Due date (YYYY-MM-DD)", dueDate, 12),
-		dueTime:   f.addInput("Due time (HH:MM)", dueTime, 8),
-		priority:  f.addDropDown("Priority", priorityOptions, prio),
-		tags:      f.addInput("Tags (comma-sep)", tags, 0),
-		completed: f.addCheckbox("Completed", completed),
+	fields := &todoFields{}
+	fields.summary = f.addInput("Summary", summary, 0)
+	fields.desc = f.addInput("Description", desc, 0)
+	fields.dueDate = f.addInput("Due date (YYYY-MM-DD)", dueDate, 12)
+	fields.dueTime = f.addInput("Due time (HH:MM)", dueTime, 8)
+	if choices != nil {
+		fields.repeat = f.addDropDown("Repeat", choices.Labels(), choices.Selected())
+		fields.repeatChoices = choices
 	}
+	fields.priority = f.addDropDown("Priority", priorityOptions, prio)
+	fields.tags = f.addInput("Tags (comma-sep)", tags, 0)
+	fields.completed = f.addCheckbox("Completed", completed)
 	f.stylePopup()
 	return f, fields
 }
@@ -75,7 +83,36 @@ func (a *app) readTodoDraft(f *todoFields) (model.TodoDraft, error) {
 			d.Due, d.DueAllDay = date, true
 		}
 	}
+	if f.repeatChoices != nil {
+		// A recurring task recurs on its due date, so a repeat needs one to anchor.
+		anchor := a.now
+		if d.HasDue {
+			anchor = d.Due
+		}
+		idx, _ := f.repeat.GetCurrentOption()
+		d.Recur, d.RecurRemove = f.repeatChoices.Resolve(idx, anchor)
+		if d.Recur != nil && !d.HasDue {
+			return model.TodoDraft{}, errFieldMsg("A repeating task needs a due date")
+		}
+	}
 	return d, nil
+}
+
+// newTodoRepeat builds the Repeat dropdown state for a task (nil td = a create
+// form), anchored at its due date (or now when it has none).
+func (a *app) newTodoRepeat(td *model.Todo) *model.RepeatChoices {
+	anchor := a.now
+	var raw *model.Todo
+	if td != nil {
+		raw = td
+		if td.HasDue {
+			anchor = td.Due
+		}
+	}
+	if raw == nil {
+		return model.NewRepeatChoices(nil, anchor, a.loc)
+	}
+	return model.NewRepeatChoices(raw.Raw, anchor, a.loc)
 }
 
 func (a *app) showTodoForm(loc store.Located, uid string) {
@@ -84,7 +121,7 @@ func (a *app) showTodoForm(loc store.Located, uid string) {
 		a.flash("Task not found")
 		return
 	}
-	a.presentTodoForm(td, " Edit task ", func(d model.TodoDraft) {
+	a.presentTodoForm(td, a.newTodoRepeat(td), " Edit task ", func(d model.TodoDraft) {
 		// Enforce the folder rule here too: the form's Completed checkbox must not
 		// complete a task that still has incomplete children (Space is guarded in
 		// toggleComplete; EditTodo has no child check).
@@ -105,8 +142,8 @@ func (a *app) showTodoForm(loc store.Located, uid string) {
 // presentTodoForm opens the task form seeded from td, wiring Save to call onSave
 // with the read draft. Shared by the plain edit and the scope-aware recurrence
 // edits (a detached this-occurrence copy).
-func (a *app) presentTodoForm(td *model.Todo, title string, onSave func(model.TodoDraft)) {
-	f, fields := a.newTodoForm(td)
+func (a *app) presentTodoForm(td *model.Todo, choices *model.RepeatChoices, title string, onSave func(model.TodoDraft)) {
+	f, fields := a.newTodoForm(td, choices)
 	f.AddButton("Save", func() {
 		d, err := a.readTodoDraft(fields)
 		if err != nil {
@@ -118,7 +155,7 @@ func (a *app) presentTodoForm(td *model.Todo, title string, onSave func(model.To
 	f.AddButton("Cancel", func() { a.closeModal(pageForm) })
 	f.SetCancelFunc(func() { a.closeModal(pageForm) })
 	f.SetBorder(true).SetTitle(title)
-	a.openModal(pageForm, f, 62, 19)
+	a.openModal(pageForm, f, 62, 20)
 }
 
 func (a *app) showCreateTodoForm(calID, parentUID string) {
@@ -126,7 +163,7 @@ func (a *app) showCreateTodoForm(calID, parentUID string) {
 	if parentUID != "" {
 		title = " New subtask "
 	}
-	f, fields := a.newTodoForm(nil)
+	f, fields := a.newTodoForm(nil, a.newTodoRepeat(nil))
 	f.AddButton("Create", func() {
 		d, err := a.readTodoDraft(fields)
 		if err != nil {
@@ -145,7 +182,7 @@ func (a *app) showCreateTodoForm(calID, parentUID string) {
 	f.AddButton("Cancel", func() { a.closeModal(pageForm) })
 	f.SetCancelFunc(func() { a.closeModal(pageForm) })
 	f.SetBorder(true).SetTitle(title)
-	a.openModal(pageForm, f, 62, 19)
+	a.openModal(pageForm, f, 62, 20)
 }
 
 // eventFields holds references to an event form's inputs.
@@ -154,11 +191,14 @@ type eventFields struct {
 	startDate, startTime    *tview.InputField
 	endDate, endTime        *tview.InputField
 	allDay                  *tview.Checkbox
+	repeat                  *tview.DropDown      // nil when the Repeat field is hidden
+	repeatChoices           *model.RepeatChoices // paired with repeat
 }
 
 // newEventForm builds the event field set, pre-filled from ev (nil = a blank
-// create form defaulting the start date to defaultDay).
-func (a *app) newEventForm(ev *model.Event, defaultDay time.Time) (*caretForm, *eventFields) {
+// create form defaulting the start date to defaultDay). When choices is non-nil a
+// Repeat dropdown is shown, seeded from it.
+func (a *app) newEventForm(ev *model.Event, defaultDay time.Time, choices *model.RepeatChoices) (*caretForm, *eventFields) {
 	summary, desc, location := "", "", ""
 	allDay := true
 	startDate := defaultDay.In(a.loc).Format("2006-01-02")
@@ -180,15 +220,18 @@ func (a *app) newEventForm(ev *model.Event, defaultDay time.Time) (*caretForm, *
 		}
 	}
 	f := newCaretForm()
-	fields := &eventFields{
-		summary:   f.addInput("Summary", summary, 0),
-		desc:      f.addInput("Description", desc, 0),
-		location:  f.addInput("Location", location, 0),
-		allDay:    f.addCheckbox("All day", allDay),
-		startDate: f.addInput("Start date (YYYY-MM-DD)", startDate, 12),
-		startTime: f.addInput("Start time (HH:MM)", startTime, 8),
-		endDate:   f.addInput("End date (YYYY-MM-DD)", endDate, 12),
-		endTime:   f.addInput("End time (HH:MM)", endTime, 8),
+	fields := &eventFields{}
+	fields.summary = f.addInput("Summary", summary, 0)
+	fields.desc = f.addInput("Description", desc, 0)
+	fields.location = f.addInput("Location", location, 0)
+	fields.allDay = f.addCheckbox("All day", allDay)
+	fields.startDate = f.addInput("Start date (YYYY-MM-DD)", startDate, 12)
+	fields.startTime = f.addInput("Start time (HH:MM)", startTime, 8)
+	fields.endDate = f.addInput("End date (YYYY-MM-DD)", endDate, 12)
+	fields.endTime = f.addInput("End time (HH:MM)", endTime, 8)
+	if choices != nil {
+		fields.repeat = f.addDropDown("Repeat", choices.Labels(), choices.Selected())
+		fields.repeatChoices = choices
 	}
 	f.stylePopup()
 	return f, fields
@@ -237,14 +280,37 @@ func (a *app) readEventDraft(f *eventFields) (model.EventDraft, error) {
 			end = start.Add(time.Hour) // sensible default when end is blank/invalid
 		}
 	}
-	return model.EventDraft{
+	d := model.EventDraft{
 		Summary:     f.summary.GetText(),
 		Description: f.desc.GetText(),
 		Location:    f.location.GetText(),
 		Start:       start,
 		End:         end,
 		AllDay:      allDay,
-	}, nil
+	}
+	if f.repeatChoices != nil {
+		idx, _ := f.repeat.GetCurrentOption()
+		d.Recur, d.RecurRemove = f.repeatChoices.Resolve(idx, start)
+	}
+	return d, nil
+}
+
+// newEventRepeat builds the Repeat dropdown state for an event (nil ev = a create
+// form), anchored at the given seed start/occurrence.
+func (a *app) newEventRepeat(ev *model.Event, anchor time.Time) *model.RepeatChoices {
+	if ev == nil {
+		return model.NewRepeatChoices(nil, anchor, a.loc)
+	}
+	return model.NewRepeatChoices(ev.Raw, anchor, a.loc)
+}
+
+// savedMsg reports how many customized occurrences a rule change discarded, for
+// the post-save flash.
+func savedMsg(droppedOverrides int) string {
+	if droppedOverrides > 0 {
+		return fmt.Sprintf("Saved — %d edited occurrence(s) removed", droppedOverrides)
+	}
+	return "Saved"
 }
 
 func (a *app) showEventForm(loc store.Located, uid string) {
@@ -253,21 +319,30 @@ func (a *app) showEventForm(loc store.Located, uid string) {
 		a.flash("Event not found")
 		return
 	}
-	a.presentEventForm(ev, ev.Start, " Edit event ", func(d model.EventDraft) {
-		newObj, err := model.EditEvent(loc.Object, uid, d, a.now, a.loc)
+	a.presentEventForm(ev, ev.Start, a.newEventRepeat(ev, ev.Start), " Edit event ", func(d model.EventDraft) {
+		var newObj *model.Parsed
+		var dropped int
+		var err error
+		if d.Recur != nil || d.RecurRemove {
+			// A rule change/removal reconciles the sibling overrides (scope All).
+			newObj, dropped, err = model.RewriteEventRule(loc.Object, uid, d, a.now, a.loc)
+		} else {
+			newObj, err = model.EditEvent(loc.Object, uid, d, a.now, a.loc)
+		}
 		if err != nil {
 			a.flashErr("Save", err)
 			return
 		}
-		a.commitMutation(loc.CalID, loc.Name, newObj, loc.Prev, "edit event", uid, "Saved")
+		a.commitMutation(loc.CalID, loc.Name, newObj, loc.Prev, "edit event", uid, savedMsg(dropped))
 	})
 }
 
 // presentEventForm opens the event form seeded from ev at seedStart, wiring Save to
-// call onSave with the read draft. Shared by the plain edit and the scope-aware
-// recurrence edits (which pass a different onSave and seedStart / title).
-func (a *app) presentEventForm(ev *model.Event, seedStart time.Time, title string, onSave func(model.EventDraft)) {
-	f, fields := a.newEventForm(ev, seedStart)
+// call onSave with the read draft. choices seeds the Repeat dropdown (nil hides
+// it — the this-occurrence override edit). Shared by the plain edit and the
+// scope-aware recurrence edits (which pass a different onSave and seedStart / title).
+func (a *app) presentEventForm(ev *model.Event, seedStart time.Time, choices *model.RepeatChoices, title string, onSave func(model.EventDraft)) {
+	f, fields := a.newEventForm(ev, seedStart, choices)
 	f.AddButton("Save", func() {
 		d, err := a.readEventDraft(fields)
 		if err != nil {
@@ -279,11 +354,11 @@ func (a *app) presentEventForm(ev *model.Event, seedStart time.Time, title strin
 	f.AddButton("Cancel", func() { a.closeModal(pageForm) })
 	f.SetCancelFunc(func() { a.closeModal(pageForm) })
 	f.SetBorder(true).SetTitle(title)
-	a.openModal(pageForm, f, 62, 21)
+	a.openModal(pageForm, f, 62, 22)
 }
 
 func (a *app) showCreateEventForm(calID string, base time.Time) {
-	f, fields := a.newEventForm(nil, base)
+	f, fields := a.newEventForm(nil, base, a.newEventRepeat(nil, base))
 	f.AddButton("Create", func() {
 		d, err := a.readEventDraft(fields)
 		if err != nil {
@@ -305,5 +380,5 @@ func (a *app) showCreateEventForm(calID string, base time.Time) {
 	f.AddButton("Cancel", func() { a.closeModal(pageForm) })
 	f.SetCancelFunc(func() { a.closeModal(pageForm) })
 	f.SetBorder(true).SetTitle(" New event ")
-	a.openModal(pageForm, f, 62, 21)
+	a.openModal(pageForm, f, 62, 22)
 }

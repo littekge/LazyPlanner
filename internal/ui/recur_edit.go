@@ -107,7 +107,7 @@ func (a *app) editEventScoped(loc store.Located, t editTarget, scope recurScope)
 		if ov := loc.Object.FindOverride(t.uid, t.occStart); ov != nil {
 			seed, seedStart = ov, ov.Start
 		}
-		a.presentEventForm(seed, seedStart, " Edit this occurrence ", func(d model.EventDraft) {
+		a.presentEventForm(seed, seedStart, nil, " Edit this occurrence ", func(d model.EventDraft) {
 			newObj, err := model.EditEventOccurrence(loc.Object, t.uid, t.occStart, t.allDay, d, a.now, a.loc)
 			if err != nil {
 				a.flashErr("Edit", err)
@@ -116,7 +116,7 @@ func (a *app) editEventScoped(loc store.Located, t editTarget, scope recurScope)
 			a.commitMutation(loc.CalID, loc.Name, newObj, loc.Prev, "edit occurrence", t.uid, "Saved this occurrence")
 		})
 	case scopeFuture:
-		a.presentEventForm(ev, t.occStart, " Edit this & future ", func(d model.EventDraft) {
+		a.presentEventForm(ev, t.occStart, a.newEventRepeat(ev, t.occStart), " Edit this & future ", func(d model.EventDraft) {
 			capped, future, err := model.SplitEvent(loc.Object, t.uid, t.occStart, d, a.now, a.loc)
 			if err != nil {
 				a.flashErr("Edit", err)
@@ -150,7 +150,7 @@ func (a *app) editTodoThisOccurrence(loc store.Located, uid string) {
 // editTodoDetachForm opens the edit form whose save detaches the current instance
 // as a standalone task and advances the series (the confirmed this-occurrence path).
 func (a *app) editTodoDetachForm(loc store.Located, uid string, td *model.Todo) {
-	a.presentTodoForm(td, " Edit this occurrence ", func(d model.TodoDraft) {
+	a.presentTodoForm(td, nil, " Edit this occurrence ", func(d model.TodoDraft) {
 		d.ParentUID = td.ParentUID
 		advanced, _, err := model.AdvanceRecurringTodo(loc.Object, uid, a.now, a.loc)
 		if err != nil {

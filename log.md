@@ -4,6 +4,16 @@
 
 ---
 
+## 2026-07-23 — v1.3.0 step 4: full-form Repeat dropdown + Detail-pane Repeats row
+
+- Implemented the fourth v1.3.0 build step — a **Repeat dropdown** in both full forms, closing the recurrence-creation gap (a recurring item can now be made in the full form, not just quick-add, and an existing rule can be rewritten).
+- **Pure state in model** (`internal/model/recurfield.go`, keeps rrule/ical out of `internal/ui`): `RepeatChoices` seeds the dropdown from an item's rule + anchor (`None · Daily · Weekly on <wd> · Monthly on day <n> · Yearly on <mon day> · Custom…`), adds a humanized entry for a representable non-preset rule or **"Custom rule (kept)"** for an unrepresentable one, and `Resolve(idx, finalAnchor)` maps a selection back to `Recur`/`RecurRemove` — rewrite-only-when-changed, presets re-derived from the final start date. Bare weekly normalizes to the Weekly preset. `RecurrenceSummary` renders the Detail-pane text.
+- **UI wiring** (`internal/ui/itemforms.go`): `newEventForm`/`newTodoForm` take a `*model.RepeatChoices` (nil hides the field); read paths call `Resolve`. Scope wiring: create + edit-non-recurring + scope-All show it; **this-occurrence hides it** (nil); this-&-future shows it seeded at the occurrence. Scope-All event save routes a rule change/removal through `RewriteEventRule` and flashes "N edited occurrence(s) removed"; the split takes a changed rule for the future series. A repeating task requires a due date. Custom… entry present but **stubbed** (sub-form is step 5).
+- **Detail pane** (`internal/ui/render.go`): recurring events/tasks show a **Repeats** row with the humanized rule (or `custom (FREQ=…)`); the old event "repeats" flag moved out of the Flags row.
+- **Repro-first (TDD)**: `internal/model/recurfield_test.go` (new) — seeding tables per rule shape + `Resolve` (create/remove/unchanged/changed/re-derive/kept). `internal/ui/recurfield_test.go` (new) — form read on create, seeded-untouched + None-removes, this-occurrence hides the field, task-needs-due.
+- Full gate green (`go test ./...`, `go vet ./...`, `staticcheck ./...`, `go build ./...`).
+- Files: `internal/model/recurfield.go` (new), `internal/model/recurfield_test.go` (new), `internal/ui/itemforms.go`, `internal/ui/recur_edit.go`, `internal/ui/render.go`, `internal/ui/recurfield_test.go` (new), `log.md`.
+
 ## 2026-07-23 — v1.3.0 step 3: recurrence rewrite primitives (Recur/RecurRemove, orphan pruning, split-with-new-rule)
 
 - Implemented the third v1.3.0 build step — the model write paths for rewriting/removing an existing recurrence rule.
