@@ -55,7 +55,7 @@ var helpSections = []struct {
 	{"Edit & organize", [][2]string{
 		{"e", "edit selected (full form); on the Calendars/Tasks pane, edit the calendar/list (name + color)"},
 		{"s p / s d", "quick-set task priority / due date"},
-		{"d", "delete (item, or calendar/list when its panel is focused)"},
+		{"d", "delete (item; calendar/list when its panel is focused — type its name to confirm)"},
 		{"e / d on recurring", "prompts scope: this occurrence / this & future / all"},
 		{"Repeat (full form)", "set/change recurrence: None, a preset, or Custom… (interval, weekdays, monthly nth, end)"},
 		{"Space", "toggle task done (hide/show calendar in Calendar view)"},

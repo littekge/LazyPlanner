@@ -4,6 +4,15 @@
 
 ---
 
+## 2026-07-23 — v1.3.0: rigorous type-to-confirm for collection deletes
+
+- Collection deletes (calendar/list, `d` on the focused Calendars/Tasks pane) are not undoable, so they no longer use the one-button confirm. A new type-to-confirm dialog (`promptDeleteCollection`, `internal/ui/calendar.go`) requires typing the collection's exact name — trim + case-sensitive (`collectionDeleteNameMatches`) — before **Delete** fires; a mismatch flashes "Name doesn't match" and keeps the dialog open. Item deletes (undoable) keep the ordinary confirm.
+- Built on the shared `caretForm` (inherits the popup chrome, focus-stack, and NORMAL/DRILL nav); the warning lives in the title (`⚠ Delete <noun> "<name>" (N item(s)) — cannot be undone`) since `openModal` type-asserts a `*caretForm` and can't wrap a separate text line.
+- **Repro-first (TDD)**: `TestCollectionDeleteNameMatches` (match table) and `TestCollectionDeleteRequiresTypedName` (wrong name → nothing deleted, dialog stays open; correct whitespace-padded name → deleted, modal closed) — both RED before, green after.
+- Docs rippled: `main.md` (item moved to shipped + collection-delete prose), `README.md` (delete row + prose), `:help`.
+- Full gate green (`go test ./...`, `go vet ./...`, `staticcheck ./...`, `go build ./...`).
+- Files: `internal/ui/calendar.go`, `internal/ui/calendar_test.go`, `internal/ui/help.go`, `main.md`, `README.md`, `log.md`.
+
 ## 2026-07-23 — Docs: reinstate SELECT as v1.4.0, polish to v1.5.0; de-creep Current State
 
 - Owner reversed the prior day's SELECT-mode decision (main.md, in place): SELECT is too big to drop.

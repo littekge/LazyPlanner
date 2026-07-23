@@ -69,7 +69,7 @@ Run `lazyplanner` with no arguments to open the TUI (seed the cache with `import
   - **`!` priority** (`!high`/`!1`–`!9`), **`#tag`**, and **`@location`** (`@home` or `@"room 204"`).
   - An obvious typo (`!hgh`, `next tuedsay`, `25:00`) keeps the input open with a warning — submit the same text again to keep it as-is.
 - Creation is **locked to the calendar's type** (events only on `[events]`/`[both]`, tasks only on `[tasks]`/`[both]`); an unconfirmed `[?]` calendar blocks creation until a sync settles it, unless you force it with **`i!`** (e.g. `i!e`) — read-only and known-wrong-type are never forced.
-- `e` edits the selected item (or, with the Calendars/Tasks panel focused, that calendar/list's name + color); `s` quick-sets one field (`sp` priority, `sd` due); `d` deletes (a folder removes its whole subtree, after a confirm).
+- `e` edits the selected item (or, with the Calendars/Tasks panel focused, that calendar/list's name + color); `s` quick-sets one field (`sp` priority, `sd` due); `d` deletes (an item after a confirm — a folder removes its whole subtree; a calendar/list, when its panel is focused, requires typing its name to confirm because it can't be undone).
 - The full forms use the same **NORMAL/DRILL** model as the rest of the app: a form opens in NORMAL, where `j`/`k`/arrows step between fields and the Save/Cancel buttons and `Enter` acts on the highlighted one — drilling a text field to type, opening a dropdown, or toggling a checkbox. In DRILL the keys reach the field; `Enter` moves on to the next field and `Esc` steps back out to NORMAL (a second `Esc` cancels the form).
 
 **Folders.** A task with unfinished subtasks is a **folder** — drawn with a `▸` caret instead of a checkbox in every view — and can't be completed until they are. It keeps its own due date, so it still appears on the calendar (adding a subtask to a dated task just swaps `[ ]` for `▸`). `Space` toggles a task done in **any** view; in a calendar with no task drilled, `Space` instead hides/shows the highlighted calendar.
@@ -91,7 +91,7 @@ Editing (`e`), deleting (`d`), or grabbing (`m`) a recurring **event** opens a s
 
 ### Managing Calendars
 
-You can create and delete calendars/task lists in-app (`ic` / `il` to create a calendar / list, `d` to delete the focused pane's collection — all offline-first), so you never need the NextCloud web UI. These CLI subcommands do the same directly on the server (via CalDAV `MKCALENDAR` / `DELETE`); they take the same connection flags/env vars as the other subcommands (see [Syncing](#syncing)).
+You can create and delete calendars/task lists in-app (`ic` / `il` to create a calendar / list, `d` to delete the focused pane's collection — confirmed by typing the collection's name, since it can't be undone — all offline-first), so you never need the NextCloud web UI. These CLI subcommands do the same directly on the server (via CalDAV `MKCALENDAR` / `DELETE`); they take the same connection flags/env vars as the other subcommands (see [Syncing](#syncing)).
 
 ```sh
 lazyplanner calendar list                          # show calendars + their server paths
@@ -117,7 +117,7 @@ After creating a calendar, run `lazyplanner import` to pull it into the local ca
 | `i` … | Create prefix — `t`/`T` task, `e`/`E` event, `s`/`S` subtask, `c` calendar, `l` list (Shift = full form) |
 | `e` | Edit selected (full form) |
 | `s` … | Quick-set a task field — `p` priority, `d` due date (blank clears) |
-| `d` | Delete selected item — or the calendar/list when its panel is focused |
+| `d` | Delete selected item — or the calendar/list when its panel is focused (typing its name to confirm, since a collection delete can't be undone) |
 | `Space` | Toggle the selected/drilled task done — or hide/show the highlighted calendar (Calendar view, no task drilled) |
 | `/` · `n` / `N` | Search the current view · next / prev match |
 | `H` / `L` | Outdent / indent task (re-parent) |

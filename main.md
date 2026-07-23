@@ -186,7 +186,7 @@ The **full form** (`e` on an existing item, or the full-create key) edits **ever
 
 Parsing rules are predictable and documented in `:help` — when in doubt, text stays in the title rather than being guessed.
 
-**Calendar color** is part of the **create/edit calendar form** (one form for both): a **Color** field with a **"Pick color…"** button that opens a **swatch-grid picker** — a popup of preset color cells (a NextCloud-like palette) navigated with `hjkl`/arrows, `Enter` to pick, plus a "Custom hex…" entry for any other color; the pick is written back into the Color field (which also accepts a typed hex). The picker can nest over the form because modal focus save/restore is a stack. The color is set **at creation** — a new calendar is colored from the start and carries the color in its MKCALENDAR (not left default until manually recolored). The Color field is **pre-seeded with a default palette color** (NextCloud blue) and blank on create falls back to it, so **every created calendar/list always has a color**. The same form edits an existing calendar's name + color via `e` on the Calendars pane — or a task list's via `e` on the Tasks pane (symmetric with `d`, which deletes the focused pane's collection). `:calendar color` with no hex opens the swatch picker directly (a quick recolor), and `:calendar color #rrggbb` still sets one directly. All changes are applied offline-first and pushed on the next sync (MKCALENDAR for a new calendar, `PROPPATCH` for an existing one).
+**Calendar color** is part of the **create/edit calendar form** (one form for both): a **Color** field with a **"Pick color…"** button that opens a **swatch-grid picker** — a popup of preset color cells (a NextCloud-like palette) navigated with `hjkl`/arrows, `Enter` to pick, plus a "Custom hex…" entry for any other color; the pick is written back into the Color field (which also accepts a typed hex). The picker can nest over the form because modal focus save/restore is a stack. The color is set **at creation** — a new calendar is colored from the start and carries the color in its MKCALENDAR (not left default until manually recolored). The Color field is **pre-seeded with a default palette color** (NextCloud blue) and blank on create falls back to it, so **every created calendar/list always has a color**. The same form edits an existing calendar's name + color via `e` on the Calendars pane — or a task list's via `e` on the Tasks pane (symmetric with `d`, which deletes the focused pane's collection — a type-to-confirm dialog, since a collection delete can't be undone). `:calendar color` with no hex opens the swatch picker directly (a quick recolor), and `:calendar color #rrggbb` still sets one directly. All changes are applied offline-first and pushed on the next sync (MKCALENDAR for a new calendar, `PROPPATCH` for an existing one).
 
 ### Completing, editing, and quick field-set
 
@@ -447,10 +447,16 @@ Behavior refinements after the six-step build (per-change detail lives in `log.m
   - **DRILL**: keys reach the focused field — a text field types normally (so `hjkl` are letters and `←`/`→` move the cursor), `Enter` commits and **advances** (auto-drilling the next text field, but stopping in NORMAL on a dropdown/checkbox/button), and `Esc` returns to NORMAL keeping the value. Opening a dropdown (`Enter` in NORMAL) hands off to tview's native list — navigated with `↑`/`↓` (plus type-ahead), `Enter` selects → NORMAL, `Esc` aborts, no auto-advance. The open list is arrow-only rather than `j`/`k` because tview reinstalls its own key capture on the list each time it opens; `j`/`k` remain the field/button navigators in NORMAL.
   - `Tab`/`Shift-Tab` remain aliases for advance / previous. The NORMAL/DRILL state surfaces through the existing `interactionMode` badge.
 
+- **Rigorous confirm for collection deletes.** Deleting a calendar or task list
+  (`d` on the focused Calendars/Tasks pane) is not undoable, so it no longer uses
+  the one-button confirm: a type-to-confirm dialog requires typing the
+  collection's exact name (trim + case-sensitive) before **Delete** fires — a
+  mismatch flashes and keeps the dialog open. Item deletes stay on the ordinary
+  undoable confirm.
+
 **Planned before release** (owner-scoped 2026-07-23; each brainstormed into a detailed plan when picked up, then built repro-first):
 
 - **Custom-recurrence form redesign.** The Custom… repeat sub-form (`recurcustom.go`) feels cumbersome; rework its layout for a lighter, less dense feel.
-- **Rigorous confirm for irreversible deletes.** Collection deletion (`deleteCollection`, `D`) isn't undoable — it uses the ordinary one-button confirm and pushes no undo op, unlike item deletes. Give calendar/list deletes a stronger, distinct confirmation (e.g. type-to-confirm the name).
 
 ### v1.4.0 — SELECT mode (planned)
 
