@@ -4,6 +4,16 @@
 
 ---
 
+## 2026-07-23 — v1.3.0 step 6: docs ripple — v1.3.0 build complete
+
+- Final v1.3.0 build step — no code, docs brought current with the shipped Repeat field.
+- **main.md**: the Creation section's "edits every field **except the recurrence rule**" sentence **rewritten in place** to describe the Repeat dropdown (None / anchor-derived presets / Custom… sub-form), the "Custom rule (kept)" preservation + rewrite-only-when-changed rule, and the per-scope behavior (All rewrites the master keeping EXDATEs / dropping orphaned overrides; this & future gives the split its rule; this-occurrence hides the field; Repeat→None clears). Current State flipped to "v1.3.0 implemented 2026-07-23, awaiting release; v1.4.0 SELECT next". The v1.3.0 Build Plan header flipped from "(planned)" to "(implemented 2026-07-23)" with a Status line.
+- **`:help`** (`internal/ui/help.go`): added a **Repeat (full form)** row to Edit & organize.
+- **README.md**: the quick-add `repeat` bullet now points at the full form for richer rules; the **Recurring items** section gained a lead paragraph describing the Repeat field (presets + Custom… + kept-rule preservation).
+- **v1.3.0 is feature-complete**: all six build steps implemented repro-first with green full gates, verified headlessly (model round-trip + unrepresentable catalogue, rewrite primitives, extended fuzz, UI seeding/read/sub-form + display-stress + focus-stack). Awaiting the owner's release/tag.
+- Full gate green (`go test ./...`, `go vet ./...`, `staticcheck ./...`, `go build ./...`).
+- Files: `main.md`, `internal/ui/help.go`, `README.md`, `log.md`.
+
 ## 2026-07-23 — v1.3.0 step 5: Custom… recurrence sub-form (nested modal)
 
 - Implemented the fifth v1.3.0 build step — the **Custom… sub-form**, a nested modal over the item form (the color-picker focus-stack precedent) that builds an arbitrary in-vocabulary rule.

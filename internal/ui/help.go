@@ -49,6 +49,7 @@ var helpSections = []struct {
 		{"s p / s d", "quick-set task priority / due date"},
 		{"d", "delete (item, or calendar/list when its panel is focused)"},
 		{"e / d on recurring", "prompts scope: this occurrence / this & future / all"},
+		{"Repeat (full form)", "set/change recurrence: None, a preset, or Custom… (interval, weekdays, monthly nth, end)"},
 		{"Space", "toggle task done (hide/show calendar in Calendar view)"},
 		{"H / L", "outdent / indent task (re-parent)"},
 		{"> / <", "zoom into / out of the selected task's subtree"},
