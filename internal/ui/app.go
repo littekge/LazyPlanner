@@ -147,6 +147,8 @@ type app struct {
 	suspendTree         bool                // ignore tasklist change events while the panel is rebuilt
 	stickyDone          map[string]bool     // tasks completed while hidden, kept visible until the list is left
 	focusStack          []focusState        // pre-modal focus states, one per open modal (supports nesting, e.g. a color picker over the calendar form)
+	formDrill           bool                // the front caretForm modal is in DRILL (editing a field); surfaces in the mode badge
+
 
 	// ctx is cancelled on shutdown so an in-flight background sync unwinds cleanly
 	// at its next ctx checkpoint (the sync/caldav stack honors it) rather than

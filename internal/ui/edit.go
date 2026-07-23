@@ -842,12 +842,21 @@ func (a *app) modalOpen() bool {
 
 func (a *app) openModal(name string, prim tview.Primitive, width, height int) {
 	a.captureFocus()
+	// A caret form opens in NORMAL; wire its DRILL-state changes to the mode badge.
+	if cf, ok := prim.(*caretForm); ok {
+		a.formDrill = false
+		cf.onDrill = func(d bool) { a.formDrill = d }
+		cf.appFocus = func(p tview.Primitive) { a.tv.SetFocus(p) }
+	}
 	a.root.AddPage(name, modalWrap(prim, width, height), true, true)
 	a.tv.SetFocus(prim)
 }
 
 func (a *app) closeModal(name string) {
 	a.root.RemovePage(name)
+	// The front modal is gone; the badge falls back to the covered context (an
+	// outer form resumes in NORMAL — a nested sub-form can't have left it drilled).
+	a.formDrill = false
 	a.restoreFocus()
 	// A debounced push that fell due while the form was open was deferred
 	// (fireDebouncedSync); re-arm it now so a still-pending local edit syncs

@@ -613,6 +613,13 @@ func (a *app) interactionMode() string {
 		return modeResize
 	case a.grabbing:
 		return modeGrab
+	case a.modalOpen():
+		// A form modal drives the badge from its own NORMAL/DRILL field state; this
+		// also takes precedence over a calendar drill left standing behind the form.
+		if a.formDrill {
+			return modeDrill
+		}
+		return modeNormal
 	case a.gridDrilled():
 		return modeDrill
 	default:

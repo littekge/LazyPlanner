@@ -4,6 +4,19 @@
 
 ---
 
+## 2026-07-23 — Feature: DRILL-mode form navigation
+
+- Implemented the app-wide NORMAL/DRILL input model for the full-screen form dialogs, once in the shared `caretForm` so all four forms (event, task, calendar, Custom repeat) inherit it — replacing tview's Tab-only field movement.
+- **NORMAL** (forms open here): `j`/`k`/`↑`/`↓` step fields + Save/Cancel buttons, `h`/`l` move between buttons, `g`/`G` jump to first field / last element, `Enter` acts on the focused element (drill a text field, open a dropdown, toggle+advance a checkbox, activate a button), `Esc` cancels, other keys inert. `Tab`/`Shift-Tab` remain advance/previous aliases.
+- **DRILL**: keys reach the focused text field (so `hjkl` are letters, `←`/`→` move the cursor); `Enter` commits and advances, **auto-drilling** the next text field but stopping in NORMAL on a dropdown/checkbox/button; `Esc` returns to NORMAL keeping the value.
+- **Implementation** (`internal/ui/forms.go`): a form-level `SetInputCapture` (`navKey`→`normalKey`/`drillKey`) plus a `drilled` flag. The capture runs before tview's item delegation (returning `nil` swallows, returning the event passes it through). Dropdowns delegate to tview's native open list (arrow-key nav + type-ahead, `Enter` selects, `Esc` aborts) — `j`/`k` can't drive the open list because tview reinstalls its own capture on it each open; documented in `main.md`.
+- **App-focus sync**: nav routes focus moves through the Application's setter (`caretForm.appFocus`, wired in `openModal`) so `a.focus`/`GetFocus()` track the leaf item — otherwise a nested modal (e.g. the calendar form's Pick color…) would `captureFocus` a stale primitive and restore focus wrong on close (the softlock-adjacent focus class). Falls back to the form-internal `SetFocus` in bare-widget tests.
+- **Mode badge**: `interactionMode` now reports the form's NORMAL/DRILL when a modal is open (via `a.formDrill`, set by `caretForm.onDrill`), taking precedence over a calendar drill left standing behind the form; reset on modal close.
+- **Repro-first tests** (`internal/ui/formnav_test.go`, 12 cases): open-in-NORMAL + no-typing, Enter-drills-then-types (hjkl as letters), Esc DRILL→NORMAL keeps value, NORMAL Esc cancels, Enter commit+auto-drill next text field, stop-NORMAL on non-text, checkbox toggle+advance, `g`/`G`, `h`/`l` button-only + clamp, Enter activates a button, Tab/Backtab aliases, app-focus stays in sync, and the DRILL mode-badge surface. All RED before, green after.
+- Docs rippled in the same increment: `main.md` (Post-Build subsection now describes the shipped behavior incl. the dropdown arrow-key note), `README.md` (mode-badge meaning + a NORMAL/DRILL form-navigation concept sentence), `:help` (new "Forms (full dialogs)" section + badge line).
+- Full gate green (`go test ./...`, `go vet ./...`, `staticcheck ./...`, `go build ./...`); `go test -race ./internal/ui/` clean.
+- Files: `internal/ui/forms.go`, `internal/ui/edit.go`, `internal/ui/render.go`, `internal/ui/app.go`, `internal/ui/help.go`, `internal/ui/formnav_test.go`, `main.md`, `README.md`, `log.md`.
+
 ## 2026-07-23 — Docs: v1.3.0 "Post-Build Incremental Changes" section in main.md
 
 - Added a `#### Post-Build Incremental Changes` subsection under the v1.3.0 Build Plan (`main.md`), recording behavior refinements made after the six-step build so the spec stays the source of truth for what the program does.

@@ -70,6 +70,7 @@ Run `lazyplanner` with no arguments to open the TUI (seed the cache with `import
   - An obvious typo (`!hgh`, `next tuedsay`, `25:00`) keeps the input open with a warning — submit the same text again to keep it as-is.
 - Creation is **locked to the calendar's type** (events only on `[events]`/`[both]`, tasks only on `[tasks]`/`[both]`); an unconfirmed `[?]` calendar blocks creation until a sync settles it, unless you force it with **`i!`** (e.g. `i!e`) — read-only and known-wrong-type are never forced.
 - `e` edits the selected item (or, with the Calendars/Tasks panel focused, that calendar/list's name + color); `s` quick-sets one field (`sp` priority, `sd` due); `d` deletes (a folder removes its whole subtree, after a confirm).
+- The full forms use the same **NORMAL/DRILL** model as the rest of the app: a form opens in NORMAL, where `j`/`k`/arrows step between fields and the Save/Cancel buttons and `Enter` acts on the highlighted one — drilling a text field to type, opening a dropdown, or toggling a checkbox. In DRILL the keys reach the field; `Enter` moves on to the next field and `Esc` steps back out to NORMAL (a second `Esc` cancels the form).
 
 **Folders.** A task with unfinished subtasks is a **folder** — drawn with a `▸` caret instead of a checkbox in every view — and can't be completed until they are. It keeps its own due date, so it still appears on the calendar (adding a subtask to a dated task just swaps `[ ]` for `▸`). `Space` toggles a task done in **any** view; in a calendar with no task drilled, `Space` instead hides/shows the highlighted calendar.
 
@@ -84,7 +85,7 @@ Editing (`e`), deleting (`d`), or grabbing (`m`) a recurring **event** opens a s
 - **`:account`** switches the active account: `:account <name>`, or bare `:account` to pick from a list. LazyPlanner flushes pending changes, then reopens on the chosen account's cache. When more than one account is configured the status bar shows the active one.
 - **`:config`** opens `config.toml` in `$EDITOR` and reloads on exit: a `color_mode` or credential change applies live, while an `auto`↔`truecolor` switch needs a restart. Editing the active account's connection (or removing it) can't be hot-swapped — use `:account` or restart.
 - `:calendar` edits are offline-first and sync **both ways** — a rename/recolor pushes via `PROPPATCH`, and a change made in NextCloud is pulled back without clobbering an unpushed local edit.
-- The status bar's left shows a vim-style **mode badge** — `NORMAL`, `DRILL` (drilled into a day), `GRAB` — so a context-sensitive key like `hjkl` is never a surprise; its right shows the sync state and live conflict count.
+- The status bar's left shows a vim-style **mode badge** — `NORMAL`, `DRILL` (drilled into a day, or editing a form field), `GRAB` — so a context-sensitive key like `hjkl` is never a surprise; its right shows the sync state and live conflict count.
 - `+`/`-` accordion-expand the center (or zoom the time-grid hour height in week/day view); `Ctrl-←`/`Ctrl-→` and `Ctrl-W` resize the panes, widths remembered across launches.
 - **Mouse**: click to focus/select, double-click the tree/agenda to edit, wheel to scroll. `?` opens the full cheat sheet.
 

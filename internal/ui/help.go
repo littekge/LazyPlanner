@@ -26,7 +26,15 @@ var helpSections = []struct {
 		{"/ then n / N", "search; next / prev match"},
 		{"Enter", "dive in / open; cycle a day's events"},
 		{"Esc / q", "back out / quit"},
-		{"(mode badge)", "status-bar badge shows the input mode: NORMAL · DRILL (drilled into a calendar day) · GRAB · RESIZE"},
+		{"(mode badge)", "status-bar badge shows the input mode: NORMAL · DRILL (drilled into a calendar day, or editing a form field) · GRAB · RESIZE"},
+	}},
+	{"Forms (full dialogs)", [][2]string{
+		{"j / k / ↑ / ↓", "NORMAL: step between fields and the Save/Cancel buttons"},
+		{"h / l", "NORMAL: move between the buttons"},
+		{"g / G", "NORMAL: jump to the first field / last element"},
+		{"Enter", "NORMAL: drill a text field, open a dropdown, toggle a checkbox, or press a button"},
+		{"Enter (in DRILL)", "commit the field and advance to the next"},
+		{"Esc", "DRILL → NORMAL (keeps the value); a second Esc cancels the form"},
 	}},
 	{"Create (i prefix)", [][2]string{
 		{"i t / i T", "add task — quick / full form"},
