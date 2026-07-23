@@ -4,6 +4,14 @@
 
 ---
 
+## 2026-07-23 — Docs: v1.3.0 "Post-Build Incremental Changes" section in main.md
+
+- Added a `#### Post-Build Incremental Changes` subsection under the v1.3.0 Build Plan (`main.md`), recording behavior refinements made after the six-step build so the spec stays the source of truth for what the program does.
+- **Unified dialog chrome** — documents the confirmation/picker standardization (`styleModal`, accent border + contextual titles, no contrast band) and theme-adaptive selection everywhere incl. dropdowns.
+- **DRILL-mode form navigation** — documents the just-settled design (NORMAL/DRILL modal input layer in `caretForm`: hjkl/g/G/Enter/Esc semantics, auto-drill advance, dropdown/checkbox rules, Tab aliases, interactionMode badge). Marked "design settled 2026-07-23" — implementation follows.
+- No code change.
+- Files: `main.md`, `log.md`.
+
 ## 2026-07-23 — Bugfix: confirmation-modal border highlight band
 
 - The confirmation/picker modals showed a highlighted (blue) band around the border. **Root cause**: `tview.Modal`'s constructor sets its embedded `Box` background to `Styles.ContrastBackgroundColor`, but `Modal.SetBackgroundColor` resets only the frame/form — never the Box. So the box fill and the border's background stayed the contrast color (a latent issue predating the chrome work, made visible by the new accent border).

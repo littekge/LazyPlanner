@@ -432,6 +432,17 @@ Close the recurrence-creation gap in the full forms (acknowledged 2026-07-22: qu
 5. **UI: Custom… sub-form** — nested modal, validation, display-stress + focus-stack tests.
 6. **Docs ripple** — README, `:help`, main.md (the Creation section's "except the recurrence rule" exception comes out).
 
+#### Post-Build Incremental Changes
+
+Behavior refinements made after the six-step build, each shipped with tests and a green gate (per-change detail lives in `log.md`):
+
+- **Unified dialog chrome.** Every dialog shares one look — the multi-field forms and the confirmation/picker modals alike: an accent rounded border, a contextual title, and the unified terminal-default background with no contrast band. A shared `styleModal` gives the `tview.Modal` confirms/pickers the treatment the forms get from `stylePopup`; each title names the action (` Delete task `, ` Recurring event `, ` Resolve conflict `, …). Selection highlighting is theme-adaptive everywhere, dropdown lists included.
+
+- **DRILL-mode form navigation** (design settled 2026-07-23, mirroring the app-wide NORMAL/DRILL seam). The form dialogs use a vim-style modal input layer rather than Tab-only field movement, implemented once in the shared `caretForm` so all four forms inherit it:
+  - **NORMAL** (forms open here, caret on the first field): `j`/`k`/arrows step through the fields and the Save/Cancel buttons; `h`/`l` move between the buttons; `g`/`G` jump to the first field / last item. `Enter` drills a text field, opens a dropdown, toggles a checkbox (then advances), or activates a button. `Esc` closes the form. Other keys are inert.
+  - **DRILL**: keys reach the focused field — a text field types normally (so `hjkl` are letters and `←`/`→` move the cursor), `Enter` commits and **advances** (auto-drilling the next text field, but stopping in NORMAL on a dropdown/checkbox/button), and `Esc` returns to NORMAL keeping the value. A drilled dropdown opens its list (`j`/`k` pick, `Enter` selects → NORMAL, `Esc` aborts, no auto-advance).
+  - `Tab`/`Shift-Tab` remain aliases for advance / previous. The NORMAL/DRILL state surfaces through the existing `interactionMode` badge.
+
 ### v1.4.0 — SELECT mode (planned)
 
 A vim-style multi-select interaction layer. Goal-level scope (owner decisions 2026-07-21; deferred to v1.4.0 on 2026-07-22); detailed design before implementation, written here first.
