@@ -289,7 +289,7 @@ The keyboard interface feels like **vim, not lazygit**: single keys for panel fo
 
 ### Mouse
 
-Click focuses panes and selects items; clicking a folder in the task tree expands/collapses it; double-click opens the edit form; the scroll wheel scrolls panes/lists. (Wheel-paging the calendar month/week/day grid was considered and dropped — the keyboard `f`/`b` pages them; the custom grids take no wheel handler.)
+Click focuses panes and selects items, including the row under the cursor on the center agenda board; clicking a folder in the task tree expands/collapses it; double-click opens the edit form for the item under the cursor (tree or agenda board); the scroll wheel scrolls panes/lists. (Wheel-paging the calendar month/week/day grid was considered and dropped — the keyboard `f`/`b` pages them; the custom grids take no wheel handler.)
 
 ---
 
@@ -503,7 +503,7 @@ With the planned feature line closing at v1.4.0 (v1.5.0 is polish & audit), no f
 - **Persistent trash** — undo today is session-scoped; deferred unless it proves needed.
 - **Conflict "keep both as separate items"** — a third resolution besides keep-local/keep-server; needs a new-UID clone.
 - **Detail-pane accordion collapse** — the `+`/`-` accordion only collapses the overview column today.
-- **Mouse click-to-select** in the center agenda board and full-cell click mapping in the calendar grids (the pass-16 accepted UI gap).
+- **Full-cell click mapping** in the calendar grids — a click anywhere in a day/hour cell, not just on a drawn event block, selects it.
 - **Full `sync-collection` delta sync** — **indefinitely deferred** (see the Incremental sync decision for the measured rationale); revisit only if a real pain point appears.
 
 ---

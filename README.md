@@ -89,7 +89,7 @@ Editing (`e`), deleting (`d`), or grabbing (`m`) a recurring **event** opens a s
 - `:calendar` edits are offline-first and sync **both ways** — a rename/recolor pushes via `PROPPATCH`, and a change made in NextCloud is pulled back without clobbering an unpushed local edit.
 - The status bar's left shows a vim-style **mode badge** — `NORMAL`, `DRILL` (drilled into a day, or editing a form field), `GRAB` — so a context-sensitive key like `hjkl` is never a surprise; its right shows the sync state and live conflict count.
 - `+`/`-` accordion-expand the center (or zoom the time-grid hour height in week/day view); `Ctrl-←`/`Ctrl-→` and `Ctrl-W` resize the panes, widths remembered across launches.
-- **Mouse**: click to focus/select, double-click the tree/agenda to edit, wheel to scroll. `?` opens the full cheat sheet.
+- **Mouse**: click focuses a pane and selects the item under it — including the center agenda board — and double-click opens the edit form for the item under the cursor (tree or agenda). Wheel scrolls. `?` opens the full cheat sheet.
 
 ### Managing Calendars
 

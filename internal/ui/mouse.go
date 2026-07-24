@@ -48,6 +48,12 @@ func (a *app) mouseCapture(ev *tcell.EventMouse, action tview.MouseAction) (*tce
 			if a.mode != modeAgenda {
 				a.setMode(modeAgenda)
 			}
+		case a.agenda.InRect(x, y) && a.mode == modeAgenda:
+			// The board draws only as Agenda mode's center page; its Box rect can be
+			// stale when another page is up, so the mode guard is load-bearing.
+			if idx := a.agenda.itemAtY(y); idx >= 0 {
+				a.agendaList.SetCurrentItem(idx) // its changed func drives the board selection
+			}
 		}
 	case tview.MouseLeftDoubleClick:
 		x, y := ev.Position()
@@ -64,10 +70,14 @@ func (a *app) mouseCapture(ev *tcell.EventMouse, action tview.MouseAction) (*tce
 			}
 			a.editSelected()
 		case a.agenda.InRect(x, y):
-			// The center agenda board has no click-to-select mapping (single clicks
-			// there don't move the agenda selection either), so a double-click edits
-			// the current agenda selection. Position-precise board editing would need
-			// board-level hit-testing — see COVERAGE.md.
+			// Re-target to the row under the cursor before editing, like the tree
+			// case above — editSelected reads the current selection, and the clicked
+			// row need not be the selected one.
+			if a.mode == modeAgenda {
+				if idx := a.agenda.itemAtY(y); idx >= 0 {
+					a.agendaList.SetCurrentItem(idx)
+				}
+			}
 			a.editSelected()
 		}
 	}

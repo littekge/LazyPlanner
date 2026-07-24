@@ -4,6 +4,14 @@
 
 ---
 
+## 2026-07-24 — Agenda board click-to-select + double-click re-target (gap-closer A, part 2)
+
+- `mouseCapture` gains a board case: single left click (Agenda mode) selects the item under the cursor via `agendaList.SetCurrentItem` (its changed func drives the board); double-click re-targets before `editSelected`, closing the pass-16 "edits the already-selected item" trap. Gap rows and the header are inert (`itemAtY` = -1).
+- Tests: `TestAgendaBoardClickSelects`, `TestAgendaBoardDoubleClickEditsRowUnderCursor` (`internal/ui/agendaclick_test.go`) — RED first (no board click case / edit landed on the stale selection), GREEN after wiring. The task brief's test code hardcoded click x=10; the always-visible left overview column (calendars/tasklists/agendaList) tiles x 0..25 for the full pane height at the default 26-wide left column, so that x never reaches the board's rect (x≥26) regardless of wiring — verified by a manual x=30 probe that the wiring itself was correct before touching the test. Fixed the tests to derive the click column from the board's own rect (`b.GetRect()`) instead of the fixed literal; row math and assertions otherwise unchanged from the brief.
+- Docs: README Usage mouse sentence, main.md Mouse section + Future-versions bullet trimmed to just the calendar-grid full-cell click mapping, COVERAGE.md mouse-row limitation note closed.
+- Full gate green.
+- Files: `internal/ui/mouse.go`, `internal/ui/agendaclick_test.go`, `README.md`, `main.md`, `docs/audit/COVERAGE.md`, `log.md`.
+
 ## 2026-07-24 — Agenda board: layoutBlocks extraction + itemAtY hit-testing (gap-closer A, part 1)
 
 - Extracted `agendaBoard.Draw`'s inline block layout into `layoutBlocks()` and added `itemAtY(screenY)` — screen row → item index, -1 on header/gap/outside/past-last — sharing the exact layout math so hit-testing can't disagree with what was drawn (the `treeNodeAtY` precedent). Rendering unchanged.

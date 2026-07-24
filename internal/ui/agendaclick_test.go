@@ -6,6 +6,7 @@ import (
 	"time"
 
 	"github.com/gdamore/tcell/v2"
+	"github.com/rivo/tview"
 )
 
 // drawnAgendaApp builds an app in Agenda mode with n timed events today, drawn
@@ -96,5 +97,69 @@ func TestAgendaBoardItemAtYEmptyAndScrolled(t *testing.T) {
 	sy := contentTop + starts[last] - b.scroll // the last block's first text row
 	if got := b.itemAtY(sy); got != last {
 		t.Errorf("scrolled: itemAtY(%d) = %d, want %d", sy, got, last)
+	}
+}
+
+// TestAgendaBoardClickSelects: a single left click on an item's text row moves
+// the agenda selection to it (the board was the one surface where the mouse did
+// nothing); a click on a gap row changes nothing.
+func TestAgendaBoardClickSelects(t *testing.T) {
+	a, _ := drawnAgendaApp(t, 3)
+	b := a.agenda
+	if got := a.agendaList.GetCurrentItem(); got != 0 {
+		t.Fatalf("precondition: selection starts at 0, got %d", got)
+	}
+
+	_, y, _, _ := b.GetInnerRect()
+	contentTop := y + 2
+	blocks, starts, _ := b.layoutBlocks()
+	// The board sits right of the always-visible left overview column
+	// (calendars/tasklists/agendaList tile x 0..leftWidth-1 for the full pane
+	// height), so the click's x must land inside the board's own rect — a
+	// column within the left overview would hit one of those cases first.
+	boardX, _, _, _ := b.GetRect()
+	clickCol := boardX + 1
+
+	clickRow := contentTop + starts[2] - b.scroll // item 2's first text row
+	ev := tcell.NewEventMouse(clickCol, clickRow, tcell.Button1, 0)
+	a.mouseCapture(ev, tview.MouseLeftClick)
+	if got := a.agendaList.GetCurrentItem(); got != 2 {
+		t.Errorf("click on item 2's row: selection = %d, want 2", got)
+	}
+	if b.selected != 2 {
+		t.Errorf("board selection = %d, want 2 (SetCurrentItem must drive setSelected)", b.selected)
+	}
+
+	gapRow := contentTop + starts[0] + len(blocks[0]) - b.scroll // the gap under item 0
+	a.mouseCapture(tcell.NewEventMouse(clickCol, gapRow, tcell.Button1, 0), tview.MouseLeftClick)
+	if got := a.agendaList.GetCurrentItem(); got != 2 {
+		t.Errorf("click on a gap row must not move the selection: got %d, want 2", got)
+	}
+}
+
+// TestAgendaBoardDoubleClickEditsRowUnderCursor: the pass-16 known limitation —
+// a double-click on the board edited whatever was already selected. It must now
+// re-target to the item under the cursor first (the treeNodeAtY re-target
+// precedent), so the edit form opens on the clicked item.
+func TestAgendaBoardDoubleClickEditsRowUnderCursor(t *testing.T) {
+	a, _ := drawnAgendaApp(t, 3)
+	b := a.agenda
+
+	_, y, _, _ := b.GetInnerRect()
+	contentTop := y + 2
+	_, starts, _ := b.layoutBlocks()
+	// See TestAgendaBoardClickSelects: the click's x must land inside the
+	// board's own rect, right of the always-visible left overview column.
+	boardX, _, _, _ := b.GetRect()
+	clickCol := boardX + 1
+
+	clickRow := contentTop + starts[1] - b.scroll // item 1, while 0 is selected
+	a.mouseCapture(tcell.NewEventMouse(clickCol, clickRow, tcell.Button1, 0), tview.MouseLeftDoubleClick)
+
+	if got := a.agendaList.GetCurrentItem(); got != 1 {
+		t.Errorf("double-click re-target: selection = %d, want 1", got)
+	}
+	if !a.modalOpen() {
+		t.Error("double-click on an item must open the edit form")
 	}
 }
