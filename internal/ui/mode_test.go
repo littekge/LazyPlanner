@@ -45,6 +45,16 @@ func TestInteractionMode(t *testing.T) {
 	if m := a.interactionMode(); m != modeNormal {
 		t.Errorf("task-list overview mode = %q, want NORMAL", m)
 	}
+
+	a.selecting = true
+	if m := a.interactionMode(); m != modeSelect {
+		t.Errorf("selecting mode = %q, want SELECT", m)
+	}
+	a.grabbing = true
+	if m := a.interactionMode(); m != modeGrab {
+		t.Errorf("selecting+grabbing mode = %q, want GRAB (innermost wins)", m)
+	}
+	a.grabbing, a.selecting = false, false
 }
 
 // TestModeIndicatorRenders confirms the mode badge and the status-bar outline
@@ -82,4 +92,11 @@ func TestModeIndicatorRenders(t *testing.T) {
 	if g := dump(); !strings.Contains(g, "GRAB") {
 		t.Error("status bar should show the GRAB badge while grabbing")
 	}
+
+	a.grabbing = false
+	a.selecting = true
+	if s := dump(); !strings.Contains(s, "SELECT") {
+		t.Error("status bar should show the SELECT badge while selecting")
+	}
+	a.selecting = false
 }

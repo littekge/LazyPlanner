@@ -95,6 +95,13 @@ func (a *app) resolvePrefix(ev *tcell.EventKey) {
 	if ev.Key() != tcell.KeyRune {
 		return // Esc (or any non-rune) cancels
 	}
+	// While SELECT is active only the pure-motion chord (gg) may run — every
+	// other continuation edits data or jumps context under the active range
+	// (gt switches to Calendar mode; gd/i/s/z open modals or mutate).
+	if a.selecting && !(p == 'g' && ev.Rune() == 'g') {
+		a.flash("Not available while selecting (Esc to cancel)")
+		return
+	}
 	for _, e := range chords[p] {
 		if e.key == ev.Rune() {
 			a.forceCreate = force

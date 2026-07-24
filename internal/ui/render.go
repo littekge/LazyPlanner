@@ -596,6 +596,7 @@ const (
 	modeDrill  = "DRILL"
 	modeGrab   = "GRAB"
 	modeResize = "RESIZE"
+	modeSelect = "SELECT"
 )
 
 // interactionMode reports the current modal input context for the mode indicator.
@@ -620,6 +621,8 @@ func (a *app) interactionMode() string {
 			return modeDrill
 		}
 		return modeNormal
+	case a.selecting:
+		return modeSelect
 	case a.gridDrilled():
 		return modeDrill
 	default:
@@ -654,6 +657,8 @@ func (a *app) drawModeIndicator(screen tcell.Screen, x, y, width, height int) (i
 		style = tcell.StyleDefault.Foreground(tcell.ColorBlack).Background(todayColor).Bold(true)
 	case modeResize:
 		style = tcell.StyleDefault.Foreground(tcell.ColorBlack).Background(tcell.ColorFuchsia).Bold(true)
+	case modeSelect:
+		style = tcell.StyleDefault.Foreground(tcell.ColorBlack).Background(tcell.ColorLime).Bold(true)
 	}
 	col := x + (width-len(label))/2
 	if col < x {
@@ -690,6 +695,11 @@ func (a *app) updateStatus() {
 	a.statusLeft.SetText(left)
 
 	a.renderSyncStatus()
+
+	if a.selecting {
+		a.hints.SetText("SELECT · hjkl extend · gg/G ends · Space done · d delete · y/Y yank · m grab · Esc/V cancel")
+		return
+	}
 
 	completed := "off"
 	if a.showCompleted {

@@ -14,6 +14,11 @@ func (a *app) mouseCapture(ev *tcell.EventMouse, action tview.MouseAction) (*tce
 	if ev == nil {
 		return ev, action
 	}
+	// SELECT is keyboard-modal like grab: a click could switch panes or move
+	// the context under the active range, so mouse input is inert until Esc.
+	if a.selecting {
+		return nil, action
+	}
 	// Don't reinterpret clicks while a modal/overlay is up — it owns the mouse.
 	if a.modalOpen() {
 		return ev, action

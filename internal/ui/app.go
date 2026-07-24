@@ -149,6 +149,17 @@ type app struct {
 	focusStack          []focusState        // pre-modal focus states, one per open modal (supports nesting, e.g. a color picker over the calendar form)
 	formDrill           bool                // the front caretForm modal is in DRILL (editing a field); surfaces in the mode badge
 
+	// SELECT mode (V): a contiguous multi-select range anchored where the mode
+	// was entered. The selected set is always DERIVED anchor→cursor in visible
+	// order (see selRange), never stored — a stored set would need re-mapping on
+	// every refresh, the exact drift class the v1.0.1 cursor fix closed. Exactly
+	// one anchor is meaningful per context: tree and drilled-day anchor on an
+	// item (selAnchorUID + selAnchorOcc for the occurrence), the un-drilled
+	// calendar on a day (selAnchorDay).
+	selecting    bool
+	selAnchorUID string
+	selAnchorOcc time.Time
+	selAnchorDay time.Time
 
 	// ctx is cancelled on shutdown so an in-flight background sync unwinds cleanly
 	// at its next ctx checkpoint (the sync/caldav stack honors it) rather than
@@ -722,6 +733,14 @@ func (a *app) globalKeys(ev *tcell.EventKey) *tcell.EventKey {
 	if a.resizing {
 		return a.handleResizeKey(ev)
 	}
+	// SELECT is semi-modal: motion still reaches the views (extending the
+	// range); the bulk-op keys and Esc are handled; the rest is swallowed.
+	if a.selecting {
+		if a.handleSelectKey(ev) == nil {
+			return nil
+		}
+		// fall through: a motion key extends the range via the normal handlers
+	}
 	// Vim counts: 1-9 start a count and 0 extends one; the next motion repeats.
 	// (Digits are free for this now that panel focus lives on c/t/a.)
 	if ev.Key() == tcell.KeyRune {
@@ -918,6 +937,9 @@ func (a *app) globalKeys(ev *tcell.EventKey) *tcell.EventKey {
 				a.updateStatus()
 				return nil
 			}
+		case 'V':
+			a.enterSelect()
+			return nil
 		case 'f':
 			if a.mode == modeCalendar {
 				a.shiftAnchor(1)
