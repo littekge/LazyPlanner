@@ -71,7 +71,7 @@ var helpSections = []struct {
 		{".", "show/hide completed tasks"},
 	}},
 	{"Select (multi-select)", [][2]string{
-		{"V", "enter SELECT — anchors at the cursor (task tree, calendar days, or a drilled day's items)"},
+		{"V", "enter SELECT — anchors at the cursor (task tree, calendar days, or a drilled day's items); needs that pane itself focused, not the Calendars/Tasks overview list"},
 		{"h j k l / f b / gg / G", "extend the range (motion incl. period shift; context-switch keys are inert while selecting)"},
 		{"Space", "bulk complete the range"},
 		{"d", "bulk delete the range (one confirm, whole subtrees)"},

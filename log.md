@@ -4,6 +4,13 @@
 
 ---
 
+## 2026-07-24 — Docs: restructure main.md SELECT paragraph; entry-focus + bare-0 notes
+
+- **Final whole-branch review, item 4 (docs)**: main.md's "SELECT mode: multi-select and bulk operations" section was one ~250-word paragraph, violating the house style ("long sections can almost always be broken up"). Restructured in place into a short lead sentence + 5 bullets — contexts+entry, the motion/swallow contract, bulk operations + skip taxonomy + truthful counts, bulk grab semantics, exit/nesting (incl. the empty-day-vs-lost-anchor distinction) — every fact from the original paragraph preserved, none moved elsewhere.
+- **Ripple from Fixes 1–2**: the entry bullet now states SELECT requires the tree/grid itself focused, not an overview list (Fix 1); the swallow-contract bullet now names the bare-`0` swallow alongside the modified-arrow swallow, with the count-continuation exception (Fix 2). `internal/ui/help.go`'s `:help` Select section `V` row gets the same entry-focus note.
+- Full gate green: `go test ./...`, `go vet ./...`, `staticcheck ./...`, `go build ./...`, `gofmt -l` clean.
+- Files: `main.md`, `internal/ui/help.go`, `log.md`.
+
 ## 2026-07-24 — Test: N>1 pasteMultiRoot copy + cross-list move coverage
 
 - **Final whole-branch review, item 3 (test gap)**: `TestBulkYankPasteUnder` was the only test exercising `pasteMultiRoot` (`internal/ui/yankpaste.go`), and it only covered the same-list reparent branch — the copy branch (`copySubtreeOps`) and the cross-list move branch (`moveSubtreeOps`) had no N>1 coverage at all.
