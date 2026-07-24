@@ -44,7 +44,7 @@ LazyPlanner is a terminal-based todo-list and calendar management program. It is
 
 ## Current State
 
-**v1.0.0 through v1.3.0 are released** (see the Build Plan subsections for each; v1.3.0 released 2026-07-24). The next feature is **v1.4.0 — SELECT mode** (a vim-style multi-select layer), planned but not yet started; after it, **v1.5.0 is final polishing & auditing**.
+**v1.0.0 through v1.3.0 are released** (see the Build Plan subsections for each; v1.3.0 released 2026-07-24). **v1.4.0 — SELECT mode** (a vim-style multi-select layer) is implemented on `ai-workspace` with a green full gate, pending owner review/release. After it, **v1.5.0 is final polishing & auditing** — next up once v1.4.0 ships.
 
 Running alongside every version is a continuous **hardening & audit phase** (patch-level v1.0.x bug-hunting, resilience, and consistency work); coverage and residual risk are tracked in `docs/audit/COVERAGE.md`, and the Build Plan below carries a one-line summary of every hardening pass and a subsection per feature version. Sync findings are verified headlessly; the opt-in live CalDAV suite (run against a throwaway test account) is available on demand.
 
@@ -198,6 +198,10 @@ Structural moves go through the clipboard: `y` **cuts** (move) and `Y` **copies*
 
 `m` enters **grab mode**, the temporal-manipulation layer, unified across the tree, calendar, and agenda views: it moves an **event** in time (`j`/`k` ±hour in week/day, `h`/`l` ±day, `J`/`K` resize the end) or nudges a **task's** due date (`j`/`k` ±day, `h`/`l` ±week). Grab is modal (it swallows other keys, and the mode badge shows `GRAB`); each nudge commits to the store so every view updates live, `Enter` keeps the result, and `Esc` reverts to the pre-grab snapshot as one undo step. Undated tasks are skipped. Grabbing a recurring event first prompts for scope (see Recurring items); a this-and-future grab splits the series when the grab starts and retargets onto the new series, and `Esc` then reverts both resources (deletes the new series, restores the master). A whole-series day-move (`h`/`l` at scope *all* or *this & future*) **re-anchors the rule to the moved day** so the series follows the move — a weekly weekday set shifts as a whole (Mon,Thu → Tue,Fri), a monthly nth-weekday re-derives from the new date — because moving `DTSTART` alone would leave a day-pinning `BY*` firing on the old day with the moved instance vanished. A rule the app can't represent (a *Custom rule (kept)*) blocks the day-move with a hint rather than risk corrupting it (`model.ReanchoredRecurrence`).
 
+### SELECT mode: multi-select and bulk operations
+
+`V` enters **SELECT**, a vim-style multi-select layer reachable from the task tree, the un-drilled calendar (a day range), or a drilled day's item list. The range is a **contiguous anchor→cursor span** — anchored where `V` was pressed, extended by ordinary cursor motion in whichever of those three contexts is active — never a scattered multi-pick. The range is **derived, not stored**: `selRange()` re-slices the anchor and the view's current cursor position on demand, so it can never drift from what is actually on screen, and it revalidates on every refresh (an anchor that vanishes — a remote delete, an emptied drilled day — exits SELECT with a flash rather than acting on a guess). SELECT is modal like GRAB (it swallows context-switch and edit keys; the badge shows `SELECT`), and one bulk action — `Space` complete, `d` delete, `y`/`Y` yank/copy (tree only), or `m` grab — applies to the whole range as a single all-or-nothing operation with **one compound `u` undo step**; each filters out items it can't act on (recurring events, read-only, missing, already-done, undated) and reports the skip counts in the flash. Bulk grab reuses grab's per-nudge mechanics but applies **one uniform date-shift** to every selected item at once, returning to SELECT (not exiting it) on `Esc` so a grab can be retried. Modes nest the same way GRAB does under DRILL: `DRILL → SELECT → GRAB`, each layer's `Esc` unwinding exactly one level.
+
 ### Recurring items
 
 Editing (`e`), deleting (`d`), or grabbing (`m`) a recurring **event** opens a **scope picker**: *this occurrence* (a `RECURRENCE-ID` override / `EXDATE`), *this and future* (the series is split into two, with a bounded `COUNT` preserved across the split), or *all* (edit the master). All three scopes are supported for all three actions.
@@ -268,6 +272,7 @@ The keyboard interface feels like **vim, not lazygit**: single keys for panel fo
 | `y` / `Y` | Cut / copy a task (and its subtree) to the clipboard |
 | `p` / `P` | Paste under the selected task / at the list top level (clipboard persists → paste repeatedly) |
 | `m` | Grab mode: temporally manipulate the selected item — move an event (`j`/`k` ±hour in week/day, `h`/`l` ±day, `J`/`K` resize) or nudge a task's due date (`j`/`k` ±day, `h`/`l` ±week). `Enter` keeps, `Esc` reverts. Undated tasks are skipped; a recurring event first prompts scope (this occurrence / this & future / all) |
+| `V` | SELECT mode: extend a contiguous selection (task tree, calendar days, or a drilled day's items) with the movement keys, then bulk `Space` complete, `d` delete, `y`/`Y` cut/copy (tree), or `m` grab the whole range as one date-shift. `Esc` cancels |
 | `:` | Command mode (`:sync`, etc.) |
 | `?` | Help overlay |
 | `q` / `Esc` | Quit / back out (zoom, dialogs) |
@@ -455,9 +460,24 @@ Behavior refinements after the six-step build (per-change detail lives in `log.m
   strip (a `tview.FormItem` drilled into like any field: `←`/`→` move, Space
   toggles) in place of seven checkboxes.
 
-### v1.4.0 — SELECT mode (planned)
+### v1.4.0 — SELECT mode
 
-A vim-style multi-select layer: select multiple tasks/subtasks in the tree, days in the calendar, or events within a drilled day, then bulk complete/delete/yank-paste/grab over the selection. The design core is **mode composition** — SELECT is reachable from any context where a selection is meaningful, and modes nest (e.g. DRILL → SELECT → GRAB), built on the existing `interactionMode` seam, **never** a parallel mode enum (hard-won guardrail). Scoped into build steps when it begins.
+**Status**: implemented (2026-07-23) — all seven build steps landed repro-first with a green full gate each (see `log.md` for the per-step record); a whole-branch review is the last step before release. **Not yet released.** Verified headlessly: the range-derivation boundary tables (reversed/single/capped), a display-stress sweep over five new SELECT draw states, and a `-race` run over the bulk-op and bulk-grab suites. Full design detail lives in `docs/superpowers/specs/2026-07-23-select-mode-design.md`; this subsection is the build record.
+
+A vim-style multi-select layer built on **mode composition**, not a parallel mode enum (the hard-won guardrail this version was scoped around): SELECT nests under DRILL and hosts GRAB the same way GRAB already nests under DRILL, and the range is *derived* (anchor + the view's live cursor) rather than a stored selected-items set, so it can never desync from the screen. Every bulk action shares one shape — materialize the range, filter with counted skips, execute with rollback, one compound undo step — deliberately reusing the single-item `moveSubtree`/grab templates rather than inventing a new commit pattern; see "SELECT mode: multi-select and bulk operations" above for the full behavior.
+
+**Build steps** (each with tests, its own commit, full gate):
+
+1. **SELECT core** — state, badge, and the semi-modal key layer: per-context entry/exit, motion passthrough, everything else swallowed.
+2. **Range derivation** — `selRange()`/`treeRange`/`daysRange`/`drillRange`, the `maxSelectDays` cap, and anchor-vanish revalidation on refresh.
+3. **Selection visuals** — theme-adaptive range highlighting in the tree, month grid, and time grid; the `N selected` status prefix and hint line.
+4. **Bulk complete** (`Space`) — reverse-order walk (children before parents so a folder-plus-last-child completes in one pass), recurring-todo advance, skip counting, all-or-nothing rollback.
+5. **Bulk delete** (`d`) — ancestor-deduped roots (`bulkDeleteRoots`, shared with yank), one confirm naming the full count, whole-subtree expansion; a same-day bugfix cycle-guarded the ancestor walk against malformed `RELATED-TO` loops (see below).
+6. **Multi-root yank/paste** (`y`/`Y`) — the clipboard becomes `[]string`; `pasteMultiRoot` moves/copies every root under one shared ops/rollback pair, via `store.PutIfUnchanged` (stricter than the legacy single-item path).
+7. **Bulk grab** (`m`) — one uniform date-shift over the range, GRAB nested inside SELECT; `Esc` returns to SELECT (not out of it), and a stale mid-nudge keeps already-landed moves as one undo step.
+8. **Docs ripple** — this step: README, `:help`, this section, and the coverage ledger.
+
+**Build-time finding.** `bulkDeleteRoots`'s ancestor-absorption walk trusted untrusted `RELATED-TO` parent data with no visited guard — a reciprocal parent cycle (hand-edited or foreign `.ics`) would spin the walk forever, freezing the single-threaded UI event loop (the same "malformed iCalendar must never be fatal" class as the sibling `descendants()` walk, which already carried the guard this one lacked). Fixed same-day with a `seen` map, repro-first (`internal/ui/bulkops_test.go`).
 
 ### v1.5.0 — polishing & auditing (planned)
 

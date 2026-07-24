@@ -76,6 +76,8 @@ Run `lazyplanner` with no arguments to open the TUI (seed the cache with `import
 
 **Moving & grabbing.** `H`/`L` outdent/indent (re-parent); `y`/`Y` cut/copy a task with its subtree and `p`/`P` paste (the clipboard persists for repeat pastes). `m` enters **grab mode** to move an item in time — an event by hour/day (`J`/`K` resize its end), a task's due date by day/week — with `Enter` to keep and `Esc` to revert. `u` undoes the last change this session.
 
+**Selecting multiple items.** `V` enters **SELECT** mode — a badge-shown mode like GRAB, where movement extends a contiguous range (tree rows, calendar days, or a drilled day's items) instead of just moving the cursor. One bulk action then applies to everything selected, as a single `u` undo step.
+
 **Recurring items.** The full form has a **Repeat** field — `None`, a preset built from the item's date (`Daily`, `Weekly on <weekday>`, `Monthly on day <n>`, `Yearly on <mon day>`), or **Custom…** for any rule the app understands (an "every N" interval, a weekly weekday set via a compact toggle strip, monthly by day-of-month or by nth/last weekday, yearly, and a never/on-date/after-N-times end). A rule the app can't represent is shown as *Custom rule (kept)* and left untouched unless you change it; picking a rule on a plain item makes it recurring, and `None` clears it.
 
 Editing (`e`), deleting (`d`), or grabbing (`m`) a recurring **event** opens a scope picker — **This occurrence** (writes a `RECURRENCE-ID` override / `EXDATE`), **This & future** (splits the series at that point, preserving a bounded count), or **All** (edits the master, incl. its rule). A recurring **task** shows as a single live instance at its current due; completing it (`Space`) advances it to the next occurrence (the way NextCloud rolls a repeating task forward) — the flash confirms it advanced rather than being checked off, and it's marked done only when the series runs out. Editing "this occurrence" of a task detaches that instance as a separate one-off task (after a confirmation) and advances the rest.
@@ -122,6 +124,8 @@ After creating a calendar, run `lazyplanner import` to pull it into the local ca
 | `/` · `n` / `N` | Search the current view · next / prev match |
 | `H` / `L` | Outdent / indent task (re-parent) |
 | `y` / `p` | Yank / paste a task — move it (and its subtree) to another parent or list |
+| `m` | Grab mode: move an event in time (`j`/`k` hour, `h`/`l` day, `J`/`K` resize) or nudge a task's due date (`j`/`k` day, `h`/`l` week) — `Enter` keeps, `Esc` reverts |
+| `V` | SELECT mode: extend a contiguous selection with the movement keys (task tree, calendar days, or a drilled day's items), then `Space` complete all, `d` delete all, `y`/`Y` cut/copy all (tree), `m` grab all (±day/±week). `Esc` cancels |
 | `z` … | Fold the tree — `zR` expand-all, `zM` collapse-all, `za` toggle |
 | `u` | Undo last local change (this session) |
 | `v` | Cycle calendar view: month → week → day |
