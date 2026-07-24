@@ -4,6 +4,13 @@
 
 ---
 
+## 2026-07-23 — Bugfix: modified arrow keys leaked through SELECT key layer
+
+- **Bug** (reviewer-found on Task 1): `handleSelectKey`'s arrow-key case matched on `ev.Key()` alone, so a modified arrow — Ctrl+Left/Ctrl+Right — passed through as "motion" while selecting. `globalKeys` then fell past the vim-count/`motionArrow` path (no count, not a letter) onto the pre-existing Ctrl-gated resize handlers, calling `a.resizeLeft(...)` — mutating the pane layout and persisting state to disk mid-select, contradicting SELECT's swallow-everything contract.
+- **Fix** (`internal/ui/selection.go`): the arrow/Home/End case in `handleSelectKey` now passes the event through only when `ev.Modifiers() == tcell.ModNone`; anything with a modifier falls to the swallow-everything default. Also tightened the `resolvePrefix` gate comment (`internal/ui/keys.go`) — only the `g` prefix reaches it mid-select (`handleSelectKey` swallows `i`/`s`/`z` first), not all four prefixes as previously worded.
+- **Repro-first (TDD)**: `TestSelectSwallowsModifiedArrows` (`internal/ui/selection_test.go`) feeds a Ctrl-modified `KeyLeft`/`KeyRight` through `a.globalKeys` while selecting and asserts `a.leftWidth` is unchanged and SELECT stays active; RED before the `ModNone` gate, green after. Full gate re-run clean.
+- Files: `internal/ui/selection.go`, `internal/ui/selection_test.go`, `internal/ui/keys.go`, `log.md`.
+
 ## 2026-07-23 — v1.4.0: SELECT mode core (state, badge, key layer)
 
 - Task 1 of the v1.4.0 SELECT-mode feature: the multi-select layer's core plumbing, with no bulk operations wired yet (later tasks add range derivation, visuals, and the ops themselves).
