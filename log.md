@@ -4,6 +4,14 @@
 
 ---
 
+## 2026-07-23 — Fix: swallow bare 0 in SELECT (hour-zoom reset leaked through)
+
+- **Final whole-branch review, item 2 (Important)**: `handleSelectKey` passed every digit through unconditionally (`r >= '0' && r <= '9'`), including a bare `0` — which, with no pending count, falls to `globalKeys`' `case '0'` → `resetHourZoom()`, a week/day-grid layout+persisted-state mutation. Same class as the already-fixed modified-arrow leak (`TestSelectSwallowsModifiedArrows`).
+- **Fix**: split the digit case in `handleSelectKey` — `1-9` still pass through unconditionally (a count can only start with a nonzero digit); `0` passes through only when `a.pendingCount > 0` (continuing a count, e.g. the `0` in "10j"), mirroring `globalKeys`' own `r == '0' && a.pendingCount > 0` condition. A bare `0` is now swallowed (`return nil`).
+- **TDD**: `TestSelectSwallowsBareZero` (`internal/ui/selection_test.go`, beside `TestSelectSwallowsModifiedArrows`) — week/day view, selecting, a non-auto `a.hourRows`: a bare `0` leaves `hourRows` unchanged and SELECT still active; `"1","0","l"` (day-mode navigates by h/l, not j/k) still moves the anchor 10 days, proving a count-continuing `0` still reaches motion. RED confirmed by stashing the production change (`hourRows` reset to 0, i.e. the leak), GREEN after restoring it.
+- Full gate green: `go test ./...`, `go vet ./...`, `staticcheck ./...`, `go build ./...`.
+- Files: `internal/ui/selection.go`, `internal/ui/selection_test.go`, `log.md`.
+
 ## 2026-07-23 — Fix: V from an overview panel must flash a hint, not enter SELECT
 
 - **Final whole-branch review, item 1 (Important)**: `enterSelect` (`internal/ui/selection.go`) gated only on `a.mode`, but `setMode` focuses the overview lists (`a.calendars`/`a.tasklists`), not the tree/grid — and motion goes to whatever's focused. So `c V` (or `t V`) right after a plain mode switch anchored a range that ordinary `j`/`k` could never extend (they moved the overview highlight instead), silently bricking the feature from its most natural entry point.

@@ -344,8 +344,17 @@ func (a *app) handleSelectKey(ev *tcell.EventKey) *tcell.EventKey {
 		switch r := ev.Rune(); {
 		case r == 'h' || r == 'j' || r == 'k' || r == 'l' || r == 'G' || r == 'f' || r == 'b':
 			return ev // motion / period shift: extends the range
-		case r >= '0' && r <= '9':
+		case r >= '1' && r <= '9':
 			return ev // vim counts still apply to motion
+		case r == '0':
+			if a.pendingCount > 0 {
+				return ev // 0 continuing a count (e.g. "10j") is still motion
+			}
+			// A bare 0 (no pending count) is globalKeys' resetHourZoom binding in
+			// the week/day grid — a layout+persisted-state mutation that must not
+			// leak past SELECT's swallow-everything guarantee, mirroring
+			// globalKeys' own r == '0' && a.pendingCount > 0 condition.
+			return nil
 		case r == 'g':
 			return ev // the g prefix; resolvePrefix gates it to gg while selecting
 		case r == 'V':

@@ -213,6 +213,43 @@ func TestSelectSwallowsModifiedArrows(t *testing.T) {
 	}
 }
 
+// TestSelectSwallowsBareZero: a bare 0 while selecting must not leak
+// globalKeys' resetHourZoom binding (a week/day layout+persisted-state
+// mutation) through SELECT's swallow-everything guarantee — same class as
+// TestSelectSwallowsModifiedArrows. A 0 continuing a pending count (e.g.
+// "10l") must still reach motion.
+func TestSelectSwallowsBareZero(t *testing.T) {
+	now := time.Date(2026, 7, 5, 9, 0, 0, 0, time.UTC)
+	a := newRootedTestApp(t, now)
+	a.setMode(modeCalendar)
+	a.viewMode = viewDay // the week/day grid is where 0 = resetHourZoom binds
+	a.buildCenterCalendar()
+	a.setFocus(a.calendarPrimitive())
+	a.enterSelect()
+
+	a.hourRows = 3 // a non-auto zoom (0 means auto-fit)
+	a.timegrid.rowsPerHour = 3
+	key(a, tcell.KeyRune, '0')
+	if a.hourRows != 3 {
+		t.Fatalf("hourRows = %d, want unchanged at 3 (resetHourZoom leaked through SELECT)", a.hourRows)
+	}
+	if !a.selecting {
+		t.Fatal("SELECT must still be active after the swallowed bare 0")
+	}
+
+	// A 0 continuing a count still reaches motion: "1","0","l" moves 10 days.
+	// (l, not j: the un-drilled week/day grid navigates days with h/l only —
+	// handleDayMode leaves Up/Down inert un-drilled.)
+	before := a.anchor
+	key(a, tcell.KeyRune, '1')
+	key(a, tcell.KeyRune, '0')
+	key(a, tcell.KeyRune, 'l')
+	if want := before.AddDate(0, 0, 10); !a.anchor.Equal(want) {
+		t.Fatalf("anchor = %v, want %v (+10 days: count with an embedded 0 must still apply)", a.anchor, want)
+	}
+	a.exitSelect()
+}
+
 // TestSelectPrefixGate: while selecting, gg still jumps (pure motion) but gt/gd
 // (context jumps / modals) are blocked — gotoToday switches to Calendar mode,
 // which would yank the context out from under the range.
