@@ -158,3 +158,116 @@ func (a *app) bulkComplete() {
 	a.refreshKeepingDrill("")
 	a.flash(bulkSummary("completed", done, skips) + undoHint)
 }
+
+// bulkDeleteRoots dedupes the range for subtree-shaped ops: a selected row
+// whose ancestor is also selected is absorbed (its subtree travels with the
+// ancestor), and recurring events / read-only / missing items are filtered out
+// with counts. Also used by bulk yank.
+func (a *app) bulkDeleteRoots(targets []editTarget) ([]editTarget, bulkSkip) {
+	skips := bulkSkip{}
+	selected := map[string]bool{}
+	for _, t := range targets {
+		if t.isTodo {
+			selected[t.uid] = true
+		}
+	}
+	parentOf := map[string]string{}
+	for _, td := range a.store.Todos() {
+		parentOf[td.UID] = td.ParentUID
+	}
+	var roots []editTarget
+	for _, t := range targets {
+		if !t.isTodo && t.recurring {
+			skips.add("recurring")
+			continue
+		}
+		loc, ok := a.store.Locate(t.uid)
+		if !ok {
+			skips.add("missing")
+			continue
+		}
+		if a.calReadOnly(loc.CalID) {
+			skips.add("read-only")
+			continue
+		}
+		if t.isTodo {
+			absorbed := false
+			for p := parentOf[t.uid]; p != ""; p = parentOf[p] {
+				if selected[p] {
+					absorbed = true
+					break
+				}
+			}
+			if absorbed {
+				continue // travels with its selected ancestor's subtree
+			}
+		}
+		roots = append(roots, t)
+	}
+	return roots, skips
+}
+
+// bulkDelete (d in SELECT) deletes every selected item — tasks with their whole
+// subtrees — after one confirm naming the full count. Mirrors deleteWholeObject's
+// semantics exactly: whole-resource delete per uid, no scope picker (a recurring
+// todo's resource is its series — the spec's settled "natural meaning"; a
+// recurring event has no such single-resource meaning in bulk, so it's filtered
+// out by bulkDeleteRoots instead). All-or-nothing with rollback; one undo step
+// restores everything.
+func (a *app) bulkDelete() {
+	targets := a.selRange()
+	if targets == nil {
+		a.exitSelect()
+		a.flash("Selection no longer valid")
+		return
+	}
+	roots, skips := a.bulkDeleteRoots(targets)
+	if len(roots) == 0 {
+		a.flash(bulkSummary("deleted", 0, skips))
+		return
+	}
+	// Expand each task root with its descendants, deduped across roots.
+	var uids []string
+	seen := map[string]bool{}
+	for _, r := range roots {
+		for _, u := range append([]string{r.uid}, a.descendants(r.uid)...) {
+			if !seen[u] {
+				seen[u] = true
+				uids = append(uids, u)
+			}
+		}
+	}
+	prompt := fmt.Sprintf("Delete %d item(s)?", len(roots))
+	if len(uids) > len(roots) {
+		prompt = fmt.Sprintf("Delete %d item(s) (%d with subtasks)?", len(roots), len(uids))
+	}
+	a.confirm(" Delete selection ", prompt, func() {
+		ctx := context.Background()
+		var ops []undoOp
+		var rollback []func()
+		deleted := 0
+		for _, u := range uids {
+			loc, ok := a.store.Locate(u)
+			if !ok {
+				continue
+			}
+			if err := a.store.Delete(ctx, loc.CalID, loc.Name); err != nil {
+				for i := len(rollback) - 1; i >= 0; i-- {
+					rollback[i]()
+				}
+				a.exitSelect()
+				a.refresh("")
+				a.flash("Delete failed: " + err.Error())
+				return
+			}
+			calID, name, prev := loc.CalID, loc.Name, loc.Prev
+			rollback = append(rollback, func() { _, _ = a.store.Restore(ctx, calID, name, prev) })
+			ops = append(ops, undoOp{calID: calID, name: name, prev: prev})
+			deleted++
+		}
+		a.pushUndo("bulk delete", "", ops...)
+		a.exitSelect()
+		a.refresh("")
+		a.flash(bulkSummary("deleted", deleted, skips) + undoHint)
+	})
+}

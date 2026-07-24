@@ -330,7 +330,7 @@ func (a *app) handleSelectKey(ev *tcell.EventKey) *tcell.EventKey {
 			a.bulkComplete()
 			return nil
 		case r == 'd':
-			a.flash("Bulk delete lands in a later build step")
+			a.bulkDelete()
 			return nil
 		case r == 'y' || r == 'Y':
 			a.flash("Bulk yank lands in a later build step")

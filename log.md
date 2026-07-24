@@ -4,6 +4,18 @@
 
 ---
 
+## 2026-07-23 — v1.4.0: SELECT bulk delete
+
+- **Task 5 of the v1.4.0 SELECT-mode build**: bulk delete (`d` in SELECT), plus `bulkDeleteRoots` — the ancestor-dedupe/filter helper Task 6's bulk yank will also reuse.
+- **New in `internal/ui/bulkops.go`**: `a.bulkDeleteRoots(targets)` filters the range down to delete roots — a recurring **event** is skipped (`"recurring"`; bulk deleting a series has no natural single-resource meaning the way a recurring todo's series does), a missing or read-only item is skipped (`"missing"`/`"read-only"`, via the existing `calReadOnly`), and a selected task whose ancestor is also selected is absorbed rather than counted twice — its subtree already travels with the ancestor's delete. `a.bulkDelete()` (`d`) materializes `selRange()`, filters through `bulkDeleteRoots`, expands each surviving root with `a.descendants` (deduped across roots so a shared subtask isn't deleted twice), shows **one** confirm naming the resource count (and the with-subtasks count when it differs), then deletes every resource — mirroring single-item `deleteWholeObject`'s semantics exactly: whole-resource `store.Delete` per UID, no scope picker (a recurring **todo**'s resource is its whole series, the settled "natural meaning"). All-or-nothing: a failed or non-existent write rolls back everything written so far (newest-first, the `moveSubtree`/`bulkComplete` template) and pushes no undo step; full success pushes exactly one compound undo step and exits SELECT.
+- Wired the `'d'` case in `handleSelectKey` (`internal/ui/selection.go`) to `a.bulkDelete()`, replacing the stub flash.
+- **Read-only coverage note closed** (flagged open after Task 4's review): added `TestBulkDeleteReadOnlySkipped`. The task tree shows one task list at a time, so a single tree range can never mix a read-only and a writable calendar's items — the test instead uses calendar mode, putting one event on a fresh read-only calendar and one on a writable calendar on the same day, selected via a drilled day range; confirms the read-only event survives, the writable one deletes, and the flash counts `"read-only"`.
+- **`confirmYes` test helper** (`internal/ui/bulkops_test.go`): no shared helper existed yet for driving `a.confirm`'s Yes button from a test. `a.confirm` sets `a.tv.SetFocus(modal)`, but `tview.Modal.Focus` delegates onward to its internal form, so the application's actual focus lands on the first `*tview.Button` (the affirmative one, since `AddButtons` puts it first) — not the `Modal` itself. `confirmYes` asserts `pageConfirm` is open, type-asserts `a.tv.GetFocus()` to `*tview.Button`, and sends it a `KeyEnter`, which `tview.Modal`'s `SetDoneFunc` turns into the `onYes` callback.
+- **Brief deviation**: the brief's sample `TestBulkDeleteSkipsRecurringEvent` called `putRecurringEvent(t, a, testCalID(a), "weekly", now)` (4 args after `a`), but the existing helper (`internal/ui/displaystress_test.go`) takes a 5th `rrule` argument — added `"FREQ=WEEKLY"` rather than guessing an implicit default.
+- **TDD**: RED first (`go test ./internal/ui/ -run 'TestBulkDelete' -v` → `undefined: a.bulkDelete`), then GREEN after implementing `bulkops.go` and wiring the key.
+- Verified: `go test ./internal/ui/ -run 'TestBulkDelete|TestBulk' -v` and `go test ./internal/ui/... -race` all pass; full gate green (`go test ./...`, `go vet ./...`, `staticcheck ./...`, `go build ./...`, `gofmt -l` clean on the touched files).
+- Files: `internal/ui/bulkops.go`, `internal/ui/bulkops_test.go`, `internal/ui/selection.go`.
+
 ## 2026-07-23 — v1.4.0: SELECT bulk complete
 
 - **Task 4 of the v1.4.0 SELECT-mode build**: the first bulk operation and the shared bulk-op helpers.

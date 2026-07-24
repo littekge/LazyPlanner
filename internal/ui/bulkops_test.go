@@ -8,6 +8,9 @@ import (
 	"testing"
 	"time"
 
+	"github.com/gdamore/tcell/v2"
+	"github.com/rivo/tview"
+
 	"github.com/littekge/LazyPlanner/internal/model"
 	"github.com/littekge/LazyPlanner/internal/store"
 )
@@ -23,6 +26,24 @@ func selectTreeRangeAll(t *testing.T, a *app) {
 	a.tree.SetCurrentNode(nodes[0])
 	a.enterSelect()
 	a.tree.SetCurrentNode(nodes[len(nodes)-1])
+}
+
+// confirmYes drives an open a.confirm/confirmOK modal's affirmative button.
+// tview.Modal.Focus delegates onward to its internal form, so
+// a.tv.SetFocus(modal) leaves the application's actual focus on the first
+// *tview.Button (the affirmative one — AddButtons put it first), not the
+// Modal itself. Pressing Enter there activates it, which tview.Modal's
+// SetDoneFunc turns into the onYes callback.
+func confirmYes(t *testing.T, a *app) {
+	t.Helper()
+	if !a.root.HasPage(pageConfirm) {
+		t.Fatal("expected a confirm modal open")
+	}
+	btn, ok := a.tv.GetFocus().(*tview.Button)
+	if !ok {
+		t.Fatalf("focus is %T, want the confirm modal's affirmative *tview.Button", a.tv.GetFocus())
+	}
+	btn.InputHandler()(keyEv(tcell.KeyEnter), func(tview.Primitive) {})
 }
 
 // TestBulkCompleteRange: every incomplete task in the range completes; the op
@@ -181,5 +202,101 @@ func TestBulkCompleteStaleRollsBack(t *testing.T) {
 	}
 	if len(a.undo) != undoBefore {
 		t.Fatal("a rolled-back bulk op must not push an undo step")
+	}
+}
+
+// TestBulkDeleteDedupeAndUndo: parent+child both selected → the child is
+// absorbed into the parent's subtree (deleted once); the confirm names the
+// full resource count; one undo step restores everything.
+func TestBulkDeleteDedupeAndUndo(t *testing.T) {
+	now := time.Date(2026, 7, 5, 9, 0, 0, 0, time.UTC)
+	a := newRootedTestApp(t, now)
+	a.setMode(modeTasks)
+	parent := putTodo(t, a, testCalID(a), "", "folder", now, true)
+	child := putTodo(t, a, testCalID(a), parent, "leaf", now, true)
+	solo := putTodo(t, a, testCalID(a), "", "solo", now, true)
+	a.refresh(parent)
+	a.setFocus(a.tree)
+	undoBefore := len(a.undo)
+	selectTreeRangeAll(t, a) // parent, leaf, solo all in range
+	a.bulkDelete()
+	confirmYes(t, a) // accept the confirm dialog
+
+	for _, u := range []string{parent, child, solo} {
+		if _, ok := a.store.Locate(u); ok {
+			t.Fatalf("%s must be deleted", u)
+		}
+	}
+	if len(a.undo) != undoBefore+1 {
+		t.Fatalf("bulk delete must be one undo step, got %d", len(a.undo)-undoBefore)
+	}
+	a.undoLast()
+	for _, u := range []string{parent, child, solo} {
+		if _, ok := a.store.Locate(u); !ok {
+			t.Fatalf("undo must restore %s", u)
+		}
+	}
+}
+
+// TestBulkDeleteSkipsRecurringEvent: a recurring event in a drilled-day range
+// is skipped with a count; the non-recurring siblings delete.
+func TestBulkDeleteSkipsRecurringEvent(t *testing.T) {
+	now := time.Date(2026, 7, 6, 9, 0, 0, 0, time.UTC)
+	a := newRootedTestApp(t, now)
+	a.setMode(modeCalendar)
+	putEvent(t, a, testCalID(a), "oneoff", now, false)
+	rec := putRecurringEvent(t, a, testCalID(a), "weekly", now, "FREQ=WEEKLY")
+	a.refresh("")
+	a.month.reDrill(model.DayStart(now), 0)
+	a.enterSelect()
+	a.month.eventIndex = len(a.dayItems(model.DayStart(now))) - 1
+	a.bulkDelete()
+	confirmYes(t, a)
+
+	if _, ok := a.store.Locate(rec); !ok {
+		t.Fatal("recurring event must be skipped, not deleted")
+	}
+	if s := a.statusLeft.GetText(true); !strings.Contains(s, "recurring") {
+		t.Fatalf("summary must count the recurring skip, got %q", s)
+	}
+}
+
+// TestBulkDeleteReadOnlySkipped: an item on a read-only calendar is filtered
+// out before the confirm and counted in the summary — mirrors the read-only
+// guard in bulkComplete/deleteSelected (guardWrite), applied without aborting
+// the whole batch. Uses calendar mode (not tasks) because the task tree shows
+// one task list at a time, so a single tree range can never mix a read-only
+// and a writable calendar's items the way a drilled day's event list can.
+func TestBulkDeleteReadOnlySkipped(t *testing.T) {
+	now := time.Date(2026, 7, 5, 9, 0, 0, 0, time.UTC)
+	a := newRootedTestApp(t, now)
+	a.setMode(modeCalendar)
+	roCal := "ro-events"
+	if err := a.store.CreateCalendarLocal(context.Background(), roCal, store.CalendarMeta{DisplayName: "RO"}, []string{"VEVENT"}); err != nil {
+		t.Fatal(err)
+	}
+	a.reload()
+	putEvent(t, a, roCal, "locked", now, false)
+	putEvent(t, a, testCalID(a), "open", now, false)
+	if err := a.store.SetCalendarReadOnly(context.Background(), roCal, true); err != nil {
+		t.Fatal(err)
+	}
+	a.refresh("")
+	a.month.reDrill(model.DayStart(now), 0)
+	a.enterSelect()
+	items := a.dayItems(model.DayStart(now))
+	if len(items) < 2 {
+		t.Fatalf("need 2 events on the day, got %d", len(items))
+	}
+	a.month.eventIndex = len(items) - 1 // extend over the whole day
+	a.bulkDelete()
+	confirmYes(t, a)
+
+	remaining := a.dayItems(model.DayStart(now))
+	if len(remaining) != 1 || remaining[0].Title != "locked" {
+		t.Fatalf("read-only event must survive and the writable one must be deleted, got %v", remaining)
+	}
+	if s := a.statusLeft.GetText(true); !strings.Contains(s, "read-only") {
+		t.Fatalf("summary must count the read-only skip, got %q", s)
 	}
 }
