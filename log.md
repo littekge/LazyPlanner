@@ -4,6 +4,14 @@
 
 ---
 
+## 2026-07-24 — v1.5.0 phase 1: agenda-board double-click guarded by mode (Batch C, fix 2/4)
+
+- `mouse.go`'s double-click switch had a stale-rect exposure: `a.agenda.InRect(x,y)` is a hidden `tview.Pages` page outside Agenda mode, and `Pages.Draw` skips resizing/redrawing a hidden page entirely, so its `Box` keeps whatever rect it last drew while visible. The single-click case already guarded this with `&& a.mode == modeAgenda`; the double-click case only checked `a.mode == modeAgenda` *inside* the case body (gating the re-select, not the `editSelected()` call after it), so a click landing on the stale rect from another mode still opened the edit form.
+- Checked the sibling `a.tree.InRect` double-click case for the same class: `a.tree` is added to the same `a.center` `tview.Pages` the same way (`resize=true, visible=false`), so it has the identical exposure — confirmed with a RED test before fixing. Both cases now guard the whole `case` (`a.tree.InRect(x,y) && a.mode == modeTasks`, `a.agenda.InRect(x,y) && a.mode == modeAgenda`), matching the single-click style.
+- TDD: `TestAgendaBoardDoubleClickIgnoredOutsideAgendaMode` and `TestTreeDoubleClickIgnoredOutsideTasksMode` both RED against the unguarded code (double-click opened the form from the wrong mode), GREEN after the fix; existing `TestAgendaBoardDoubleClickEditsRowUnderCursor`/`TestDoubleClickEditsRowUnderCursor` still pass (re-targeting to the clicked row is unaffected).
+- Files: `internal/ui/mouse.go`, `internal/ui/dblclick_test.go`.
+- Full gate green (`go test ./...`, `go vet ./...`, `staticcheck ./...`, `go build ./...`); `gofmt` clean.
+
 ## 2026-07-24 — v1.5.0 phase 1: sp relays the parser's typo warning (Batch C, fix 1/4)
 
 - `sp` (set priority) failed silently to the generic "priority: 1-9 or high/med/low (blank clears)" hint even when the quick-add parser recognized the input as an obvious typo (e.g. `!hgh` for `!high`) — `sd` (set due) already relays `qa.Warnings[0]` in that case, so `sp` was the odd one out.

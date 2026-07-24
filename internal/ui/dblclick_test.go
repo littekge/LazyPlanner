@@ -73,3 +73,65 @@ func TestDoubleClickEditsRowUnderCursor(t *testing.T) {
 		t.Errorf("double-click on row B (%q) opened the edit form for %q instead", sumB, got)
 	}
 }
+
+// TestAgendaBoardDoubleClickIgnoredOutsideAgendaMode: the agenda board's Box
+// keeps its last-drawn rect after the app leaves Agenda mode — tview.Pages
+// never resizes/redraws a hidden page (Pages.Draw skips !Visible pages) — so a
+// stale rect can still InRect-match. The single-click case already guards on
+// a.mode == modeAgenda; the double-click case must too, or a click that lands
+// where the board used to be opens editSelected from the wrong mode.
+func TestAgendaBoardDoubleClickIgnoredOutsideAgendaMode(t *testing.T) {
+	a, _ := drawnAgendaApp(t, 3) // draws once while in Agenda mode, giving a.agenda a real rect
+	b := a.agenda
+
+	_, y, _, _ := b.GetInnerRect()
+	contentTop := y + 2
+	_, starts, _ := b.layoutBlocks()
+	boardX, _, _, _ := b.GetRect()
+	clickCol := boardX + 1
+	clickRow := contentTop + starts[1] - b.scroll
+
+	// Leave Agenda mode without redrawing, so a.agenda's rect is now stale.
+	a.setMode(modeTasks)
+
+	a.mouseCapture(tcell.NewEventMouse(clickCol, clickRow, tcell.Button1, 0), tview.MouseLeftDoubleClick)
+
+	if a.modalOpen() {
+		t.Error("double-click on the stale board rect opened the edit form outside Agenda mode")
+	}
+	if got := a.agendaList.GetCurrentItem(); got != 0 {
+		t.Errorf("stale double-click moved the agenda selection to %d, want unchanged (0)", got)
+	}
+}
+
+// TestTreeDoubleClickIgnoredOutsideTasksMode: the same staleness class as the
+// agenda-board case above applies to the tree — it too is a hidden
+// tview.Pages page outside Tasks mode, so its Box rect can equally go stale.
+func TestTreeDoubleClickIgnoredOutsideTasksMode(t *testing.T) {
+	now := time.Date(2026, 7, 5, 9, 0, 0, 0, time.UTC)
+	a := newRootedTestApp(t, now) // starts in Tasks mode
+	listID := a.selectedTasklistID()
+	a.createTask(listID, "", "Alpha")
+	a.buildTree()
+
+	screen := tcell.NewSimulationScreen("")
+	if err := screen.Init(); err != nil {
+		t.Fatal(err)
+	}
+	defer screen.Fini()
+	screen.SetSize(120, 40)
+	a.root.SetRect(0, 0, 120, 40)
+	a.root.Draw(screen) // draws once while in Tasks mode, giving a.tree a real rect
+
+	ix, iy, _, _ := a.tree.GetInnerRect()
+	clickY := iy + 1 // root node's row
+
+	// Leave Tasks mode without redrawing, so a.tree's rect is now stale.
+	a.setMode(modeCalendar)
+
+	a.mouseCapture(tcell.NewEventMouse(ix+1, clickY, tcell.Button1, tcell.ModNone), tview.MouseLeftDoubleClick)
+
+	if a.modalOpen() {
+		t.Error("double-click on the stale tree rect opened the edit form outside Tasks mode")
+	}
+}

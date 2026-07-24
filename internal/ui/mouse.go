@@ -58,7 +58,12 @@ func (a *app) mouseCapture(ev *tcell.EventMouse, action tview.MouseAction) (*tce
 	case tview.MouseLeftDoubleClick:
 		x, y := ev.Position()
 		switch {
-		case a.tree.InRect(x, y):
+		case a.tree.InRect(x, y) && a.mode == modeTasks:
+			// Like the agenda-board case below, the tree draws only as Tasks
+			// mode's center page (tview.Pages skips resizing/redrawing a hidden
+			// page — see Pages.Draw), so its Box rect can be stale when another
+			// page is up; the mode guard is load-bearing.
+			//
 			// Select the node actually under the cursor before editing. The two
 			// clicks of a double-click can land on different rows (the pointer moved
 			// within the interval), and editSelected reads the *current* selection —
@@ -69,14 +74,16 @@ func (a *app) mouseCapture(ev *tcell.EventMouse, action tview.MouseAction) (*tce
 				a.tree.SetCurrentNode(node)
 			}
 			a.editSelected()
-		case a.agenda.InRect(x, y):
+		case a.agenda.InRect(x, y) && a.mode == modeAgenda:
+			// The board draws only as Agenda mode's center page; its Box rect can
+			// be stale when another page is up, so the mode guard is load-bearing
+			// (mirrors the single-click case above).
+			//
 			// Re-target to the row under the cursor before editing, like the tree
 			// case above — editSelected reads the current selection, and the clicked
 			// row need not be the selected one.
-			if a.mode == modeAgenda {
-				if idx := a.agenda.itemAtY(y); idx >= 0 {
-					a.agendaList.SetCurrentItem(idx)
-				}
+			if idx := a.agenda.itemAtY(y); idx >= 0 {
+				a.agendaList.SetCurrentItem(idx)
 			}
 			a.editSelected()
 		}
