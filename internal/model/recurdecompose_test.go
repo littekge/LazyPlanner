@@ -106,9 +106,9 @@ func TestRecurSpecFromRuleUnrepresentable(t *testing.T) {
 		{"monthly plain byday no ordinal", "FREQ=MONTHLY;BYDAY=TU"},
 		{"monthly bymonthday contradicts anchor", "FREQ=MONTHLY;BYMONTHDAY=15"}, // anchor is the 22nd
 		{"monthly multi bymonthday", "FREQ=MONTHLY;BYMONTHDAY=15,22"},
-		{"monthly nth wrong weekday", "FREQ=MONTHLY;BYDAY=+4MO"},   // anchor is a Tuesday
-		{"monthly nth wrong position", "FREQ=MONTHLY;BYDAY=+2TU"},  // anchor is the 4th Tuesday
-		{"monthly 5th weekday", "FREQ=MONTHLY;BYDAY=+5TU"},         // outside 1..4/last
+		{"monthly nth wrong weekday", "FREQ=MONTHLY;BYDAY=+4MO"},  // anchor is a Tuesday
+		{"monthly nth wrong position", "FREQ=MONTHLY;BYDAY=+2TU"}, // anchor is the 4th Tuesday
+		{"monthly 5th weekday", "FREQ=MONTHLY;BYDAY=+5TU"},        // outside 1..4/last
 		{"monthly byday and bymonthday", "FREQ=MONTHLY;BYMONTHDAY=22;BYDAY=+4TU"},
 		{"monthly bymonth", "FREQ=MONTHLY;BYMONTH=12"},
 		{"yearly multi bymonth", "FREQ=YEARLY;BYMONTH=1,7"},
@@ -135,10 +135,10 @@ func TestRecurSpecFromRuleUnrepresentable(t *testing.T) {
 func TestRecurSpecFromRuleAnchorConsistent(t *testing.T) {
 	anchor := time.Date(2026, 12, 22, 0, 0, 0, 0, time.UTC) // 4th Tuesday of Dec 2026
 	rules := []string{
-		"FREQ=MONTHLY;BYMONTHDAY=22",   // matches anchor day
-		"FREQ=MONTHLY;BYDAY=+4TU",      // matches anchor position
-		"FREQ=YEARLY;BYMONTH=12",       // matches anchor month
-		"FREQ=YEARLY;BYMONTHDAY=22",    // matches anchor day
+		"FREQ=MONTHLY;BYMONTHDAY=22", // matches anchor day
+		"FREQ=MONTHLY;BYDAY=+4TU",    // matches anchor position
+		"FREQ=YEARLY;BYMONTH=12",     // matches anchor month
+		"FREQ=YEARLY;BYMONTHDAY=22",  // matches anchor day
 		"FREQ=YEARLY;BYMONTH=12;BYMONTHDAY=22",
 	}
 	for _, r := range rules {

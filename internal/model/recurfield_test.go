@@ -95,7 +95,9 @@ func TestRepeatChoicesResolve(t *testing.T) {
 	anchor := time.Date(2026, 8, 25, 0, 0, 0, 0, time.UTC) // Tuesday
 
 	noRule := func() *RepeatChoices { return NewRepeatChoices(compWithRule(t, "", anchor, false), anchor, time.UTC) }
-	daily := func() *RepeatChoices { return NewRepeatChoices(compWithRule(t, "FREQ=DAILY", anchor, false), anchor, time.UTC) }
+	daily := func() *RepeatChoices {
+		return NewRepeatChoices(compWithRule(t, "FREQ=DAILY", anchor, false), anchor, time.UTC)
+	}
 
 	t.Run("create None is inert", func(t *testing.T) {
 		recur, remove := noRule().Resolve(0, anchor)

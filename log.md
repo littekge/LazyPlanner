@@ -4,6 +4,12 @@
 
 ---
 
+## 2026-07-24 — Housekeeping: gofmt drift in internal/model; phase-1 execution wrap
+
+- **gofmt drift fixed**: `internal/model/{recurfield,recurfield_test,recurdecompose_test}.go` were committed unformatted at some point (pre-existing at this arc's base; surfaced by the polish-bundle review's independent gate run). `gofmt -w` applied; no semantic change; model tests green.
+- **Phase-1 execution accounting**: the polish bundle's stale-rect double-click guard was applied to BOTH the agenda-board case (the triaged R30 finding) and its same-class sibling, the task-tree case (found vulnerable during implementation, RED-tested first, disclosed in that commit's entry) — recorded here as the explicit disposition for the sibling extension, per the missing-guard-that-a-sibling-has closure practice.
+- Files: `internal/model/recurfield.go`, `internal/model/recurfield_test.go`, `internal/model/recurdecompose_test.go`, `log.md`.
+
 ## 2026-07-24 — v1.5.0 phase 1: Ctrl-W cancel restores a collapsed accordion (Batch C, fix 4/4)
 
 - `enterResizeMode` un-collapses the accordion when entered while collapsed (resizing a collapsed column is meaningless), but `exitResizeMode`'s Esc/cancel path only restored the pre-resize widths, not the collapse itself — cancelling out of resize mode left the overview/Detail visible even though the user hadn't touched the accordion at all.

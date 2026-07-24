@@ -16,15 +16,15 @@ import (
 type repeatKind int
 
 const (
-	repeatNone    repeatKind = iota
-	repeatDaily              // preset — anchor-derived on read
-	repeatWeekly             // preset — "on <anchor weekday>"
-	repeatMonthly            // preset — "on day <anchor day-of-month>"
-	repeatYearly             // preset — "on <anchor month/day>"
-	repeatKept               // representable but not a plain preset; carries its spec
-	repeatKeptRaw            // outside the vocabulary; the raw rule is preserved
-	repeatCustomSet          // a spec built in the Custom… sub-form; carries its spec
-	repeatCustom             // opens the Custom… sub-form
+	repeatNone      repeatKind = iota
+	repeatDaily                // preset — anchor-derived on read
+	repeatWeekly               // preset — "on <anchor weekday>"
+	repeatMonthly              // preset — "on day <anchor day-of-month>"
+	repeatYearly               // preset — "on <anchor month/day>"
+	repeatKept                 // representable but not a plain preset; carries its spec
+	repeatKeptRaw              // outside the vocabulary; the raw rule is preserved
+	repeatCustomSet            // a spec built in the Custom… sub-form; carries its spec
+	repeatCustom               // opens the Custom… sub-form
 )
 
 type repeatOption struct {
