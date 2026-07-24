@@ -20,17 +20,19 @@ var helpSections = []struct {
 		{"Tab / Shift-Tab", "cycle panels"},
 		{"[ / ]", "cycle highlighted calendar (any mode)"},
 		{"{ / }", "cycle highlighted task list (any mode)"},
-		{"h j k l / arrows", "move the highlight (Enter expands/collapses a tree node)"},
+		{"j k / ↑ ↓", "move the highlight (Enter expands/collapses a tree node)"},
+		{"h l / ← →", "move between columns where that applies (a drilled day's concurrent events, grid columns); inert on the single-column overview lists"},
 		{"3j 5k …", "count prefix — repeat a motion"},
 		{"g g / G", "go to top / bottom"},
 		{"/ then n / N", "search; next / prev match"},
-		{"Enter", "dive in / open (a drilled day's events are then cycled with j/k/arrows, not Enter)"},
+		{"Enter", "dive in / open (a drilled day's events are then cycled with j/k/arrows, not Enter; no-op on the Agenda board)"},
 		{"Esc", "back out (a form/dialog too)"},
 		{"q", "quit at the top level; closes a non-form dialog — inert inside a data-entry form"},
 		{"(mode badge)", "status-bar badge shows the input mode: NORMAL · DRILL (drilled into a calendar day, or editing a form field) · GRAB · RESIZE"},
 	}},
 	{"Forms (full dialogs)", [][2]string{
 		{"j / k / ↑ / ↓", "NORMAL: step between fields and the Save/Cancel buttons"},
+		{"Tab / Shift-Tab", "synonyms for j / k in NORMAL; for Enter / its reverse once drilled into a field"},
 		{"h / l (or ←/→)", "NORMAL: move between the buttons"},
 		{"g / G", "NORMAL: jump to the first field / last element"},
 		{"Enter", "NORMAL: drill a text field, open a dropdown, toggle a checkbox, or press a button"},
@@ -63,10 +65,11 @@ var helpSections = []struct {
 		{"Repeat (full form)", "set/change recurrence: None, a preset, or Custom… (interval, weekdays, monthly nth, end)"},
 		{"Space", "toggle task done (hide/show calendar in Calendar view)"},
 		{"H / L", "outdent / indent task (re-parent)"},
+		{"J / K (task tree)", "jump to the node's first child / its parent (distinct from grab's J/K resize and H/L re-parent)"},
 		{"> / <", "zoom into / out of the selected task's subtree"},
 		{"y / Y", "cut / copy a task (with its subtree) to the clipboard"},
-		{"p / P", "paste under the selected task / at the list top level (clipboard persists)"},
-		{"m", "grab: move an event (hjkl day/hour, J/K resize) or nudge a task's due date — Enter keep, Esc cancel; a recurring event prompts this / this & future / all"},
+		{"p / P", "paste under the selected task / at the list top level — Tasks mode only (clipboard persists)"},
+		{"m", "grab: move an event (hjkl day/hour, J/K resize — hour/resize need week/day view) or nudge a task's due date — Enter keep, Esc cancel; a recurring event prompts this / this & future / all"},
 		{"Space on recurring task", "advances to its next occurrence (completes the last one)"},
 		{"z R / z M / z a", "fold — expand all / collapse all / toggle"},
 		{"u", "undo last local change"},
@@ -75,12 +78,12 @@ var helpSections = []struct {
 	{"Select (multi-select)", [][2]string{
 		{"V", "enter SELECT — anchors at the cursor (task tree, calendar days, or a drilled day's items); needs that pane itself focused, not the Calendars/Tasks overview list"},
 		{"h j k l / f b / gg / G", "extend the range (motion incl. period shift; context-switch keys are inert while selecting)"},
-		{"Space", "bulk complete the range"},
+		{"Space", "bulk complete tasks in the range — events are skipped, counted"},
 		{"d", "bulk delete the range (one confirm, whole subtrees)"},
 		{"y / Y", "bulk cut / copy the range to the clipboard (task tree only)"},
 		{"m", "bulk grab — one uniform date-shift over the whole range"},
 		{"(skips)", "recurring, read-only, missing, already-done, or open-subtask folders — skipped & counted (grab also skips undated)"},
-		{"Esc", "cancel (from a nested grab, back to SELECT; from SELECT, exits to the underlying view)"},
+		{"Esc / V", "cancel (from a nested grab, back to SELECT; from SELECT, exits to the underlying view)"},
 	}},
 	{"Calendar", [][2]string{
 		{"v", "cycle month / week / day"},
@@ -101,8 +104,8 @@ var helpSections = []struct {
 		{":config", "edit config in $EDITOR, reload on exit"},
 		{":calendar", "new / rename / color / hide / show (`new` opens the create form; `color` with no hex opens the swatch picker)"},
 		{":account", "switch account — `:account <name>`, or bare to pick from a list (multi-account)"},
-		{":conflicts", "resolve items that changed on both sides"},
-		{"?", "this help"},
+		{":conflicts", "resolve items that changed on both sides — Enter resolves, j/k/h/l move, Esc/q closes"},
+		{"?", "this help — scroll with j/k/g/G/h/l/arrows/PgUp/PgDn, close with Esc/q/?"},
 	}},
 }
 
@@ -120,7 +123,7 @@ func (a *app) showHelp() {
 	tv := tview.NewTextView().SetDynamicColors(true).SetScrollable(true).SetText(strings.TrimRight(b.String(), "\n"))
 	tv.SetBackgroundColor(tcell.ColorDefault)
 	tv.SetBorder(true).SetBorderColor(accentColor)
-	tv.SetTitle(" Help — keys & commands (Esc to close) ").SetTitleColor(accentColor)
+	tv.SetTitle(" Help — keys & commands (Esc/q to close) ").SetTitleColor(accentColor)
 	tv.SetInputCapture(func(ev *tcell.EventKey) *tcell.EventKey {
 		if ev.Key() == tcell.KeyEscape || ev.Rune() == 'q' || ev.Rune() == '?' {
 			a.closeModal(pageHelp)

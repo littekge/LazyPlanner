@@ -4,6 +4,22 @@
 
 ---
 
+## 2026-07-24 — v1.5.0 phase 2 doc fixes (Batch C/D): help.go cheat sheet — undocumented keys and modal chrome (matrix findings #9–#12, #15–#18)
+
+- Doc-only pass over the `:help` cheat sheet (`internal/ui/help.go`) landing the owner-approved Batch C/D matrix findings; each behavior was verified against the actual key-handling code (`keys.go`, `grab.go`, `bulkops.go`, `treeview.go`, `forms.go`, `list.go`) before the row was written or reworded — no source behavior changed.
+- **#16** — split the over-broad `"h j k l / arrows" → "move the highlight"` row: `j`/`k`/arrows genuinely move the highlight everywhere, but `h`/`l` only move between columns where that applies (a drilled day's concurrent events, grid columns) and are inert on the single-column overview lists — confirmed via `tview.List.InputHandler` (`vendor/.../list.go:628-631`), where `KeyLeft`/`KeyRight` only shift `horizontalOffset`, never `currentItem`.
+- **#9** — added a "J / K (task tree)" row: bare `J`/`K` jump to a node's first child / its parent, a native tview `TreeView` binding (`treeview.go:839-854`, `treeChild`/`treeParent`) that reaches the tree unintercepted in NORMAL — confirmed distinct from GRAB's `J`/`K` resize (only intercepted inside `handleGrabKey`/`handleBulkGrabKey`) and from `H`/`L` re-parent.
+- **#10** — SELECT's `Esc` row now reads `Esc / V`: confirmed in `selection.go`'s `handleSelectKey`, `r == 'V'` while selecting calls `exitSelect()` with the same "Select cancelled" flash as `Esc`.
+- **#11** — the `p / P` row now notes "Tasks mode only": `yankpaste.go`'s `paste()` flashes "Switch to a task list (t) to paste" and returns when `a.mode != modeTasks`, so pasting from a calendar/agenda view is blocked.
+- **#12** — SELECT's `Space` row now reads "bulk complete tasks in the range — events are skipped, counted": confirmed in `bulkops.go`'s `bulkComplete`, `!t.isTodo` is a `skips.add("event(s)")` continue, not an error.
+- **#15** — the grab (`m`) row now notes hour/resize need week/day view: confirmed in `grab.go`'s `grabNudge`, `timed := a.mode == modeCalendar && a.viewMode != viewMonth && !base.AllDay` gates `j`/`k`/`J`/`K`, flashing `grabTimeHint` otherwise.
+- **#17** — added a "Tab / Shift-Tab" row to the Forms section: confirmed in `forms.go`, `normalKey` treats `KeyTab`/`KeyBacktab` as `j`/`k`, `drillKey` treats them as `Enter`/its reverse.
+- **#18** — `:conflicts` and `?` rows now list their actual close/scroll keys (`Esc/q` close, `j/k/h/l` move for conflicts; `j/k/g/G/h/l`/arrows/PgUp/PgDn scroll, `Esc/q/?` close for help) — confirmed against `conflicts.go`'s `SetInputCapture` + `modalMotionKey`, and `tview.TextView.InputHandler` (`vendor/.../textview.go:1340-1381`). The help modal's own title string was also corrected from "(Esc to close)" to "(Esc/q to close)" — trivially correct, same file. Left `conflicts.go`'s title untouched: out of this batch's file scope (README.md/help.go/main.md only).
+- Also carried the Panels & navigation `Enter` row's phase-1 wording one step further: added "no-op on the Agenda board" (the agenda overview list's items carry a `nil` selected-func, so `tview.List`'s `KeyEnter` case is a no-op there) — same root fact as README finding #14 in the entry below.
+- Files: `internal/ui/help.go`.
+- Tests: none — doc-only change (no `:help` string is asserted against in tests); full gate re-run for the code-compiles/gofmt-clean guarantee (`help.go` is Go source): `go build ./...`, `go test ./...`, `go vet ./...`, `staticcheck ./...`, `gofmt -l internal/ui` all clean.
+- No issues: all eight findings verified true-as-described against current code; nothing needed walking back.
+
 ## 2026-07-24 — v1.5.0 phase 2 doc fixes (Batch C/D): README keybindings table & prose (matrix findings #8–#12, #14–#17)
 
 - Doc-only pass over `README.md`'s keybindings table and Usage prose landing the owner-approved Batch C/D matrix findings, paired with the `help.go` fix in the entry above; same code verified, no source behavior changed.
