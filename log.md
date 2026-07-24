@@ -4,6 +4,16 @@
 
 ---
 
+## 2026-07-23 — Bugfix: bulk-delete ancestor walk could hang on malformed RELATED-TO cycles
+
+- **Reviewer-found on Task 5** (`internal/ui/bulkops.go`'s `bulkDeleteRoots`), one Critical + one Important, same root cause: the ancestor-absorption walk trusted `parentUID` data it has no business trusting.
+- **Critical**: the walk `for p := parentOf[t.uid]; p != ""; p = parentOf[p]` had no visited guard. `ParentUID` comes straight from untrusted `RELATED-TO;RELTYPE=PARENT` data — a reciprocal cycle (hand-edited or foreign `.ics`) makes the walk spin forever, freezing the single-threaded UI event loop. This violates the hard invariant that malformed iCalendar is never fatal. Fixed exactly like the sibling `descendants()` (`edit.go`): a `seen := map[string]bool{...}` guard, bail on revisit.
+- **Important**: `selected` was built from the *raw* input targets before filtering, so a child whose only selected ancestor was later filtered out (read-only/missing) was still silently absorbed — dropped from `roots` entirely, uncounted in `skips`, so the confirm's count no longer matched what was actually deleted. Restructured `bulkDeleteRoots` into two passes: first compute `survivors` (the recurring/missing/read-only filters), then build `selected` from survivors only, then run the (now cycle-guarded) absorption check against that survivor-only set.
+- **Minor** (included, cheap): `bulkDelete`'s confirm callback now guards the `deleted == 0` case — mirrors `bulkComplete`'s existing `done == 0` guard (no `pushUndo` for a no-op, flash without the undo hint, selection left alone). This can only fire on a race between materializing `roots` and the confirm firing (every uid vanishing in between); deliberately diverges from single-item `deleteWholeObject`'s quirk in favor of parity with `bulkComplete` in the same file.
+- **TDD**: `TestBulkDeleteRootsSurvivesParentCycle` (RED — timed out at 3s inside a goroutine-wrapped call, confirming the hang; GREEN — returns immediately, `cycle-c` survives as its own root) and `TestBulkDeleteRootsAbsorbsOnlyIntoSurvivingAncestor` (RED — child silently dropped, `roots` empty; GREEN — child survives as its own root, `read-only` skip count still 1) both added to `internal/ui/bulkops_test.go`, along with a `putTodoWithParent` fixture helper (explicit UID + RELATED-TO parent, needed for the reciprocal-cycle fixture where both ends reference a UID that doesn't exist yet at creation time).
+- Verified: `go test ./internal/ui/ -run 'TestBulkDelete' -v` (9/9 pass) and `go test ./internal/ui/... -race` pass; full gate green (`go test ./...`, `go vet ./...`, `staticcheck ./...`, `go build ./...`, `gofmt -l` clean).
+- Files: `internal/ui/bulkops.go`, `internal/ui/bulkops_test.go`.
+
 ## 2026-07-23 — v1.4.0: SELECT bulk delete
 
 - **Task 5 of the v1.4.0 SELECT-mode build**: bulk delete (`d` in SELECT), plus `bulkDeleteRoots` — the ancestor-dedupe/filter helper Task 6's bulk yank will also reuse.

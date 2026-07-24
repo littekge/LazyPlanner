@@ -163,19 +163,20 @@ func (a *app) bulkComplete() {
 // whose ancestor is also selected is absorbed (its subtree travels with the
 // ancestor), and recurring events / read-only / missing items are filtered out
 // with counts. Also used by bulk yank.
+//
+// Two passes, deliberately: absorption must be checked against the *surviving*
+// selection, not the raw targets. A child whose only selected ancestor gets
+// filtered out (read-only/missing) would otherwise be silently absorbed into a
+// delete that never happens to that ancestor — dropped from roots, uncounted
+// in skips, and the confirm's count would no longer match what's deleted.
 func (a *app) bulkDeleteRoots(targets []editTarget) ([]editTarget, bulkSkip) {
 	skips := bulkSkip{}
-	selected := map[string]bool{}
-	for _, t := range targets {
-		if t.isTodo {
-			selected[t.uid] = true
-		}
-	}
 	parentOf := map[string]string{}
 	for _, td := range a.store.Todos() {
 		parentOf[td.UID] = td.ParentUID
 	}
-	var roots []editTarget
+
+	survivors := make([]editTarget, 0, len(targets))
 	for _, t := range targets {
 		if !t.isTodo && t.recurring {
 			skips.add("recurring")
@@ -190,16 +191,33 @@ func (a *app) bulkDeleteRoots(targets []editTarget) ([]editTarget, bulkSkip) {
 			skips.add("read-only")
 			continue
 		}
+		survivors = append(survivors, t)
+	}
+
+	selected := map[string]bool{}
+	for _, t := range survivors {
+		if t.isTodo {
+			selected[t.uid] = true
+		}
+	}
+
+	var roots []editTarget
+	for _, t := range survivors {
 		if t.isTodo {
 			absorbed := false
-			for p := parentOf[t.uid]; p != ""; p = parentOf[p] {
+			// ParentUID comes straight from untrusted RELATED-TO data (hand-edited
+			// or foreign .ics), so a reciprocal cycle is possible — seen guards
+			// against walking it forever, mirroring descendants()'s cycle guard.
+			seen := map[string]bool{t.uid: true}
+			for p := parentOf[t.uid]; p != "" && !seen[p]; p = parentOf[p] {
+				seen[p] = true
 				if selected[p] {
 					absorbed = true
 					break
 				}
 			}
 			if absorbed {
-				continue // travels with its selected ancestor's subtree
+				continue // travels with its selected (surviving) ancestor's subtree
 			}
 		}
 		roots = append(roots, t)
@@ -264,6 +282,14 @@ func (a *app) bulkDelete() {
 			rollback = append(rollback, func() { _, _ = a.store.Restore(ctx, calID, name, prev) })
 			ops = append(ops, undoOp{calID: calID, name: name, prev: prev})
 			deleted++
+		}
+		if deleted == 0 {
+			// Nothing was actually deleted — every uid vanished (a race between
+			// materializing roots and the confirm firing). Mirrors bulkComplete's
+			// done==0 guard: no undo step for a no-op, and the selection is left
+			// alone so the user can see what happened and adjust it.
+			a.flash(bulkSummary("deleted", 0, skips))
+			return
 		}
 		a.pushUndo("bulk delete", "", ops...)
 		a.exitSelect()

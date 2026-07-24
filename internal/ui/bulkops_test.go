@@ -261,6 +261,107 @@ func TestBulkDeleteSkipsRecurringEvent(t *testing.T) {
 	}
 }
 
+// putTodoWithParent writes a VTODO with an explicit UID and RELATED-TO parent
+// (default RELTYPE=PARENT per RFC 5545). Needed over putTodo for fixtures that
+// require a specific pre-known UID — e.g. a reciprocal parent cycle, where both
+// ends must reference a UID that doesn't exist yet when the other is created.
+func putTodoWithParent(t *testing.T, a *app, calID, uid, summary, parentUID string, due time.Time) string {
+	t.Helper()
+	ics := "BEGIN:VCALENDAR\r\nVERSION:2.0\r\nPRODID:-//t//t//EN\r\nBEGIN:VTODO\r\nUID:" + uid +
+		"\r\nSUMMARY:" + summary + "\r\nDTSTAMP:20260701T000000Z\r\nDUE:" + due.UTC().Format("20060102T150405Z")
+	if parentUID != "" {
+		ics += "\r\nRELATED-TO:" + parentUID
+	}
+	ics += "\r\nEND:VTODO\r\nEND:VCALENDAR\r\n"
+	parsed, err := model.Decode([]byte(ics), time.Local)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := a.store.Put(context.Background(), calID, store.ResourceName(uid), parsed); err != nil {
+		t.Fatal(err)
+	}
+	return uid
+}
+
+// TestBulkDeleteRootsSurvivesParentCycle: a reciprocal RELATED-TO cycle
+// (malformed/foreign .ics data — untrusted, never assume acyclic) must not
+// hang the ancestor walk. cycle-c's parent chain (cycle-c → cycle-a → cycle-b
+// → cycle-a → ...) enters the cycle without ever reaching a selected ancestor,
+// so cycle-c must survive as its own root — reached inside a timeout because an
+// unguarded walk here freezes the single-threaded UI event loop forever, not
+// just this goroutine.
+func TestBulkDeleteRootsSurvivesParentCycle(t *testing.T) {
+	now := time.Date(2026, 7, 5, 9, 0, 0, 0, time.UTC)
+	a := newRootedTestApp(t, now)
+	a.setMode(modeTasks)
+	calID := testCalID(a)
+	putTodoWithParent(t, a, calID, "cycle-a", "A", "cycle-b", now)
+	putTodoWithParent(t, a, calID, "cycle-b", "B", "cycle-a", now)
+	putTodoWithParent(t, a, calID, "cycle-c", "C", "cycle-a", now)
+
+	targets := []editTarget{{isTodo: true, uid: "cycle-c"}}
+
+	type result struct {
+		roots []editTarget
+		skips bulkSkip
+	}
+	done := make(chan result, 1)
+	go func() {
+		roots, skips := a.bulkDeleteRoots(targets)
+		done <- result{roots, skips}
+	}()
+	select {
+	case r := <-done:
+		if len(r.roots) != 1 || r.roots[0].uid != "cycle-c" {
+			t.Fatalf("expected cycle-c to survive as its own root, got %v (skips=%v)", r.roots, r.skips)
+		}
+	case <-time.After(3 * time.Second):
+		t.Fatal("bulkDeleteRoots hung walking a RELATED-TO parent cycle")
+	}
+}
+
+// TestBulkDeleteRootsAbsorbsOnlyIntoSurvivingAncestor: a child whose only
+// selected ancestor is itself filtered out (here: read-only) must not be
+// silently absorbed — it has to survive as its own root, since the ancestor it
+// would have traveled with is never actually going to be deleted.
+func TestBulkDeleteRootsAbsorbsOnlyIntoSurvivingAncestor(t *testing.T) {
+	now := time.Date(2026, 7, 5, 9, 0, 0, 0, time.UTC)
+	a := newRootedTestApp(t, now)
+	a.setMode(modeTasks)
+	roCal := "ro-tasks"
+	if err := a.store.CreateCalendarLocal(context.Background(), roCal, store.CalendarMeta{DisplayName: "RO"}, []string{"VTODO"}); err != nil {
+		t.Fatal(err)
+	}
+	a.reload()
+	putTodoWithParent(t, a, roCal, "ro-parent", "folder", "", now)
+	putTodoWithParent(t, a, testCalID(a), "child-of-ro", "leaf", "ro-parent", now)
+	if err := a.store.SetCalendarReadOnly(context.Background(), roCal, true); err != nil {
+		t.Fatal(err)
+	}
+
+	targets := []editTarget{
+		{isTodo: true, uid: "ro-parent"},
+		{isTodo: true, uid: "child-of-ro"},
+	}
+	roots, skips := a.bulkDeleteRoots(targets)
+
+	foundChild := false
+	for _, r := range roots {
+		if r.uid == "ro-parent" {
+			t.Fatal("read-only parent must not survive into roots")
+		}
+		if r.uid == "child-of-ro" {
+			foundChild = true
+		}
+	}
+	if !foundChild {
+		t.Fatalf("child whose only selected ancestor was filtered out must survive as its own root, got %v", roots)
+	}
+	if skips["read-only"] != 1 {
+		t.Fatalf("expected exactly 1 read-only skip, got %v", skips)
+	}
+}
+
 // TestBulkDeleteReadOnlySkipped: an item on a read-only calendar is filtered
 // out before the confirm and counted in the summary — mirrors the read-only
 // guard in bulkComplete/deleteSelected (guardWrite), applied without aborting
