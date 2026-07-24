@@ -4,6 +4,14 @@
 
 ---
 
+## 2026-07-24 — v1.5.0 design brainstormed and spec written
+
+- Brainstormed the v1.5.0 (polishing & auditing) scope with the owner; all decisions owner-settled: systemic priority-ordered sweeps (spec↔program gaps → UI/keymap consistency → deep audit), exhaustive two-direction spec-diff, both UX gap-closers in scope (agenda-board click-to-select, Detail-pane accordion), minimum one `/audit` pass then best-effort toward convergence, per-finding owner triage, hybrid execution (durable claim inventory + parallel agent fan-out; speed prioritized).
+- Step 0 scoped: the flagged `moveSubtreeOps` bare-`Put` data-loss gap is fixed repro-first before the sweeps.
+- Seed finding recorded: main.md self-contradicts on whether the `+`/`-` accordion collapses the Detail pane (design text says yes, Future-versions bullet says overview-only).
+- Spec: `docs/superpowers/specs/2026-07-24-v1.5.0-polish-audit-design.md` (new). Next: owner spec review, then the main.md `### v1.5.0` Build Plan subsection + implementation plan.
+- Files: `docs/superpowers/specs/2026-07-24-v1.5.0-polish-audit-design.md` (new), `log.md`.
+
 ## 2026-07-24 — Docs: main.md hardening ledger gains the missing pass-18 line; convergence paragraph rewritten
 
 - **Doc-currency gap found at session startup**: main.md claims its Build Plan carries a one-line summary of *every* hardening pass, but the ledger and the convergence paragraph stopped at pass 17 — pass 18 (2026-07-21: first audit of the v1.1.0 multi-account surfaces + the deep sync-core TOCTOU re-sweep; HIGH 2 · MED 1, all fixed; 4/4 escaped canaries, all closed) existed only in `docs/audit/COVERAGE.md` and `docs/audit/passes/PASS-18.md`.
