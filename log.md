@@ -4,6 +4,15 @@
 
 ---
 
+## 2026-07-24 — Fix: moveSubtreeOps source rewrite version-checked (v1.5.0 step 0)
+
+- The COVERAGE.md-flagged gap: `moveSubtreeOps` (`internal/ui/yankpaste.go`) rewrote a cross-list move's source resource with a bare `store.Put`, silently overwriting a sync pull that updated a co-resident bystander between the loop's Locate and the write. Now `store.PutIfUnchanged` against `loc.Prev` — a mid-move pull fails the move cleanly (all-or-nothing rollback, clipboard kept for retry), matching `reparentOps`.
+- The `!remaining` branch's whole-resource `Delete` deliberately unchanged (reconcile-matrix question for the phase-3 audit).
+- TDD: `TestMoveSubtreeSourceRewriteDoesNotClobberConcurrentPull` (`internal/ui/movesubtree_clobber_test.go`, new) — one-pull-per-iteration race under `-race`, RED against the bare Put, GREEN after.
+- `docs/audit/COVERAGE.md` flag updated to FIXED.
+- Full gate green.
+- Files: `internal/ui/yankpaste.go`, `internal/ui/movesubtree_clobber_test.go` (new), `docs/audit/COVERAGE.md`, `log.md`.
+
 ## 2026-07-24 — main.md: v1.5.0 Build Plan subsection (scope planned)
 
 - Replaced the v1.5.0 stub with the owner-settled scope (spec: `docs/superpowers/specs/2026-07-24-v1.5.0-polish-audit-design.md`): step-0 `moveSubtreeOps` fix, two-direction spec-diff, UI/keymap consistency sweep + two gap-closers, minimum-one deep audit pass.

@@ -343,8 +343,15 @@ func (a *app) moveSubtreeOps(uid, targetParent, srcCal, dstCal string, ops *[]un
 			return err
 		}
 		if remaining {
-			if _, err := a.store.Put(ctx, srcCal, loc.Name, reduced); err != nil {
+			// Version-checked, never a bare Put: a sync pull updating a co-resident
+			// bystander between this loop's Locate and the rewrite must fail the move
+			// (caller rolls back) rather than be silently overwritten.
+			applied, err := a.store.PutIfUnchanged(ctx, srcCal, loc.Name, reduced, loc.Prev)
+			if err != nil {
 				return err
+			}
+			if !applied {
+				return fmt.Errorf("an item changed on the server — retry")
 			}
 		} else if err := a.store.Delete(ctx, srcCal, loc.Name); err != nil {
 			return err
