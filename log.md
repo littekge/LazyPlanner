@@ -4,6 +4,11 @@
 
 ---
 
+## 2026-07-24 — main.md: v1.5.0 Build Plan subsection (scope planned)
+
+- Replaced the v1.5.0 stub with the owner-settled scope (spec: `docs/superpowers/specs/2026-07-24-v1.5.0-polish-audit-design.md`): step-0 `moveSubtreeOps` fix, two-direction spec-diff, UI/keymap consistency sweep + two gap-closers, minimum-one deep audit pass.
+- Files: `main.md`, `log.md`.
+
 ## 2026-07-24 — v1.5.0 design brainstormed and spec written
 
 - Brainstormed the v1.5.0 (polishing & auditing) scope with the owner; all decisions owner-settled: systemic priority-ordered sweeps (spec↔program gaps → UI/keymap consistency → deep audit), exhaustive two-direction spec-diff, both UX gap-closers in scope (agenda-board click-to-select, Detail-pane accordion), minimum one `/audit` pass then best-effort toward convergence, per-finding owner triage, hybrid execution (durable claim inventory + parallel agent fan-out; speed prioritized).

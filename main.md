@@ -486,9 +486,14 @@ A vim-style multi-select layer built on **mode composition**, not a parallel mod
 
 **Build-time finding.** `bulkDeleteRoots`'s ancestor-absorption walk trusted untrusted `RELATED-TO` parent data with no visited guard — a reciprocal parent cycle (hand-edited or foreign `.ics`) would spin the walk forever, freezing the single-threaded UI event loop (the same "malformed iCalendar must never be fatal" class as the sibling `descendants()` walk, which already carried the guard this one lacked). Fixed same-day with a `seen` map, repro-first (`internal/ui/bulkops_test.go`).
 
-### v1.5.0 — polishing & auditing (planned)
+### v1.5.0 — polishing & auditing (in progress)
 
-The last planned feature work lands in v1.4.0; from there the project is in **maintenance**. v1.5.0 is a consolidation phase — UI/UX polish and a resumed hardening-audit cadence (the continuous audit phase carries on; see the pass ledger and `docs/audit/COVERAGE.md`) rather than a new feature. Scoped in detail when it begins.
+The last planned release: a consolidation phase — systemic bug-finding and polish, no new features beyond two owner-approved gap-closers. Full design: `docs/superpowers/specs/2026-07-24-v1.5.0-polish-audit-design.md` (owner-settled 2026-07-24). Scope, in priority order:
+
+0. **Step 0 — `moveSubtreeOps` version-check fix**: the source-side rewrite of a cross-list move routes through `store.PutIfUnchanged` (was a bare `Put` — the `COVERAGE.md`-flagged clobber gap), fixed repro-first before the sweeps begin.
+1. **Exhaustive spec↔program diff, both directions** — every behavioral claim in main.md / README / `:help` verified against the code (claim inventory: `docs/audit/specdiff/CLAIMS.md`), plus a reverse sweep for shipped behavior the docs don't describe. Spec-vs-code disagreements are triaged per finding with the owner (recommended resolution: fix code vs fix doc); code fixes land repro-first, one commit each.
+2. **UI/keymap consistency sweep** — a key×context matrix (every key/chord × NORMAL/DRILL/GRAB/SELECT/RESIZE × view/form/modal) reconciling actual behavior with the help bar, `:help`, and README; findings triaged like phase 1. Plus the two gap-closers: **agenda-board click-to-select** (single click selects, double-click edits the item under the cursor — closes the pass-16 accepted mouse gap) and the **Detail-pane accordion** (`+`/`-` collapses/restores Detail together with the overview column, making the Pane-sizing section's wording true).
+3. **Deep audit — minimum one pass**, then best-effort: `/audit` over the never-audited v1.2.0–v1.4.0 surfaces (SELECT/bulk ops, recurrence-rewrite primitives + Repeat UI, quick-add grammar) and the sync-core reconcile matrix beyond the `CommitPush` window; further passes toward the two-consecutive-no-HIGH streak as time allows. The hardening cadence continues post-release as v1.5.x patches regardless.
 
 ### Future versions
 
