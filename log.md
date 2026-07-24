@@ -4,6 +4,20 @@
 
 ---
 
+## 2026-07-24 — v1.5.0 phase 2: mode-adaptive bottom hint bar (matrix findings #3+#13)
+
+- The resting bottom hint bar (`updateStatus`, `internal/ui/render.go`) was one fixed NORMAL string in every mode: it always advertised `f/b prev/next` and `v view` even in Tasks/Agenda mode, where both are silent no-ops (`f`/`b`/`v` are gated `a.mode == modeCalendar` in `app.go`'s key switch) — finding #3. It also had no branch for the Ctrl-W `RESIZE` sub-mode or an open form/modal, both of which fell through to the same misleading NORMAL line — finding #13.
+- Made the hint bar mode/context-adaptive:
+  - `a.resizing` now shows a dedicated `RESIZE · ←/→ overview · H/L detail · Enter keep · Esc/q cancel` line, matching the wording already used by `help.go`'s Ctrl-W row and `enterResizeMode`'s entry flash.
+  - `a.modalOpen()` now shows a dedicated line via the new `modalHints()`: `FORM · Tab/Enter next field · Esc cancel` when the front page is the item-edit/quick-add caret form (`pageForm`) or its nested Custom… recurrence sub-form (`pageRepeat`); a minimal `Esc/q close` fallback for every other modal (help, `:conflicts`, pickers, which-key), which already carry their own inline title/hint text.
+  - The resting NORMAL line is now built by `normalHints()` from the active `a.mode`: Calendar mode keeps `f/b prev/next · v view`; Tasks mode swaps in `>/< zoom · H/L indent · z fold` (its own no-ops outside Tasks); Agenda mode gets neither. The shared prefix/suffix and clip-safe ordering (`? help`/`q quit` lead) are unchanged, so Calendar mode's output is byte-identical to the old fixed string.
+  - `modalHints()` reads only `a.root.GetFrontPage()` (a `*tview.Pages` accessor, not an app-lock method) — checked the guardrail explicitly: `updateStatus` is not currently called from any `SetDrawFunc` path (the only one in the package is `drawModeIndicator`, which calls `interactionMode()`/`modalOpen()` the same lock-free way), but the new code stays lock-free to match that established pattern regardless.
+- TDD, repro-first: `TestNormalHintBarIsModeAdaptive`, `TestResizeHintBar`, `TestFormOpenHintBar` (`internal/ui/hints_test.go`) — all three RED against the unmodified source (fixed string surfaced in every failure), GREEN after the fix. Existing `TestHelpBarOrder`/`TestHelpBarCompletedToggle`/`TestSelectHintBarDoesNotClaimGGEnds` still pass unmodified (Calendar mode's string is unchanged byte-for-byte).
+- Extended the display-stress sweep (`internal/ui/displaystress_test.go`, `TestDisplayStress`) per the standing guardrail: the existing `"tasks"` state now also exercises the Tasks-mode-adaptive NORMAL hint bar (noted inline); added a new `modalStates` sub-loop for `"resize"` and `"form-open"` (each modal — swallows every key via `globalKeys` — so each explicitly exits via `exitResizeMode`/Esc before the next state runs, mirroring the existing `selectStates` loop's `a.exitSelect()`).
+- Docs: `main.md`'s help-bar paragraph and `README.md`'s status-bar bullet list both gained a concept-level note that the hint bar is mode-adaptive (no key-by-key narration, per the README's own anti-drift rule).
+- Files: `internal/ui/render.go`, `internal/ui/hints_test.go`, `internal/ui/displaystress_test.go`, `main.md`, `README.md`.
+- Full gate green (`go test ./...`, `go vet ./...`, `staticcheck ./...`, `go build ./...`); `gofmt -l internal/ui` clean.
+
 ## 2026-07-24 — v1.5.0 phase 2: pin h/l inertness on the conflicts/account modal lists (deferred test hardening)
 
 - A prior refactor made `modalMotionKey` (`internal/ui/keys.go`) translate `h`/`l` to Left/Right for every modal list, including the conflicts list and the `:account` picker — both single-column `tview.List`s, where Left/Right are no-ops. That inertness was never asserted, only implied.

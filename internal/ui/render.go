@@ -718,6 +718,24 @@ func (a *app) updateStatus() {
 		return
 	}
 
+	// The pane-resize sub-mode (Ctrl-W) is its own modal context, matching the
+	// RESIZE mode-indicator badge and enterResizeMode's entry flash — it must not
+	// fall through to the NORMAL movement line below (finding #13 of the v1.5.0
+	// phase-2 matrix triage: hjkl there means something else entirely).
+	if a.resizing {
+		a.hints.SetText("RESIZE · ←/→ overview · H/L detail · Enter keep · Esc/q cancel")
+		return
+	}
+
+	// A form/modal owns every key while it's open (globalKeys returns early on
+	// a.modalOpen()), so the NORMAL movement line below would be actively
+	// misleading — it names keys (hjkl, Enter, Esc, e, d, ...) the form has
+	// repurposed or that simply don't reach it (finding #13).
+	if a.modalOpen() {
+		a.hints.SetText(a.modalHints())
+		return
+	}
+
 	if a.selecting {
 		a.hints.SetText("SELECT · hjkl extend · gg/G extend to top/bottom · Space done · d delete · y/Y yank · m grab · Esc/V cancel")
 		return
@@ -727,12 +745,58 @@ func (a *app) updateStatus() {
 	if a.showCompleted {
 		completed = "on"
 	}
+	a.hints.SetText(a.normalHints(completed))
+}
+
+// modalHints returns a hint line for the front modal overlay. It reads only
+// a.root.GetFrontPage() (a *tview.Pages accessor, not an app-lock method) so
+// it stays safe to call from a draw path, matching interactionMode's pattern
+// of deriving the mode badge from tracked plain state rather than a locked
+// Application method.
+//
+// Bounded on purpose: the item-edit/quick-add caretForm (pageForm, and the
+// Custom… recurrence sub-form nested over it, pageRepeat) is the one case
+// worth a dedicated line, since it silently swallows the NORMAL keys below.
+// Every other modal (help, :conflicts, the color/account pickers, which-key)
+// already carries its own inline title/hint text, so a minimal generic
+// fallback is enough — enumerating each one here would just duplicate that.
+func (a *app) modalHints() string {
+	if name, _ := a.root.GetFrontPage(); name == pageForm || name == pageRepeat {
+		return "FORM · Tab/Enter next field · Esc cancel"
+	}
+	return "Esc/q close"
+}
+
+// Mode-invariant segments of the resting NORMAL hint bar. The full keymap
+// lives in ? help; this line is a curated subset. Order is deliberate: with
+// wrap off a narrow terminal clips the right end, so the two most important
+// hints (? help, q quit) lead, then the basic movement/navigation a new user
+// needs, then the editing actions, then the rest.
+const (
+	normalHintsPrefix = "? help · q quit · hjkl move · Enter open · Esc back · c/t/a panes"
+	normalHintsMiddle = "[ ] cal · { } list"
+)
+
+// normalHints builds the resting NORMAL hint line, adapting the pane-specific
+// clause to the active mode: f/b (prev/next anchor) and v (view cycle) only do
+// anything in Calendar mode, and >/</H/L (subtree zoom/reparent) only do
+// anything in Tasks mode (see app.go's key switch, each gated on a.mode) — so
+// each mode's hint bar shows only the keys that aren't silent no-ops there
+// (finding #3 of the v1.5.0 phase-2 matrix triage). [ ] and { } cycle the
+// selected calendar/task-list from any mode, so they stay in the shared
+// middle segment.
+func (a *app) normalHints(completed string) string {
+	segs := []string{normalHintsPrefix}
+	switch a.mode {
+	case modeCalendar:
+		segs = append(segs, "f/b prev/next · v view")
+	case modeTasks:
+		segs = append(segs, ">/< zoom · H/L indent · z fold")
+	}
+	segs = append(segs, normalHintsMiddle,
+		fmt.Sprintf("i… new · e edit · d del · Space done/hide · / find · u undo · r sync · . comp:%s · : cmd", completed))
 	// Plain text (no color tags) so the [ and ] calendar keys read literally.
-	// The full keymap lives in ? help; this line is a curated subset. Order is
-	// deliberate: with wrap off a narrow terminal clips the right end, so the two
-	// most important hints (? help, q quit) lead, then the basic movement/navigation
-	// a new user needs, then the editing actions, then the rest.
-	a.hints.SetText(fmt.Sprintf("? help · q quit · hjkl move · Enter open · Esc back · c/t/a panes · f/b prev/next · v view · [ ] cal · { } list · i… new · e edit · d del · Space done/hide · / find · u undo · r sync · . comp:%s · : cmd", completed))
+	return strings.Join(segs, " · ")
 }
 
 // --- shared helpers ---

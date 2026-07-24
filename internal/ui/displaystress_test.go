@@ -131,6 +131,9 @@ func TestDisplayStress(t *testing.T) {
 		name  string
 		enter func()
 	}{
+		// "tasks" also exercises the Tasks-mode-adaptive NORMAL hint bar
+		// (setMode -> updateStatus), a new draw branch from the mode-adaptive
+		// hint-bar fix (v1.5.0 phase-2 matrix findings #3+#13).
 		{"tasks", func() { a.globalKeys(runeKey('t')); a.buildTree(); expandAllNodes(a.tree.GetRoot()) }},
 		{"calendar-month", func() { a.globalKeys(runeKey('c')) }},
 		{"calendar-week", func() { a.globalKeys(runeKey('c')); a.globalKeys(runeKey('v')) }},
@@ -159,6 +162,44 @@ func TestDisplayStress(t *testing.T) {
 		for _, g := range stressGeoms {
 			drawGeom(t, st.name, a.root, g.w, g.h)
 		}
+	}
+
+	// RESIZE (Ctrl-W) and a form-open modal are new hint-bar draw branches from
+	// the mode-adaptive hint-bar fix (v1.5.0 phase-2 matrix findings #3+#13).
+	// Both are modal — they swallow every key via globalKeys while active — so
+	// each gets its own explicit exit before the next state runs, mirroring the
+	// selectStates loop's a.exitSelect() below.
+	modalStates := []struct {
+		name  string
+		enter func()
+		exit  func()
+	}{
+		{
+			name:  "resize",
+			enter: func() { a.globalKeys(runeKey('c')); a.enterResizeMode() },
+			exit:  func() { a.exitResizeMode(true) },
+		},
+		{
+			name: "form-open",
+			enter: func() {
+				a.globalKeys(runeKey('t'))
+				a.buildTree()
+				a.globalKeys(tcell.NewEventKey(tcell.KeyDown, 0, tcell.ModNone))
+				a.globalKeys(runeKey('e'))
+			},
+			exit: func() {
+				if a.modalOpen() {
+					a.globalKeys(tcell.NewEventKey(tcell.KeyEscape, 0, tcell.ModNone))
+				}
+			},
+		},
+	}
+	for _, st := range modalStates {
+		st.enter()
+		for _, g := range stressGeoms {
+			drawGeom(t, st.name, a.root, g.w, g.h)
+		}
+		st.exit()
 	}
 
 	// SELECT-mode range active: the range visuals (tree reverse-video, month/
