@@ -327,7 +327,7 @@ func (a *app) handleSelectKey(ev *tcell.EventKey) *tcell.EventKey {
 			a.flash("Select cancelled")
 			return nil
 		case r == ' ':
-			a.flash("Bulk complete lands in a later build step")
+			a.bulkComplete()
 			return nil
 		case r == 'd':
 			a.flash("Bulk delete lands in a later build step")
