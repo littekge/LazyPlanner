@@ -4,6 +4,14 @@
 
 ---
 
+## 2026-07-24 — v1.5.0 phase 1: j/k movement in the Conflicts list and account picker (Batch C, fix 3/4)
+
+- Both `internal/ui/conflicts.go`'s Conflicts list and `internal/ui/command.go`'s `:account` picker are modal `tview.List`s, so `globalKeys`' `motionArrow` translation never reaches them (`globalKeys` returns immediately when `a.modalOpen()`) — they fell back to tview's native List handler, arrows-only, breaking the app-wide "hjkl move the highlight everywhere" promise these two lists were the last holdouts on.
+- Both lists now translate `j`/`k` to `KeyDown`/`KeyUp` in their own `SetInputCapture`, returning a synthesized `tcell.EventKey` that then reaches the List's own (native) Down/Up handling — the Conflicts list extends its existing Esc/`q`-close capture; the account picker gains one (it previously had none beyond `SetDoneFunc`'s built-in Esc).
+- TDD: `TestConflictsListVimKeys` and `TestAccountPickerVimKeys` both RED against the unmodified lists (`j` left the selection at 0), GREEN after the fix.
+- Files: `internal/ui/conflicts.go`, `internal/ui/command.go`, `internal/ui/vimkeys_modal_test.go` (new).
+- Full gate green (`go test ./...`, `go vet ./...`, `staticcheck ./...`, `go build ./...`); `gofmt` clean.
+
 ## 2026-07-24 — v1.5.0 phase 1: agenda-board double-click guarded by mode (Batch C, fix 2/4)
 
 - `mouse.go`'s double-click switch had a stale-rect exposure: `a.agenda.InRect(x,y)` is a hidden `tview.Pages` page outside Agenda mode, and `Pages.Draw` skips resizing/redrawing a hidden page entirely, so its `Box` keeps whatever rect it last drew while visible. The single-click case already guarded this with `&& a.mode == modeAgenda`; the double-click case only checked `a.mode == modeAgenda` *inside* the case body (gating the re-select, not the `editSelected()` call after it), so a click landing on the stale rect from another mode still opened the edit form.
