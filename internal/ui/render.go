@@ -705,6 +705,19 @@ func (a *app) updateStatus() {
 
 	a.renderSyncStatus()
 
+	// Grab is checked before selecting: a bulk grab nests inside SELECT (selecting
+	// stays true), but hjkl now shifts dates rather than extending the range, so
+	// the help bar must show the grab controls — and their ±hour/±day/±week
+	// granularity — for the whole grab, not just the transient entry flash.
+	if a.grabbing {
+		if len(a.bulkGrab) > 0 {
+			a.hints.SetText(a.bulkGrabStatus())
+		} else {
+			a.hints.SetText(a.grabStatus())
+		}
+		return
+	}
+
 	if a.selecting {
 		a.hints.SetText("SELECT · hjkl extend · gg/G ends · Space done · d delete · y/Y yank · m grab · Esc/V cancel")
 		return

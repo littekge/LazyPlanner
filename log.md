@@ -4,6 +4,15 @@
 
 ---
 
+## 2026-07-24 — Fix: help bar now reflects grab controls (bulk grab showed stale SELECT hints)
+
+- **Discoverability finding (bulk grab granularity)**: bulk grab (`V`…`m`) shifts every selected item by whole days (`h`/`l`) and weeks (`j`/`k`) — deliberately a uniform *date-shift*, not single-item grab's ±hour event nudge — but the only surface that stated this was the transient entry flash. The always-visible help bar (`a.hints`) never had a grab branch in `updateStatus`, so during a **bulk** grab (which nests inside SELECT, keeping `a.selecting` true) each nudge's `refreshKeepingDrill`→`updateStatus` repainted the bar to the SELECT line — `SELECT · hjkl extend · …` — which is actively wrong mid-grab (`hjkl` shifts dates, it no longer extends the range) and names no granularity. Single-item grab showed the ordinary `hjkl move` global line, also not grab-aware.
+- **Fix** (`internal/ui/render.go`): `updateStatus` gains a grab branch, checked **before** the `selecting` branch (bulk grab has both flags true). Single grab → the existing context-aware `grabStatus()` (`±hour`/`±day`/`±week`/resize per context); bulk grab → a new `bulkGrabStatus()`. The help bar now shows the active grab's controls + granularity for the whole grab, and the stale "hjkl extend" line is gone during bulk grab. Behavior (the shifts themselves) unchanged — this is a hint/discoverability fix only.
+- **`bulkGrabStatus()`** (`internal/ui/bulkgrab.go`, mirrors `grabStatus()`): `GRAB ×N · h/l ±day · j/k ±week · Enter keep · Esc cancel`, now shared by `startBulkGrab`'s entry flash and the help bar so the two can't drift.
+- **TDD**: `internal/ui/grabhints_test.go` (new) — `TestGrabHelpBarShowsEventGranularity` (single event grab in week view → help bar names `±hour`, not the ordinary controls line) and `TestBulkGrabHelpBarShowsShiftGranularity` (bulk grab → help bar names `±day`/`±week`, no `extend`). RED confirmed first: single grab showed the global `hjkl move` line, bulk grab showed the `SELECT · hjkl extend · …` line verbatim; GREEN after the `updateStatus` branch.
+- Full gate green: `go test ./...`, `go vet ./...`, `staticcheck ./...`, `go build ./...`, `gofmt -l` clean on touched files.
+- Files: `internal/ui/render.go`, `internal/ui/bulkgrab.go`, `internal/ui/grabhints_test.go` (new), `log.md`.
+
 ## 2026-07-24 — Docs: restructure main.md SELECT paragraph; entry-focus + bare-0 notes
 
 - **Final whole-branch review, item 4 (docs)**: main.md's "SELECT mode: multi-select and bulk operations" section was one ~250-word paragraph, violating the house style ("long sections can almost always be broken up"). Restructured in place into a short lead sentence + 5 bullets — contexts+entry, the motion/swallow contract, bulk operations + skip taxonomy + truthful counts, bulk grab semantics, exit/nesting (incl. the empty-day-vs-lost-anchor distinction) — every fact from the original paragraph preserved, none moved elsewhere.

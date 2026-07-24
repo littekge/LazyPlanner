@@ -77,7 +77,13 @@ func (a *app) startBulkGrab() {
 		}
 	}
 	a.grabbing = true
-	a.flash(fmt.Sprintf("GRAB ×%d · h/l ±day · j/k ±week · Enter keep · Esc cancel", len(items)))
+	a.flash(a.bulkGrabStatus())
+}
+
+// bulkGrabStatus describes the bulk-grab controls, shared by the entry flash and
+// the persistent help bar (updateStatus) so the two can't drift.
+func (a *app) bulkGrabStatus() string {
+	return fmt.Sprintf("GRAB ×%d · h/l ±day · j/k ±week · Enter keep · Esc cancel", len(a.bulkGrab))
 }
 
 // handleBulkGrabKey consumes every key while a bulk grab is active, mirroring
