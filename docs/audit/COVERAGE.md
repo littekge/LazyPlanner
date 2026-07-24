@@ -104,9 +104,10 @@ not hidden. See `PROTOCOL.md`.
   group-readable warning mask, the state-file 0o600 mode, the CLI `components()` --tasks/--both
   helper, and `treeNodeAtY`'s upper bound each now have a boundary test verified to fail under its
   exact mutation (see the pass-18 canary section).
-- **Live two-account end-to-end switch-and-sync** — the v1.1.0 feature's real switch-then-sync path
-  is unverifiable while the CalDAV server is offline; only headless unit coverage exists. Any
-  switch/sync data-loss that manifests only against a real server is deferred.
+- **Live two-account end-to-end switch-and-sync** — RESOLVED (2026-07-22): pass 18 deferred this as
+  unverifiable while the CalDAV server was offline; the server returned and the owner live-verified
+  two-account end-to-end sync against it as part of the v1.1.0 release verification (recorded in
+  main.md's v1.1.0 build record). Headless unit coverage remains the automated guard.
 - **Import of a resource mixing a UID-bearing with a UID-less component** (pass-15 MED) —
   ACCEPTED RESIDUAL (owner decision 2026-07-18): the whole resource fails go-ical's encoder and
   is skipped, dropping the valid sibling (surfaced in `res.Skipped`, not silent). Every fix

@@ -4,6 +4,15 @@
 
 ---
 
+## 2026-07-24 — Docs: main.md hardening ledger gains the missing pass-18 line; convergence paragraph rewritten
+
+- **Doc-currency gap found at session startup**: main.md claims its Build Plan carries a one-line summary of *every* hardening pass, but the ledger and the convergence paragraph stopped at pass 17 — pass 18 (2026-07-21: first audit of the v1.1.0 multi-account surfaces + the deep sync-core TOCTOU re-sweep; HIGH 2 · MED 1, all fixed; 4/4 escaped canaries, all closed) existed only in `docs/audit/COVERAGE.md` and `docs/audit/passes/PASS-18.md`.
+- **main.md ledger**: added the pass-18 bullet after pass 17, in the ledger's compressed style — the two HIGHs (the O(depth²) nested-inline-table config decode hanging startup inside the 4 MiB read cap, fixed via `checkNestingDepth`; the `store.CommitPush` mid-push-delete resurrection silently losing a user delete, fixed by honoring `cur==nil` + advancing the tombstone ETag), the MED (`:config` reload discarding the re-parsed account list, fixed via `ConfigReload.Accounts`/`ActiveAccount`), and the four closed canaries. Fix status taken from COVERAGE.md (the PASS-18.md report records the findings as-found/unfixed; the fixes and canary closures landed 2026-07-21 per the ledger).
+- **main.md convergence paragraph rewritten in place**: the HIGH trend extends … → 0 (17) → 2 (18); criterion 2 (two consecutive no-HIGH passes) reset from one back to zero; the second consecutive 4/4 canary-escape pass noted; next-pass targets updated (the reconcile-vs-concurrent-pull matrix beyond the `CommitPush` window, plus the post-pass-18 feature surface — v1.2.0 grammar, v1.3.0 recurrence primitives, v1.4.0 SELECT/bulk-ops incl. the flagged `moveSubtreeOps` bare-`Put`). The stale "one more re-sweep earns the streak" estimate is gone; the permanently-accepted-gaps list is unchanged.
+- **docs/audit/COVERAGE.md**: the "live two-account end-to-end switch-and-sync" residual-risk bullet was stale (written while the CalDAV server was offline) — marked RESOLVED, since the owner live-verified two-account sync 2026-07-22 during the v1.1.0 release verification.
+- Docs-only change; no code touched. Full gate run anyway and green: `go test ./...`, `go vet ./...`, `staticcheck ./...`, `go build ./...`.
+- Files: `main.md`, `docs/audit/COVERAGE.md`, `log.md`.
+
 ## 2026-07-24 — v1.4.0 released — flip main.md status, session cleanup
 
 - **v1.4.0 — SELECT mode released by the owner** (tag `v1.4.0` at `5877c39`, the branch tip including the same-day grab help-bar fix). Verified before flipping docs: `ai-workspace` == `origin/ai-workspace` == `main` == `origin/main` == the tag commit — the merge to `main` and the tag are the owner's actions, per the branching rules.
