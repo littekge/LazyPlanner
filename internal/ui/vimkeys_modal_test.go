@@ -93,3 +93,33 @@ func TestAccountPickerVimKeys(t *testing.T) {
 		t.Errorf("k: selection = %d, want 0", got)
 	}
 }
+
+func TestModalMotionKeyTranslatesLetters(t *testing.T) {
+	cases := []struct {
+		in   rune
+		want tcell.Key
+	}{
+		{'j', tcell.KeyDown},
+		{'k', tcell.KeyUp},
+		{'h', tcell.KeyLeft},
+		{'l', tcell.KeyRight},
+	}
+	for _, c := range cases {
+		got := modalMotionKey(tcell.NewEventKey(tcell.KeyRune, c.in, tcell.ModNone))
+		if got.Key() != c.want {
+			t.Errorf("modalMotionKey(%q) = %v, want %v", c.in, got.Key(), c.want)
+		}
+	}
+}
+
+func TestModalMotionKeyPassesThroughNonMotion(t *testing.T) {
+	// A real arrow and a non-motion rune must pass through unchanged.
+	arrow := tcell.NewEventKey(tcell.KeyDown, 0, tcell.ModNone)
+	if got := modalMotionKey(arrow); got != arrow {
+		t.Errorf("arrow key should pass through unchanged")
+	}
+	q := tcell.NewEventKey(tcell.KeyRune, 'q', tcell.ModNone)
+	if got := modalMotionKey(q); got != q {
+		t.Errorf("'q' should pass through unchanged")
+	}
+}

@@ -163,6 +163,17 @@ func motionArrow(ev *tcell.EventKey) (key tcell.Key, isLetter, ok bool) {
 	return 0, false, false
 }
 
+// modalMotionKey lets a modal list share the app-wide h/j/k/l motion idiom.
+// A modal short-circuits globalKeys (see app.go), so the letter motions never
+// reach motionArrow there — translate them locally via the same table. Real
+// arrow keys already work and any non-motion event passes through untouched.
+func modalMotionKey(ev *tcell.EventKey) *tcell.EventKey {
+	if arrow, isLetter, ok := motionArrow(ev); ok && isLetter {
+		return tcell.NewEventKey(arrow, 0, tcell.ModNone)
+	}
+	return ev
+}
+
 // repeatKey feeds ev to the focused primitive n times. Counts and gg/G reuse the
 // widgets' own navigation (tview's List/TreeView already handle arrows/Home/End),
 // so movement stays consistent with a single keypress.

@@ -4,6 +4,14 @@
 
 ---
 
+## 2026-07-24 — v1.5.0 phase 2: DRY refactor — share motionArrow's j/k translation via modalMotionKey
+
+- The Conflicts list (`internal/ui/conflicts.go`) and account picker (`internal/ui/command.go`) both manually duplicated motionArrow's j/k→Down/Up translation inline in their `SetInputCapture` handlers because modals short-circuit `globalKeys` (where motionArrow normally translates). Created a shared `modalMotionKey` helper that reuses motionArrow's translation table, eliminating the duplication.
+- Added `modalMotionKey` in `internal/ui/keys.go` (after `motionArrow`, ~line 164): translates h/j/k/l letter motions via motionArrow, passes through non-motion events and real arrow keys unchanged. Conflicts list's Esc/`q`-close check is preserved above the call; account picker's capture becomes just `return modalMotionKey(ev)`.
+- TDD: `TestModalMotionKeyTranslatesLetters` and `TestModalMotionKeyPassesThroughNonMotion` both verify the helper's translation and pass-through behavior; existing `TestConflictsListVimKeys` and `TestAccountPickerVimKeys` remain green.
+- Files: `internal/ui/keys.go`, `internal/ui/conflicts.go`, `internal/ui/command.go`, `internal/ui/vimkeys_modal_test.go`.
+- Full gate green (`go test ./...`, `go vet ./...`, `staticcheck ./...`, `go build ./...`); `gofmt` clean.
+
 ## 2026-07-24 — Session cleanup: v1.5.0 status recorded, mid-arc notes written
 
 - main.md's v1.5.0 Build Plan subsection gains a Status line: step 0 + gap-closers + phase 1 shipped; phases 2-3 pending.

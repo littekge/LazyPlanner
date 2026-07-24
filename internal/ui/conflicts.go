@@ -36,18 +36,7 @@ func (a *app) showConflicts() {
 			a.closeModal(pageConflicts)
 			return nil
 		}
-		// j/k are Down/Up aliases everywhere else in the app (motionArrow in
-		// keys.go); this list is modal, so globalKeys never sees these keys to
-		// translate them — do it locally instead.
-		if ev.Key() == tcell.KeyRune {
-			switch ev.Rune() {
-			case 'j':
-				return tcell.NewEventKey(tcell.KeyDown, 0, tcell.ModNone)
-			case 'k':
-				return tcell.NewEventKey(tcell.KeyUp, 0, tcell.ModNone)
-			}
-		}
-		return ev
+		return modalMotionKey(ev)
 	})
 
 	a.populateConflicts(list)
