@@ -19,6 +19,7 @@ func TestBulkGrabShiftsMixed(t *testing.T) {
 	task := putTodo(t, a, testCalID(a), "", "due today", now, true)
 	a.refresh("")
 	a.month.reDrill(model.DayStart(now), 0)
+	a.setFocus(a.calendarPrimitive())
 	a.enterSelect()
 	a.month.eventIndex = len(a.dayItems(model.DayStart(now))) - 1
 	undoBefore := len(a.undo)
@@ -86,6 +87,7 @@ func TestBulkGrabEscRevertsToSelect(t *testing.T) {
 	task := putTodo(t, a, testCalID(a), "", "due today", now, true)
 	a.refresh("")
 	a.month.reDrill(model.DayStart(now), 0)
+	a.setFocus(a.calendarPrimitive())
 	a.enterSelect()
 	a.month.eventIndex = len(a.dayItems(model.DayStart(now))) - 1
 	undoBefore := len(a.undo)
@@ -117,6 +119,7 @@ func TestBulkGrabFilters(t *testing.T) {
 	putRecurringEvent(t, a, testCalID(a), "weekly", now, "FREQ=WEEKLY")
 	a.refresh("")
 	a.month.reDrill(model.DayStart(now), 0)
+	a.setFocus(a.calendarPrimitive())
 	a.enterSelect()
 	a.startBulkGrab()
 	if a.grabbing {

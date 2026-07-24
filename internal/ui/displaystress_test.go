@@ -161,6 +161,11 @@ func TestDisplayStress(t *testing.T) {
 	// same hostile content and geometries — new draw branches are a new
 	// freeze/panic surface. 'V' starts the range where the state above left the
 	// cursor, then spray extends it to the extremes before drawing.
+	//
+	// V only enters SELECT with the selection surface itself focused (Fix 1) —
+	// c/t alone leave focus on the overview list, so each state explicitly
+	// focuses the tree/grid first, matching the real workflow of Enter-ing into
+	// it from the overview.
 	selectStates := []struct {
 		name  string
 		enter func()
@@ -169,17 +174,24 @@ func TestDisplayStress(t *testing.T) {
 			a.globalKeys(runeKey('t'))
 			a.buildTree()
 			expandAllNodes(a.tree.GetRoot())
+			a.setFocus(a.tree)
 			a.globalKeys(runeKey('V'))
 		}},
-		{"select-calendar-month", func() { a.globalKeys(runeKey('c')); a.globalKeys(runeKey('V')) }},
+		{"select-calendar-month", func() {
+			a.globalKeys(runeKey('c'))
+			a.setFocus(a.calendarPrimitive())
+			a.globalKeys(runeKey('V'))
+		}},
 		{"select-calendar-week", func() {
 			a.globalKeys(runeKey('c'))
 			a.globalKeys(runeKey('v'))
+			a.setFocus(a.calendarPrimitive())
 			a.globalKeys(runeKey('V'))
 		}},
 		{"select-calendar-month-drilled", func() {
 			a.globalKeys(runeKey('c'))
 			a.globalKeys(tcell.NewEventKey(tcell.KeyEnter, 0, tcell.ModNone))
+			a.setFocus(a.calendarPrimitive())
 			a.globalKeys(runeKey('V'))
 		}},
 		{"select-calendar-day-drilled", func() {
@@ -187,6 +199,7 @@ func TestDisplayStress(t *testing.T) {
 			a.globalKeys(runeKey('v'))
 			a.globalKeys(runeKey('v'))
 			a.globalKeys(tcell.NewEventKey(tcell.KeyEnter, 0, tcell.ModNone))
+			a.setFocus(a.calendarPrimitive())
 			a.globalKeys(runeKey('V'))
 		}},
 	}

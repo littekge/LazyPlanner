@@ -42,10 +42,19 @@ func (a *app) selContext() int {
 
 // enterSelect (V) starts SELECT anchored at the current cursor. Only contexts
 // with a meaningful contiguous range accept it: the task tree, the un-drilled
-// calendar (a day range), and a drilled day (its item list).
+// calendar (a day range), and a drilled day (its item list) — and only when
+// the actual selection surface is focused. setMode focuses the overview lists
+// (a.calendars/a.tasklists), and motion goes to whatever's focused, so V from
+// an overview panel would anchor a range that ordinary j/k can never extend
+// (they'd move the overview highlight instead) — the same gate deleteContextual
+// (keys.go) and a.tv.GetFocus() checks elsewhere in this file already apply.
 func (a *app) enterSelect() {
 	switch a.selContext() {
 	case selTree:
+		if a.tv.GetFocus() != a.tree {
+			a.flash("Nothing to select here")
+			return
+		}
 		uid := a.currentTreeUID()
 		if uid == "" {
 			a.flash("Nothing to select here")
@@ -54,6 +63,10 @@ func (a *app) enterSelect() {
 		a.selecting = true
 		a.selAnchorUID = uid
 	case selDrill:
+		if a.tv.GetFocus() != a.calendarPrimitive() {
+			a.flash("Nothing to select here")
+			return
+		}
 		g, _ := a.calendarPrimitive().(calGrid)
 		it := g.selectedItem()
 		if it == nil {
@@ -65,6 +78,10 @@ func (a *app) enterSelect() {
 		a.selAnchorUID = t.uid
 		a.selAnchorOcc = t.occStart
 	case selDays:
+		if a.tv.GetFocus() != a.calendarPrimitive() {
+			a.flash("Nothing to select here")
+			return
+		}
 		g, ok := a.calendarPrimitive().(calGrid)
 		if !ok {
 			a.flash("Nothing to select here")

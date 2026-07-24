@@ -54,6 +54,7 @@ func TestMonthGridDayRangeBoxes(t *testing.T) {
 	now := time.Date(2026, 7, 6, 9, 0, 0, 0, time.UTC)
 	a := newRootedTestApp(t, now)
 	a.setMode(modeCalendar)
+	a.setFocus(a.calendarPrimitive())
 	a.refresh("")
 	a.month.selected = model.DayStart(now)
 	a.enterSelect()
@@ -88,6 +89,7 @@ func TestDrilledRangeMarksItems(t *testing.T) {
 	putEvent(t, a, testCalID(a), "eventtwo", now.Add(time.Hour), false)
 	a.refresh("")
 	a.month.reDrill(model.DayStart(now), 0)
+	a.setFocus(a.calendarPrimitive())
 	a.enterSelect()
 	a.month.eventIndex = 1
 	a.syncSelectionVisuals()

@@ -116,6 +116,7 @@ func TestBulkCompleteSkips(t *testing.T) {
 	recurring := putRecurringTodo(t, a, testCalID(a), "standup", now, "FREQ=DAILY")
 	a.refresh("")
 	a.month.reDrill(model.DayStart(now), 0)
+	a.setFocus(a.calendarPrimitive())
 	a.enterSelect()
 	items := a.dayItems(model.DayStart(now))
 	a.month.eventIndex = len(items) - 1 // extend over the whole day
@@ -248,6 +249,7 @@ func TestBulkDeleteSkipsRecurringEvent(t *testing.T) {
 	rec := putRecurringEvent(t, a, testCalID(a), "weekly", now, "FREQ=WEEKLY")
 	a.refresh("")
 	a.month.reDrill(model.DayStart(now), 0)
+	a.setFocus(a.calendarPrimitive())
 	a.enterSelect()
 	a.month.eventIndex = len(a.dayItems(model.DayStart(now))) - 1
 	a.bulkDelete()
@@ -384,6 +386,7 @@ func TestBulkDeleteReadOnlySkipped(t *testing.T) {
 	}
 	a.refresh("")
 	a.month.reDrill(model.DayStart(now), 0)
+	a.setFocus(a.calendarPrimitive())
 	a.enterSelect()
 	items := a.dayItems(model.DayStart(now))
 	if len(items) < 2 {
@@ -470,6 +473,7 @@ func TestBulkYankTreeOnly(t *testing.T) {
 	now := time.Date(2026, 7, 5, 9, 0, 0, 0, time.UTC)
 	a := newRootedTestApp(t, now)
 	a.setMode(modeCalendar)
+	a.setFocus(a.calendarPrimitive())
 	a.refresh("")
 	a.enterSelect()
 	a.bulkYank(true)

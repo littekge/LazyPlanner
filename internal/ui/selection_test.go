@@ -52,8 +52,10 @@ func TestSelectEnterPerContext(t *testing.T) {
 		t.Fatal("exitSelect must clear all anchor state")
 	}
 
-	// Un-drilled calendar: anchor = the selected day.
+	// Un-drilled calendar: anchor = the selected day. setMode focuses the
+	// overview list; V only enters when the grid itself is focused (Fix 1).
 	a.setMode(modeCalendar)
+	a.setFocus(a.calendarPrimitive())
 	a.enterSelect()
 	if !a.selecting || a.selAnchorDay.IsZero() {
 		t.Fatalf("calendar enterSelect: selecting=%v dayAnchor=%v", a.selecting, a.selAnchorDay)
@@ -71,10 +73,58 @@ func TestSelectEnterPerContext(t *testing.T) {
 	}
 }
 
+// TestSelectEntryRequiresSelectionSurfaceFocus: V from an overview panel (the
+// state setMode leaves focus in) must flash a hint and not enter SELECT — the
+// range's motion would go to the overview list, not the tree/grid, so j/k
+// could never extend it. V with the tree/grid itself focused still enters.
+func TestSelectEntryRequiresSelectionSurfaceFocus(t *testing.T) {
+	now := time.Date(2026, 7, 5, 9, 0, 0, 0, time.UTC)
+	a := newRootedTestApp(t, now)
+	putTodo(t, a, testCalID(a), "", "task A", now, true)
+	a.refresh("")
+
+	// Calendar mode: plain 'c' leaves focus on a.calendars (the overview list).
+	a.setMode(modeCalendar)
+	key(a, tcell.KeyRune, 'V')
+	if a.selecting {
+		t.Fatal("V with a.calendars focused must not enter SELECT")
+	}
+	if got := a.statusLeft.GetText(true); !strings.Contains(got, "Nothing to select here") {
+		t.Fatalf("statusLeft = %q, want the Nothing-to-select hint", got)
+	}
+
+	// Same calendar mode, but focus moved onto the grid: V must enter.
+	a.setFocus(a.calendarPrimitive())
+	key(a, tcell.KeyRune, 'V')
+	if !a.selecting {
+		t.Fatal("V with the calendar grid focused must enter SELECT")
+	}
+	a.exitSelect()
+
+	// Tasks mode: plain 't' leaves focus on a.tasklists (the overview list).
+	a.setMode(modeTasks)
+	key(a, tcell.KeyRune, 'V')
+	if a.selecting {
+		t.Fatal("V with a.tasklists focused must not enter SELECT")
+	}
+	if got := a.statusLeft.GetText(true); !strings.Contains(got, "Nothing to select here") {
+		t.Fatalf("statusLeft = %q, want the Nothing-to-select hint", got)
+	}
+
+	// Same tasks mode, but focus moved onto the tree: V must enter.
+	a.setFocus(a.tree)
+	key(a, tcell.KeyRune, 'V')
+	if !a.selecting {
+		t.Fatal("V with the tree focused must enter SELECT")
+	}
+	a.exitSelect()
+}
+
 // TestSelectBadge: SELECT surfaces in interactionMode, and an inner GRAB wins.
 func TestSelectBadge(t *testing.T) {
 	a := newRootedTestApp(t, time.Date(2026, 7, 5, 9, 0, 0, 0, time.UTC))
 	a.setMode(modeCalendar)
+	a.setFocus(a.calendarPrimitive())
 	a.enterSelect()
 	if m := a.interactionMode(); m != modeSelect {
 		t.Fatalf("selecting badge = %q, want SELECT", m)
@@ -200,6 +250,7 @@ func TestSelectEscKeepsDrill(t *testing.T) {
 	a.setMode(modeCalendar)
 	a.refresh("")
 	a.month.reDrill(model.DayStart(now), 0)
+	a.setFocus(a.calendarPrimitive())
 	if !a.gridDrilled() {
 		t.Fatal("precondition: day must be drilled")
 	}
@@ -289,6 +340,7 @@ func TestDaysRange(t *testing.T) {
 	now := time.Date(2026, 7, 6, 9, 0, 0, 0, time.UTC) // Monday
 	a := newRootedTestApp(t, now)
 	a.setMode(modeCalendar)
+	a.setFocus(a.calendarPrimitive())
 	putEvent(t, a, testCalID(a), "day1", now, false)
 	putEvent(t, a, testCalID(a), "day3", now.AddDate(0, 0, 2), false)
 	// A two-day timed event covering day1→day2 (spans midnight).
@@ -320,6 +372,7 @@ func TestDaysRangeReversed(t *testing.T) {
 	now := time.Date(2026, 7, 6, 9, 0, 0, 0, time.UTC) // Monday
 	a := newRootedTestApp(t, now)
 	a.setMode(modeCalendar)
+	a.setFocus(a.calendarPrimitive())
 	putEvent(t, a, testCalID(a), "day1", now, false)
 	putEvent(t, a, testCalID(a), "day3", now.AddDate(0, 0, 2), false)
 	// A two-day timed event covering day1→day2 (spans midnight).
@@ -341,6 +394,7 @@ func TestDaysRangeSingleDay(t *testing.T) {
 	now := time.Date(2026, 7, 6, 9, 0, 0, 0, time.UTC) // Monday
 	a := newRootedTestApp(t, now)
 	a.setMode(modeCalendar)
+	a.setFocus(a.calendarPrimitive())
 	putEvent(t, a, testCalID(a), "day1", now, false)
 	putEvent(t, a, testCalID(a), "day2", now.AddDate(0, 0, 1), false)
 	a.refresh("")
@@ -362,6 +416,7 @@ func TestDaysRangeCapsAtMaxSelectDays(t *testing.T) {
 	now := time.Date(2026, 7, 6, 9, 0, 0, 0, time.UTC) // Monday
 	a := newRootedTestApp(t, now)
 	a.setMode(modeCalendar)
+	a.setFocus(a.calendarPrimitive())
 	putSpanningEvent(t, a, testCalID(a), "early", now.Add(2*time.Hour), now.Add(3*time.Hour))
 	putSpanningEvent(t, a, testCalID(a), "toolate", now.AddDate(0, 0, 380).Add(2*time.Hour), now.AddDate(0, 0, 380).Add(3*time.Hour))
 	a.refresh("")
@@ -400,6 +455,7 @@ func TestDaysRangeEmptyDayStaysSelected(t *testing.T) {
 	now := time.Date(2026, 7, 6, 9, 0, 0, 0, time.UTC) // Monday, no events seeded
 	a := newRootedTestApp(t, now)
 	a.setMode(modeCalendar)
+	a.setFocus(a.calendarPrimitive())
 	a.refresh("")
 
 	a.month.selected = model.DayStart(now)
@@ -477,6 +533,7 @@ func TestDrillRange(t *testing.T) {
 	putEvent(t, a, testCalID(a), "e3", now.Add(2*time.Hour), false)
 	a.refresh("")
 	a.month.reDrill(model.DayStart(now), 0)
+	a.setFocus(a.calendarPrimitive())
 	a.enterSelect()
 	a.month.eventIndex = 2 // cursor on the third item
 	got := a.selRange()
@@ -496,6 +553,7 @@ func TestDrillRangeReversed(t *testing.T) {
 	putEvent(t, a, testCalID(a), "e3", now.Add(2*time.Hour), false)
 	a.refresh("")
 	a.month.reDrill(model.DayStart(now), 2) // anchor at the third item
+	a.setFocus(a.calendarPrimitive())
 	a.enterSelect()
 	a.month.eventIndex = 0 // cursor back at the first item
 	got := a.selRange()
@@ -515,6 +573,7 @@ func TestDrillRangeSingle(t *testing.T) {
 	putEvent(t, a, testCalID(a), "e3", now.Add(2*time.Hour), false)
 	a.refresh("")
 	a.month.reDrill(model.DayStart(now), 1)
+	a.setFocus(a.calendarPrimitive())
 	a.enterSelect()
 	// Cursor stays on the anchor index.
 	got := a.selRange()

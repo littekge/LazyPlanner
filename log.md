@@ -4,6 +4,15 @@
 
 ---
 
+## 2026-07-23 — Fix: V from an overview panel must flash a hint, not enter SELECT
+
+- **Final whole-branch review, item 1 (Important)**: `enterSelect` (`internal/ui/selection.go`) gated only on `a.mode`, but `setMode` focuses the overview lists (`a.calendars`/`a.tasklists`), not the tree/grid — and motion goes to whatever's focused. So `c V` (or `t V`) right after a plain mode switch anchored a range that ordinary `j`/`k` could never extend (they moved the overview highlight instead), silently bricking the feature from its most natural entry point.
+- **Fix**: `enterSelect` now requires the actual selection surface focused before anchoring — `a.tree` for the tree context, `a.calendarPrimitive()` for both calendar contexts (drilled and un-drilled) — matching the same `a.tv.GetFocus()` gate `deleteContextual` (`keys.go`) already uses. Focus elsewhere flashes the existing "Nothing to select here" hint and leaves `selecting` false.
+- **TDD**: `TestSelectEntryRequiresSelectionSurfaceFocus` (`internal/ui/selection_test.go`) — calendar mode with `a.calendars` focused (the state after plain `c`) and tasks mode with `a.tasklists` focused both flash and stay out of SELECT; the same modes with the grid/tree explicitly focused still enter. RED against the pre-fix `enterSelect` (both leak cases would have set `selecting = true`), GREEN after.
+- **Test-fixture ripple**: every existing test that called `enterSelect()`/pressed `V` right after `setMode(modeCalendar)`/`setMode(modeTasks)` (or a bare `reDrill`) without an explicit focus change relied on the old no-gate behavior — updated to `a.setFocus(a.calendarPrimitive())`/`a.setFocus(a.tree)` first, matching how focus actually reaches the grid/tree in the real app (`a.calendars`/`a.tasklists`' `SetSelectedFunc`, Enter). Touched: `selection_test.go`, `selectionvisuals_test.go`, `bulkops_test.go`, `bulkgrab_test.go`, and `displaystress_test.go`'s five `select-*` stress states (which, without the fix, would have silently stopped exercising SELECT's draw paths at all).
+- Full gate green: `go test ./...`, `go vet ./...`, `staticcheck ./...`, `go build ./...`.
+- Files: `internal/ui/selection.go`, `internal/ui/selection_test.go`, `internal/ui/selectionvisuals_test.go`, `internal/ui/bulkops_test.go`, `internal/ui/bulkgrab_test.go`, `internal/ui/displaystress_test.go`, `log.md`.
+
 ## 2026-07-23 — Docs: SELECT ripple completeness (empty-day range, modified arrows, skip taxonomy)
 
 - **Reviewer follow-up on the v1.4.0 docs-ripple task**: four shipped behaviors were verified accurate during the first pass but never actually written into a doc. Closed all four; nothing else changed.
