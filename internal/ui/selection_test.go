@@ -307,6 +307,83 @@ func TestDaysRange(t *testing.T) {
 	a.exitSelect()
 }
 
+// TestDaysRangeReversed: cursor day before the anchor day selects the same
+// interval as forward (mirrors TestTreeRange's reversed case).
+func TestDaysRangeReversed(t *testing.T) {
+	now := time.Date(2026, 7, 6, 9, 0, 0, 0, time.UTC) // Monday
+	a := newRootedTestApp(t, now)
+	a.setMode(modeCalendar)
+	putEvent(t, a, testCalID(a), "day1", now, false)
+	putEvent(t, a, testCalID(a), "day3", now.AddDate(0, 0, 2), false)
+	// A two-day timed event covering day1→day2 (spans midnight).
+	putSpanningEvent(t, a, testCalID(a), "span", now, now.AddDate(0, 0, 1).Add(2*time.Hour))
+	a.refresh("")
+
+	a.month.selected = model.DayStart(now.AddDate(0, 0, 2)) // anchor on day3
+	a.enterSelect()
+	a.month.selected = model.DayStart(now) // cursor back to day1
+	got := a.selRange()
+	if len(got) != 3 {
+		t.Fatalf("reversed days range = %d targets, want 3 (day1, span, day3)", len(got))
+	}
+	a.exitSelect()
+}
+
+// TestDaysRangeSingleDay: cursor on the anchor day selects just that day's items.
+func TestDaysRangeSingleDay(t *testing.T) {
+	now := time.Date(2026, 7, 6, 9, 0, 0, 0, time.UTC) // Monday
+	a := newRootedTestApp(t, now)
+	a.setMode(modeCalendar)
+	putEvent(t, a, testCalID(a), "day1", now, false)
+	putEvent(t, a, testCalID(a), "day2", now.AddDate(0, 0, 1), false)
+	a.refresh("")
+
+	a.month.selected = model.DayStart(now)
+	a.enterSelect()
+	// Cursor stays on the anchor day: selRange must not reach into day2.
+	got := a.selRange()
+	if len(got) != 1 {
+		t.Fatalf("single-day range = %d targets, want 1 (just day1)", len(got))
+	}
+	a.exitSelect()
+}
+
+// TestDaysRangeCapsAtMaxSelectDays: a cursor day far beyond maxSelectDays must
+// not hang derivation or materialize past the cap — an item beyond it is
+// excluded even though it's within the anchor→cursor interval as requested.
+func TestDaysRangeCapsAtMaxSelectDays(t *testing.T) {
+	now := time.Date(2026, 7, 6, 9, 0, 0, 0, time.UTC) // Monday
+	a := newRootedTestApp(t, now)
+	a.setMode(modeCalendar)
+	putSpanningEvent(t, a, testCalID(a), "early", now.Add(2*time.Hour), now.Add(3*time.Hour))
+	putSpanningEvent(t, a, testCalID(a), "toolate", now.AddDate(0, 0, 380).Add(2*time.Hour), now.AddDate(0, 0, 380).Add(3*time.Hour))
+	a.refresh("")
+
+	anchorDay := model.DayStart(now)
+	a.month.selected = anchorDay
+	a.enterSelect()
+	a.month.selected = model.DayStart(now.AddDate(0, 0, 400)) // far beyond the cap
+	got := a.selRange()
+
+	cutoff := anchorDay.AddDate(0, 0, maxSelectDays+1) // exclusive: one day past the capped interval
+	foundEarly := false
+	for _, tg := range got {
+		if tg.uid == "toolate@ev" {
+			t.Fatalf("range included %q, want it excluded by the %d-day cap", tg.uid, maxSelectDays)
+		}
+		if tg.uid == "early@ev" {
+			foundEarly = true
+		}
+		if !tg.occStart.Before(cutoff) {
+			t.Fatalf("target %+v occurs at/after the cap cutoff %v", tg, cutoff)
+		}
+	}
+	if !foundEarly {
+		t.Fatal("range missing the in-range 'early' event")
+	}
+	a.exitSelect()
+}
+
 // TestDaysRangeEmptyDayStaysSelected: a date anchor is always resolvable
 // (unlike a tree UID or drilled item, it can't "vanish"), so entering SELECT on
 // a day with no items must stay selected — an empty materialized range is a
@@ -399,4 +476,43 @@ func TestDrillRange(t *testing.T) {
 	if len(got) != 3 {
 		t.Fatalf("drill range = %d targets, want 3", len(got))
 	}
+}
+
+// TestDrillRangeReversed: cursor index before the anchor index selects the
+// same items as forward (mirrors TestTreeRange's reversed case).
+func TestDrillRangeReversed(t *testing.T) {
+	now := time.Date(2026, 7, 5, 9, 0, 0, 0, time.UTC)
+	a := newRootedTestApp(t, now)
+	a.setMode(modeCalendar)
+	putEvent(t, a, testCalID(a), "e1", now, false)
+	putEvent(t, a, testCalID(a), "e2", now.Add(time.Hour), false)
+	putEvent(t, a, testCalID(a), "e3", now.Add(2*time.Hour), false)
+	a.refresh("")
+	a.month.reDrill(model.DayStart(now), 2) // anchor at the third item
+	a.enterSelect()
+	a.month.eventIndex = 0 // cursor back at the first item
+	got := a.selRange()
+	if len(got) != 3 {
+		t.Fatalf("reversed drill range = %d targets, want 3", len(got))
+	}
+	a.exitSelect()
+}
+
+// TestDrillRangeSingle: cursor on the anchor index selects just that one item.
+func TestDrillRangeSingle(t *testing.T) {
+	now := time.Date(2026, 7, 5, 9, 0, 0, 0, time.UTC)
+	a := newRootedTestApp(t, now)
+	a.setMode(modeCalendar)
+	putEvent(t, a, testCalID(a), "e1", now, false)
+	putEvent(t, a, testCalID(a), "e2", now.Add(time.Hour), false)
+	putEvent(t, a, testCalID(a), "e3", now.Add(2*time.Hour), false)
+	a.refresh("")
+	a.month.reDrill(model.DayStart(now), 1)
+	a.enterSelect()
+	// Cursor stays on the anchor index.
+	got := a.selRange()
+	if len(got) != 1 {
+		t.Fatalf("single drill range = %d targets, want 1", len(got))
+	}
+	a.exitSelect()
 }
