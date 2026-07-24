@@ -4,6 +4,15 @@
 
 ---
 
+## 2026-07-23 — Bugfix: "Selection cleared" flash was clobbered by updateStatus
+
+- **Important** (reviewer-found on Task 3): `syncSelectionVisuals`'s anchor-vanished branch called `a.flash("Selection cleared — the items changed")` then fell through to the trailing unconditional `a.updateStatus()` — both write `statusLeft` synchronously, so the ordinary status text overwrote the flash in the same call and the user never saw it. The brief anticipated exactly this failure mode but the landed code didn't apply the fix.
+- **Fix** (`internal/ui/selection.go`): restructured `syncSelectionVisuals` around a local `cleared` flag — the anchor-vanished branch now only sets state and `cleared = true`; the grid-field sync, `syncTreeSelection`, and `updateStatus` run unconditionally as before; the flash moved to the end of the function, gated on `cleared`, so it's the last write to `statusLeft` on the clearing path. Behavior otherwise identical.
+- **TDD**: extended `TestTreeRangeAnchorVanished` (`internal/ui/selection_test.go`) to assert `a.statusLeft.GetText(true)` contains "Selection cleared" after the vanish path runs. Confirmed RED first (`statusLeft` held the ordinary "Tasks · ..." status text, no mention of the flash), then GREEN after the fix.
+- **Minor** (same review pass): the new `select-tasks` displaystress state (Task 3) skipped the `buildTree()`/`expandAllNodes` steps the pre-existing `"tasks"` state performs, so the SELECT-mode tree stress ran on a shallow, non-expanded tree. Mirrored the `"tasks"` state's setup in `select-tasks` (`internal/ui/displaystress_test.go`) so the range highlighting is stressed against the same deep/wide fixture.
+- Verified: `go test ./internal/ui/ -run 'TestTreeRangeAnchorVanished|TestSelect|TestDisplayStress' -v` all pass; full gate green (`go test ./...`, `go vet ./...`, `staticcheck ./...`, `go build ./...`, `gofmt -l` clean on the touched files).
+- Files: `internal/ui/selection.go`, `internal/ui/selection_test.go`, `internal/ui/displaystress_test.go`.
+
 ## 2026-07-23 — v1.4.0: SELECT range visuals
 
 - **Task 3 of the v1.4.0 SELECT-mode build**: wired the range derived in Task 2 (`selRange`/`itemIndex`) into the three views that display it.

@@ -3,6 +3,7 @@ package ui
 import (
 	"context"
 	"fmt"
+	"strings"
 	"sync"
 	"testing"
 	"time"
@@ -273,6 +274,12 @@ func TestTreeRangeAnchorVanished(t *testing.T) {
 	a.refresh(u2)
 	if a.selecting {
 		t.Fatal("SELECT must exit when the anchor vanishes")
+	}
+	// The flash must be the last write to statusLeft — a trailing unconditional
+	// updateStatus() after the flash would clobber it with the ordinary status
+	// text in the same synchronous call, so the user never sees it.
+	if got := a.statusLeft.GetText(true); !strings.Contains(got, "Selection cleared") {
+		t.Fatalf("statusLeft = %q, want it to still show the Selection-cleared flash", got)
 	}
 }
 

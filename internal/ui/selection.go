@@ -136,13 +136,19 @@ func (a *app) syncTreeSelection() {
 // the grids only need the plain anchor fields pushed in (they derive the other
 // end of the range from their own selected/eventIndex at draw time), so
 // per-move sync work here is limited to the tree restyle and the status count.
+//
+// The clearing flash is deliberately the LAST write to statusLeft: flash and
+// updateStatus both write that same TextView synchronously, so flashing before
+// the trailing updateStatus() would have the ordinary status text overwrite it
+// in the same call — the user would never see it.
 func (a *app) syncSelectionVisuals() {
+	cleared := false
 	if a.selecting && a.selRange() == nil {
 		a.selecting = false
 		a.selAnchorUID = ""
 		a.selAnchorOcc = time.Time{}
 		a.selAnchorDay = time.Time{}
-		a.flash("Selection cleared — the items changed")
+		cleared = true
 	}
 	a.month.selDayAnchor, a.timegrid.selDayAnchor = time.Time{}, time.Time{}
 	a.month.selAnchorUID, a.timegrid.selAnchorUID = "", ""
@@ -158,6 +164,9 @@ func (a *app) syncSelectionVisuals() {
 	}
 	a.syncTreeSelection()
 	a.updateStatus()
+	if cleared {
+		a.flash("Selection cleared — the items changed")
+	}
 }
 
 // maxSelectDays caps a calendar day-range so f/b can't build a multi-year

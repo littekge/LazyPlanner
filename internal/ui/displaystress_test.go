@@ -165,7 +165,12 @@ func TestDisplayStress(t *testing.T) {
 		name  string
 		enter func()
 	}{
-		{"select-tasks", func() { a.globalKeys(runeKey('t')); a.globalKeys(runeKey('V')) }},
+		{"select-tasks", func() {
+			a.globalKeys(runeKey('t'))
+			a.buildTree()
+			expandAllNodes(a.tree.GetRoot())
+			a.globalKeys(runeKey('V'))
+		}},
 		{"select-calendar-month", func() { a.globalKeys(runeKey('c')); a.globalKeys(runeKey('V')) }},
 		{"select-calendar-week", func() {
 			a.globalKeys(runeKey('c'))
