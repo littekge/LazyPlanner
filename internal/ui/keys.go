@@ -341,6 +341,7 @@ func (a *app) resizeDetail(delta int) {
 // column, H/L the Detail pane, Esc/Enter exit. Collapsing (accordion) is undone
 // first, since resizing a collapsed column is meaningless.
 func (a *app) enterResizeMode() {
+	a.resizePrevAccordion = a.accordion
 	if a.accordion {
 		a.setAccordion(false)
 	}
@@ -351,7 +352,10 @@ func (a *app) enterResizeMode() {
 }
 
 // exitResizeMode leaves the sub-mode; revert restores the pre-resize widths (Esc)
-// vs keeping the adjustments (Enter), matching grab's keep/cancel semantics.
+// vs keeping the adjustments (Enter), matching grab's keep/cancel semantics. A
+// revert also restores an accordion collapse that entering resize mode undid —
+// Enter/keep deliberately leaves it un-collapsed, since the user has just chosen
+// explicit widths.
 func (a *app) exitResizeMode(revert bool) {
 	if revert {
 		a.leftWidth, a.detailWidth = a.resizePrevLeft, a.resizePrevDetail
@@ -362,6 +366,13 @@ func (a *app) exitResizeMode(revert bool) {
 			}
 		}
 		a.persistState()
+		if a.resizePrevAccordion {
+			// Mode can't change mid-resize (handleResizeKey owns every key while
+			// a.resizing is true, so setMode never runs), and setAccordion(true) is
+			// only ever blocked in Agenda mode — so the accordion was un-collapsed
+			// from a non-Agenda mode above and this restore can't be blocked here.
+			a.setAccordion(true)
+		}
 	}
 	a.resizing = false
 	a.updateStatus()

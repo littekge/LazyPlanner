@@ -4,6 +4,15 @@
 
 ---
 
+## 2026-07-24 — v1.5.0 phase 1: Ctrl-W cancel restores a collapsed accordion (Batch C, fix 4/4)
+
+- `enterResizeMode` un-collapses the accordion when entered while collapsed (resizing a collapsed column is meaningless), but `exitResizeMode`'s Esc/cancel path only restored the pre-resize widths, not the collapse itself — cancelling out of resize mode left the overview/Detail visible even though the user hadn't touched the accordion at all.
+- Added `resizePrevAccordion`, snapshotted in `enterResizeMode`; `exitResizeMode(revert=true)` now calls `a.setAccordion(true)` when it was set, re-collapsing exactly what entry undid. Enter/keep is unchanged — it deliberately leaves the accordion un-collapsed, since the user just chose explicit widths.
+- Verified the restore can't be blocked: `setAccordion(true)` refuses only in Agenda mode, but mode can't change while `a.resizing` is true (`globalKeys` routes every key to `handleResizeKey`, which has no mode-switch case, before Tab/Backtick are ever reached) — so an accordion collapsed on entry was necessarily collapsed from a non-Agenda mode, and the cancel-path restore always succeeds.
+- TDD: `TestResizeCancelRestoresAccordion` RED against the unmodified `exitResizeMode` (accordion stayed off, Detail/overview stayed visible after cancel), GREEN after the fix; `TestResizeKeepLeavesAccordionUncollapsed` pins the unchanged Enter/keep path.
+- Files: `internal/ui/app.go` (new `resizePrevAccordion` field), `internal/ui/keys.go`, `internal/ui/resize_accordion_test.go` (new).
+- Full gate green (`go test ./...`, `go vet ./...`, `staticcheck ./...`, `go build ./...`); `gofmt` clean.
+
 ## 2026-07-24 — v1.5.0 phase 1: j/k movement in the Conflicts list and account picker (Batch C, fix 3/4)
 
 - Both `internal/ui/conflicts.go`'s Conflicts list and `internal/ui/command.go`'s `:account` picker are modal `tview.List`s, so `globalKeys`' `motionArrow` translation never reaches them (`globalKeys` returns immediately when `a.modalOpen()`) — they fell back to tview's native List handler, arrows-only, breaking the app-wide "hjkl move the highlight everywhere" promise these two lists were the last holdouts on.
