@@ -4,6 +4,13 @@
 
 ---
 
+## 2026-07-24 — Session cleanup: v1.5.0 status recorded, mid-arc notes written
+
+- main.md's v1.5.0 Build Plan subsection gains a Status line: step 0 + gap-closers + phase 1 shipped; phases 2-3 pending.
+- notes.md carries the mid-arc entry: phase-2 matrix next (with the workflow-resume caution learned in phase 1), the small cleanup-batch candidates, phase-3 targets, and the release-gate checklist state.
+- Swept the session's SDD scratch (task briefs/reports, review packages); no residual worktrees or branches.
+- Files: `main.md`, `notes.md`, `log.md`.
+
 ## 2026-07-24 — Housekeeping: gofmt drift in internal/model; phase-1 execution wrap
 
 - **gofmt drift fixed**: `internal/model/{recurfield,recurfield_test,recurdecompose_test}.go` were committed unformatted at some point (pre-existing at this arc's base; surfaced by the polish-bundle review's independent gate run). `gofmt -w` applied; no semantic change; model tests green.
