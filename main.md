@@ -44,7 +44,7 @@ LazyPlanner is a terminal-based todo-list and calendar management program. It is
 
 ## Current State
 
-**v1.0.0 through v1.3.0 are released** (see the Build Plan subsections for each; v1.3.0 released 2026-07-24). **v1.4.0 — SELECT mode** (a vim-style multi-select layer) is implemented on `ai-workspace` with a green full gate, pending owner review/release. After it, **v1.5.0 is final polishing & auditing** — next up once v1.4.0 ships.
+**v1.0.0 through v1.4.0 are released** (see the Build Plan subsections for each; v1.4.0 — SELECT mode, a vim-style multi-select layer — released 2026-07-24). **v1.5.0 — final polishing & auditing — is the current phase**, and the last planned release for the foreseeable future; it is scoped as a Build Plan subsection before any work begins.
 
 Running alongside every version is a continuous **hardening & audit phase** (patch-level v1.0.x bug-hunting, resilience, and consistency work); coverage and residual risk are tracked in `docs/audit/COVERAGE.md`, and the Build Plan below carries a one-line summary of every hardening pass and a subsection per feature version. Sync findings are verified headlessly; the opt-in live CalDAV suite (run against a throwaway test account) is available on demand.
 
@@ -468,7 +468,7 @@ Behavior refinements after the six-step build (per-change detail lives in `log.m
 
 ### v1.4.0 — SELECT mode
 
-**Status**: implemented (2026-07-23) — all seven build steps landed repro-first with a green full gate each (see `log.md` for the per-step record); a whole-branch review is the last step before release. **Not yet released.** Verified headlessly: the range-derivation boundary tables (reversed/single/capped), a display-stress sweep over five new SELECT draw states, and a `-race` run over the bulk-op and bulk-grab suites. Full design detail lives in `docs/superpowers/specs/2026-07-23-select-mode-design.md`; this subsection is the build record.
+**Status**: **released 2026-07-24** (tag `v1.4.0` at `5877c39`). All seven build steps landed repro-first with a green full gate each (see `log.md` for the per-step record), followed by a whole-branch review (two Important fixes — SELECT entry requires the selection surface focused; a bare `0` is swallowed — plus an N>1 paste test gap and a docs restructure) and a grab-discoverability fix (the persistent help bar now shows the active grab's controls/granularity instead of stale SELECT hints). Verified headlessly: the range-derivation boundary tables (reversed/single/capped), a display-stress sweep over five new SELECT draw states, and a `-race` run over the bulk-op and bulk-grab suites. Full design detail lives in `docs/superpowers/specs/2026-07-23-select-mode-design.md`; this subsection is the build record.
 
 A vim-style multi-select layer built on **mode composition**, not a parallel mode enum (the hard-won guardrail this version was scoped around): SELECT nests under DRILL and hosts GRAB the same way GRAB already nests under DRILL, and the range is *derived* (anchor + the view's live cursor) rather than a stored selected-items set, so it can never desync from the screen. Every bulk action shares one shape — materialize the range, filter with counted skips, execute with rollback, one compound undo step — deliberately reusing the single-item `moveSubtree`/grab templates rather than inventing a new commit pattern; see "SELECT mode: multi-select and bulk operations" above for the full behavior.
 

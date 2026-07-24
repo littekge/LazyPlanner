@@ -4,6 +4,14 @@
 
 ---
 
+## 2026-07-24 — v1.4.0 released — flip main.md status, session cleanup
+
+- **v1.4.0 — SELECT mode released by the owner** (tag `v1.4.0` at `5877c39`, the branch tip including the same-day grab help-bar fix). Verified before flipping docs: `ai-workspace` == `origin/ai-workspace` == `main` == `origin/main` == the tag commit — the merge to `main` and the tag are the owner's actions, per the branching rules.
+- **main.md updated in place**: Current State now reads v1.0.0–v1.4.0 released, v1.5.0 (final polishing & auditing) is the current phase and the last planned release for the foreseeable future; the `### v1.4.0` Build Plan status line flipped from "Not yet released" to released 2026-07-24, folding in the whole-branch-review summary and the help-bar discoverability fix.
+- Release notes (markdown) generated for the GitHub release from the `v1.3.0..ai-workspace` commit range.
+- End-of-session cleanup: no residual worktrees/branches/scratch; `notes.md` empty (no mid-arc work).
+- Files: `main.md`, `log.md`.
+
 ## 2026-07-24 — Fix: help bar now reflects grab controls (bulk grab showed stale SELECT hints)
 
 - **Discoverability finding (bulk grab granularity)**: bulk grab (`V`…`m`) shifts every selected item by whole days (`h`/`l`) and weeks (`j`/`k`) — deliberately a uniform *date-shift*, not single-item grab's ±hour event nudge — but the only surface that stated this was the transient entry flash. The always-visible help bar (`a.hints`) never had a grab branch in `updateStatus`, so during a **bulk** grab (which nests inside SELECT, keeping `a.selecting` true) each nudge's `refreshKeepingDrill`→`updateStatus` repainted the bar to the SELECT line — `SELECT · hjkl extend · …` — which is actively wrong mid-grab (`hjkl` shifts dates, it no longer extends the range) and names no granularity. Single-item grab showed the ordinary `hjkl move` global line, also not grab-aware.
