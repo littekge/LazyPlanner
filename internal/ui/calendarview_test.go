@@ -61,6 +61,63 @@ func TestCalendarViewArrowMovesSelection(t *testing.T) {
 	}
 }
 
+// TestCalendarViewLetterMotionsAreNotHandledDirectly locks matrix finding #19:
+// hjkl letter motions on the calendar grid must be translated to arrow keys
+// exactly once, upstream, by the global key layer (motionArrow in keys.go,
+// which always runs first — Application.SetInputCapture(a.globalKeys) sees
+// every key before any focused primitive's own InputHandler does, and it
+// returns nil after translating a letter motion, so a raw letter rune never
+// reaches here in the running app). The view itself must not also special-case
+// a raw letter rune, or the two translations could silently diverge.
+func TestCalendarViewLetterMotionsAreNotHandledDirectly(t *testing.T) {
+	cv := newCalendarView()
+	anchor := time.Date(2026, 7, 4, 0, 0, 0, 0, time.UTC)
+	cv.setData(model.MonthGrid(anchor, true), nil, time.July, anchor, anchor, true)
+
+	moved := false
+	cv.onSelectDay = func(time.Time) { moved = true }
+
+	handle := cv.InputHandler()
+	for _, r := range []rune{'h', 'j', 'k', 'l'} {
+		moved = false
+		handle(tcell.NewEventKey(tcell.KeyRune, r, tcell.ModNone), func(tview.Primitive) {})
+		if moved {
+			t.Errorf("calendarView.InputHandler moved the selection on raw rune %q; hjkl must reach it only pre-translated to arrow keys by the global key layer", string(r))
+		}
+	}
+}
+
+// TestCalendarViewEventModeLetterMotionsAreNotHandledDirectly is the event-mode
+// counterpart of TestCalendarViewLetterMotionsAreNotHandledDirectly: j/k must
+// not cycle the drilled event list on a raw rune either.
+func TestCalendarViewEventModeLetterMotionsAreNotHandledDirectly(t *testing.T) {
+	cv := newCalendarView()
+	day := time.Date(2026, 7, 4, 0, 0, 0, 0, time.Local)
+	mk := func(title string, h int) model.AgendaItem {
+		e := &model.Event{Summary: title, Start: time.Date(2026, 7, 4, h, 0, 0, 0, time.Local)}
+		return model.AgendaItem{Start: e.Start, Title: title, Event: e}
+	}
+	items := map[string][]model.AgendaItem{dayKey(day): {mk("A", 8), mk("B", 10), mk("C", 12)}}
+	cv.setData(model.MonthGrid(day, true), items, day.Month(), day, day, true)
+
+	var got string
+	cv.onSelectEvent = func(it model.AgendaItem) { got = it.Title }
+	handle := cv.InputHandler()
+	handle(tcell.NewEventKey(tcell.KeyEnter, 0, tcell.ModNone), func(tview.Primitive) {}) // event mode, index 0 = A
+
+	got = ""
+	handle(tcell.NewEventKey(tcell.KeyRune, 'j', tcell.ModNone), func(tview.Primitive) {})
+	if got != "" {
+		t.Errorf("calendarView event-mode InputHandler moved on raw rune 'j' (got %q); hjkl must reach it only pre-translated by the global key layer", got)
+	}
+
+	got = ""
+	handle(tcell.NewEventKey(tcell.KeyRune, 'k', tcell.ModNone), func(tview.Primitive) {})
+	if got != "" {
+		t.Errorf("calendarView event-mode InputHandler moved on raw rune 'k' (got %q); hjkl must reach it only pre-translated by the global key layer", got)
+	}
+}
+
 // TestCalendarViewEventModeHomeEnd: in event mode, Home/End (gg/G) jump to the
 // first / last event of the selected day.
 func TestCalendarViewEventModeHomeEnd(t *testing.T) {

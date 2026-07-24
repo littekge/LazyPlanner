@@ -126,17 +126,6 @@ func (cv *calendarView) handleDayMode(ev *tcell.EventKey) {
 		if cv.onExit != nil {
 			cv.onExit()
 		}
-	case tcell.KeyRune:
-		switch ev.Rune() {
-		case 'h':
-			move(-1)
-		case 'l':
-			move(1)
-		case 'k':
-			move(-7)
-		case 'j':
-			move(7)
-		}
 	}
 }
 
@@ -168,21 +157,8 @@ func (cv *calendarView) handleEventMode(ev *tcell.EventKey) {
 			cv.eventIndex = len(items) - 1
 			cv.emitEvent()
 		}
-	// Left/Right do nothing while drilled: the drilled context is the day's 1D
-	// item list. Esc exits; f/b changes the month.
-	case tcell.KeyRune:
-		switch ev.Rune() {
-		case 'k':
-			if cv.eventIndex > 0 {
-				cv.eventIndex--
-				cv.emitEvent()
-			}
-		case 'j':
-			if cv.eventIndex < len(items)-1 {
-				cv.eventIndex++
-				cv.emitEvent()
-			}
-		}
+		// Left/Right do nothing while drilled: the drilled context is the day's 1D
+		// item list. Esc exits; f/b changes the month.
 	}
 }
 

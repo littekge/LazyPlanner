@@ -4,6 +4,15 @@
 
 ---
 
+## 2026-07-24 — v1.5.0 phase 2: remove dead h/j/k/l rune cases from calendarView (matrix finding #19)
+
+- `internal/ui/calendarview.go`'s `handleDayMode` and `handleEventMode` each carried a `case tcell.KeyRune: switch ev.Rune() { case 'h'/'j'/'k'/'l': ... }` block duplicating the arrow-key handling right above it. Confirmed unreachable in the running app: `Application.SetInputCapture(a.globalKeys)` sees every key first, and `globalKeys`' `motionArrow` translation (`internal/ui/keys.go`) always converts a letter motion to the matching arrow key and calls `repeatKey` with it, returning `nil` — so a raw `'h'/'j'/'k'/'l'` rune is never forwarded to any focused primitive's own `InputHandler`, calendarView's included.
+- Removed both dead rune-case blocks; the arrow-key cases (which do run, fed the translated event by `repeatKey`) are unchanged.
+- TDD: `TestCalendarViewLetterMotionsAreNotHandledDirectly` and `TestCalendarViewEventModeLetterMotionsAreNotHandledDirectly` (`internal/ui/calendarview_test.go`) call `cv.InputHandler()` directly with a raw letter rune (bypassing the global layer, the only way to reach the dead code at all) — RED against the unmodified code (the selection/drilled-event index moved), GREEN after removal (no case matches, nothing moves).
+- `TestCalendarViewEventDrillJKBoundaries` (`internal/ui/canary_boundaries_test.go`, a pass-11 escaped-canary regression) parametrized over both the KeyRune and arrow-key paths on the premise both "shared the guard" — true only while the dead duplicate existed. Updated to exercise the arrow-key path alone (the one hjkl is always translated into before reaching the grid); the boundary-clamp coverage it locks is unaffected.
+- Files: `internal/ui/calendarview.go`, `internal/ui/calendarview_test.go`, `internal/ui/canary_boundaries_test.go`.
+- Full gate green (`go test ./...`, `go vet ./...`, `staticcheck ./...`, `go build ./...`); `gofmt` clean.
+
 ## 2026-07-24 — v1.5.0 phase 2: grab hint stops telling an already-in-week/day-view user to switch views (matrix finding #2)
 
 - `grabTimeHint` (`internal/ui/grab.go`) fires when a grabbed item isn't "timed" — which is true both when the user isn't in week/day view *and* when the grabbed item is an all-day event. It unconditionally returned `"switch to week/day view (v) to " + action` for calendar mode, so nudging j/k/J/K on a grabbed all-day event while already in week/day view told the user to switch to a view they were already in — an all-day event has no time to change regardless of view.
