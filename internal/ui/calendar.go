@@ -282,7 +282,7 @@ func (a *app) deleteCollection() {
 	case modeTasks:
 		id = a.selectedTasklistID()
 	default:
-		a.flash("Switch to Calendars (1) or Tasks (2) to delete a list")
+		a.flash("Switch to Calendars (c) or Tasks (t) to delete a list")
 		return
 	}
 	if id == "" {

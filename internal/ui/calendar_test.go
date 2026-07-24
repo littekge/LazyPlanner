@@ -206,6 +206,23 @@ func TestDeleteCollectionNeedsCollectionPane(t *testing.T) {
 	}
 }
 
+// TestDeleteCollectionHintNamesCurrentPaneKeys guards matrix finding #20: the
+// flash from deleting outside the Calendars/Tasks panes used to reference the
+// obsolete `1`/`2` number-row mode keys — panel focus moved to `c`/`t`/`a`
+// before v1.5.0. The hint must name the keys that actually work today.
+func TestDeleteCollectionHintNamesCurrentPaneKeys(t *testing.T) {
+	a := newTestApp(t, time.Date(2026, 7, 5, 12, 0, 0, 0, time.UTC))
+	a.mode = modeAgenda
+	a.deleteCollection()
+	got := a.statusLeft.GetText(true)
+	if strings.Contains(got, "(1)") || strings.Contains(got, "(2)") {
+		t.Errorf("flash = %q, still references the obsolete 1/2 mode keys", got)
+	}
+	if !strings.Contains(got, "(c)") || !strings.Contains(got, "(t)") {
+		t.Errorf("flash = %q, want it to name the current c/t panel keys", got)
+	}
+}
+
 func TestCollectionDeleteNameMatches(t *testing.T) {
 	cases := []struct {
 		name, typed, target string

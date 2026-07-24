@@ -4,6 +4,14 @@
 
 ---
 
+## 2026-07-24 — v1.5.0 phase 2: deleteCollection's pane-switch hint names the current c/t keys (matrix finding #20)
+
+- `deleteCollection` (`internal/ui/calendar.go`)'s flash for deleting outside the Calendars/Tasks panes read `"Switch to Calendars (1) or Tasks (2) to delete a list"` — `1`/`2` were the pane-focus keys before panel focus moved onto `c`/`t`/`a` (off the number row, freeing digits for vim counts). The stale hint pointed users at keys that no longer do anything.
+- Reworded to `"Switch to Calendars (c) or Tasks (t) to delete a list"`, matching the current keybindings table.
+- TDD: `TestDeleteCollectionHintNamesCurrentPaneKeys` (`internal/ui/calendar_test.go`) RED against the unmodified string (contained `"(1)"`/`"(2)"`, missing `"(c)"`/`"(t)"`), GREEN after the wording fix; existing `TestDeleteCollectionNeedsCollectionPane` stays green.
+- Files: `internal/ui/calendar.go`, `internal/ui/calendar_test.go`.
+- Full gate green (`go test ./...`, `go vet ./...`, `staticcheck ./...`, `go build ./...`); `gofmt` clean.
+
 ## 2026-07-24 — v1.5.0 phase 2: remove dead h/j/k/l rune cases from calendarView (matrix finding #19)
 
 - `internal/ui/calendarview.go`'s `handleDayMode` and `handleEventMode` each carried a `case tcell.KeyRune: switch ev.Rune() { case 'h'/'j'/'k'/'l': ... }` block duplicating the arrow-key handling right above it. Confirmed unreachable in the running app: `Application.SetInputCapture(a.globalKeys)` sees every key first, and `globalKeys`' `motionArrow` translation (`internal/ui/keys.go`) always converts a letter motion to the matching arrow key and calls `repeatKey` with it, returning `nil` — so a raw `'h'/'j'/'k'/'l'` rune is never forwarded to any focused primitive's own `InputHandler`, calendarView's included.
