@@ -45,9 +45,9 @@ Each account needs a unique `name`. **One account is active at a time**; switch 
 
 > **Upgrading from a pre-1.1 config?** The old single `[server]` section was replaced by `[[account]]` blocks. Rename `[server]` to `[[account]]` and add a `name`; the connection fields are otherwise unchanged, and your existing cache is reused (its id still derives from the URL + username). LazyPlanner refuses to start with a leftover `[server]` section and tells you this.
 
-Authentication is always a NextCloud **app password** (Settings → Security → Devices & sessions), never your account password. `password_command` (its stdout is used as the secret) keeps the password out of the file — e.g. `bw get password …` with Bitwarden/Vaultwarden. If the file is group/other-readable, LazyPlanner warns you to `chmod 600` it.
+Authentication is always a NextCloud **app password** (Settings → Security → Devices & sessions), never your account password. `password_command` (its stdout is used as the secret) keeps the password out of the file — e.g. `bw get password …` with Bitwarden/Vaultwarden; it runs via `sh -c`, so pipes, quoting, and shell expansion all work as expected. If the file is group/other-readable, LazyPlanner warns you to `chmod 600` it — that check is **Unix-only**; Windows has no equivalent permissions warning.
 
-The `[appearance]` section tunes display (all optional): `first_day_of_week`, `default_view`, `time_format`, `date_format`, and **`color_mode`** — how calendar colors render. `color_mode` defaults to `auto` (exact 24-bit truecolor, which your terminal downsamples to 256 or 16 colors as needed); set it to `truecolor` to force 24-bit on a terminal that underreports, `16` to use the nearest themed ANSI color (inherits your terminal theme — good for a light terminal or bare console), or `off` for no calendar colors.
+The `[appearance]` section tunes display (all optional): `first_day_of_week`, `default_view`, `time_format`, `date_format`, and **`color_mode`** — how calendar colors render. `color_mode` defaults to `auto` (exact 24-bit truecolor, which your terminal downsamples to 256 or 16 colors as needed); set it to `truecolor` to force 24-bit on a terminal that underreports, `16` to use the nearest themed ANSI color (inherits your terminal theme — good for a light terminal or bare console), or `off` for no calendar colors. An invalid value here (e.g. a `color_mode` typo) is non-fatal: LazyPlanner warns and falls back to the default rather than refusing to start.
 
 The local cache is **namespaced by account** (a stable id derived from the server URL + username), so each account keeps its own cache and two accounts' data never mix. Data lives under the OS data directory (`~/.local/share/lazyplanner/<account-id>/` on Linux); which account was active last is remembered in a small `global.json` at the data-dir root and reopened next launch.
 
@@ -55,7 +55,7 @@ The local cache is **namespaced by account** (a stable id derived from the serve
 
 Run `lazyplanner` with no arguments to open the TUI (seed the cache with `import` first — see [Syncing](#syncing)). The screen has three regions: a left **overview** column (**Calendars**, **Tasks**, **Agenda**), a **center** pane that follows the focused panel, and a right **Detail** pane showing the highlighted item's fields. `c`/`t`/`a` focus a panel, `Enter` dives into the center, `Esc` backs out. Movement is vim-style — `hjkl`/arrows, a `count` prefix (`3j`), `gg`/`G` for top/bottom. The [keybindings table](#keybindings) is the full key reference; the notes below cover what a key list can't:
 
-- **Calendars** → the center shows a month grid or a week/day hourly **time-grid** (`v` cycles). Each list row carries a **color dot** in the calendar's exact server color (matching NextCloud; auto-downsampled per `color_mode`, dropped when hidden) and a **`[events]`/`[tasks]`/`[both]`** tag — **`[?]`** until a sync confirms the type, **`[ro]`** for read-only. That color tints the calendar's items in every view. `Enter` **drills into a day**: navigation then becomes 2D over the day's layout — `↑`/`↓` by time, `←`/`→` between overlapping side-by-side events. Dated tasks show here too, as a `[ ]`/`[■]` line at the due time (all-day-due in the top band).
+- **Calendars** → the center shows a month grid or a week/day hourly **time-grid** (`v` cycles). Each list row carries a **color dot** in the calendar's exact server color (matching NextCloud; auto-downsampled per `color_mode`, dropped when hidden) and a **`[events]`/`[tasks]`/`[both]`** tag — **`[?]`** until a sync confirms the type, **`[ro]`** for read-only. That color tints the calendar's items in the calendar grids, agenda, and time-grid (the task tree is not color-tinted). `Enter` **drills into a day**: in the week/day time-grid, navigation then becomes 2D over the day's layout — `↑`/`↓` by time, `←`/`→` between overlapping side-by-side events; in the month grid (the default), drilling into a day is a 1D walk through that day's item list instead. Dated tasks show here too, as a `[ ]`/`[■]` line at the due time (all-day-due in the top band).
 - **Tasks** → pick a list and its full **subtask tree** opens in the center with inline priority/due/status. `>` zooms into a subtree (`cd`-style, with a breadcrumb), `<` zooms back out; `z` folds it.
 - **Agenda** → the day's events and due tasks at full width; moving the highlight outlines and auto-scrolls to the matching block in the center.
 
@@ -70,7 +70,7 @@ Run `lazyplanner` with no arguments to open the TUI (seed the cache with `import
   - An obvious typo (`!hgh`, `next tuedsay`, `25:00`) keeps the input open with a warning — submit the same text again to keep it as-is.
 - Creation is **locked to the calendar's type** (events only on `[events]`/`[both]`, tasks only on `[tasks]`/`[both]`); an unconfirmed `[?]` calendar blocks creation until a sync settles it, unless you force it with **`i!`** (e.g. `i!e`) — read-only and known-wrong-type are never forced.
 - `e` edits the selected item (or, with the Calendars/Tasks panel focused, that calendar/list's name + color); `s` quick-sets one field (`sp` priority, `sd` due); `d` deletes (an item after a confirm — a folder removes its whole subtree; a calendar/list, when its panel is focused, requires typing its name to confirm because it can't be undone).
-- The full forms use the same **NORMAL/DRILL** model as the rest of the app: a form opens in NORMAL, where `j`/`k`/arrows step between fields and the Save/Cancel buttons and `Enter` acts on the highlighted one — drilling a text field to type, opening a dropdown, toggling a checkbox, or toggling days on the weekday strip. In DRILL the keys reach the field; `Enter` moves on to the next field and `Esc` steps back out to NORMAL (a second `Esc` cancels the form).
+- The full forms use the same **NORMAL/DRILL** model as the rest of the app: a form opens in NORMAL, where `j`/`k`/arrows (or `h`/`l`/`←`/`→` between the buttons) step between fields and the Save/Cancel buttons and `Enter` acts on the highlighted one — drilling a text field to type, opening a dropdown, toggling a checkbox, or drilling into the weekday strip (same as a text field). In DRILL the keys reach the field; on the weekday strip, `Space` toggles the highlighted day. `Enter` moves on to the next field and `Esc` steps back out to NORMAL (a second `Esc` cancels the form).
 
 **Folders.** A task with unfinished subtasks is a **folder** — drawn with a `▸` caret instead of a checkbox in every view — and can't be completed until they are. It keeps its own due date, so it still appears on the calendar (adding a subtask to a dated task just swaps `[ ]` for `▸`). `Space` toggles a task done in **any** view; in a calendar with no task drilled, `Space` instead hides/shows the highlighted calendar.
 
@@ -82,7 +82,7 @@ Run `lazyplanner` with no arguments to open the TUI (seed the cache with `import
 
 Editing (`e`), deleting (`d`), or grabbing (`m`) a recurring **event** opens a scope picker — **This occurrence** (writes a `RECURRENCE-ID` override / `EXDATE`), **This & future** (splits the series at that point, preserving a bounded count), or **All** (edits the master, incl. its rule). A recurring **task** shows as a single live instance at its current due; completing it (`Space`) advances it to the next occurrence (the way NextCloud rolls a repeating task forward) — the flash confirms it advanced rather than being checked off, and it's marked done only when the series runs out. Editing "this occurrence" of a task detaches that instance as a separate one-off task (after a confirmation) and advances the rest.
 
-**Commands & layout.** `:` opens a command line — `:sync`, `:view month|week|day`, `:goto`, `:search`, `:config`, `:account`, `:conflicts`, `:calendar new|rename|color|hide|show`, `:help`, `:q` — and the status bar's middle echoes the last action (`gd` opens `:goto` prefilled).
+**Commands & layout.** `:` opens a command line — `:sync`, `:view month|week|day`, `:goto`, `:search`, `:config`, `:account`, `:conflicts`, `:calendar new|rename|color|hide|show`, `:help`, `:q` — and the status bar's middle echoes the last action (`gd` opens `:goto` prefilled). Several accept a shorter alias: `:q`/`:quit`, `:search`/`:find`, `:account`/`:acct`, `:calendar`/`:cal`, `:conflicts`/`:conflict`, `:help`/`:h`.
 
 - **`:account`** switches the active account: `:account <name>`, or bare `:account` to pick from a list. LazyPlanner flushes pending changes, then reopens on the chosen account's cache. When more than one account is configured the status bar shows the active one.
 - **`:config`** opens `config.toml` in `$EDITOR` and reloads on exit: a `color_mode` or credential change applies live, while an `auto`↔`truecolor` switch needs a restart. Editing the active account's connection (or removing it) can't be hot-swapped — use `:account` or restart.
@@ -93,15 +93,18 @@ Editing (`e`), deleting (`d`), or grabbing (`m`) a recurring **event** opens a s
 
 ### Managing Calendars
 
-You can create and delete calendars/task lists in-app (`ic` / `il` to create a calendar / list, `d` to delete the focused pane's collection — confirmed by typing the collection's name, since it can't be undone — all offline-first), so you never need the NextCloud web UI. These CLI subcommands do the same directly on the server (via CalDAV `MKCALENDAR` / `DELETE`); they take the same connection flags/env vars as the other subcommands (see [Syncing](#syncing)).
+You can create and delete calendars/task lists in-app (`ic` / `il` to create a calendar / list, `d` to delete the focused pane's collection — confirmed by typing the collection's name, since it can't be undone — all offline-first), so you never need the NextCloud web UI. The in-app color field and `:calendar color` both accept `#rrggbb` or `#rrggbbaa` (the alpha byte is accepted but ignored). These CLI subcommands do the same directly on the server (via CalDAV `MKCALENDAR` / `DELETE`); they take the same connection flags/env vars as the other subcommands (see [Syncing](#syncing)).
 
 ```sh
 lazyplanner calendar list                          # show calendars + their server paths
 lazyplanner calendar create --name "Projects"      # an event calendar
 lazyplanner calendar create --name "Errands" --tasks   # a task list (VTODO)
 lazyplanner calendar create --name "Home" --both --color "#3366cc"
+lazyplanner calendar create --name "Work" --desc "Work items" --path "/remote.php/dav/calendars/you/work/"
 lazyplanner calendar delete --path "/remote.php/dav/calendars/you/errands/"
 ```
+
+`calendar create` also accepts `--desc` (an optional description) and `--path` (an explicit collection path; default is the home set plus a slug of the name).
 
 After creating a calendar, run `lazyplanner import` to pull it into the local cache.
 
@@ -137,7 +140,8 @@ After creating a calendar, run `lazyplanner import` to pull it into the local ca
 | `r` | Sync now (= `:sync`) |
 | `:` · `gd` · `?` | Command line · go to date · help |
 | `.` | Show/hide completed tasks |
-| `q` / `Ctrl-C` | Quit / back out (best-effort syncs pending changes on the way out) |
+| `q` | Quit from the top level; closes a non-form dialog. Inert inside a data-entry form (use `Esc` there) — best-effort syncs pending changes on the way out |
+| `Ctrl-C` | Force-quits immediately, even over an open form (typed input is lost) — same best-effort sync flush |
 
 ## Syncing
 
@@ -162,7 +166,7 @@ lazyplanner help      # list the subcommands
 
 (An unrecognized subcommand is reported with a non-zero exit and the usage, rather than silently opening the TUI.)
 
-Both take the same connection flags as below (or the `LAZYPLANNER_CALDAV_URL` / `LAZYPLANNER_CALDAV_USERNAME` / `LAZYPLANNER_CALDAV_PASSWORD` environment variables), and honor `--data` to override the data directory:
+Both take the same connection flags as below (or the `LAZYPLANNER_CALDAV_URL` / `LAZYPLANNER_CALDAV_USERNAME` / `LAZYPLANNER_CALDAV_PASSWORD` environment variables), and honor `--data` to override the data directory — `--data` sets the **parent** directory; the cache itself still lives under `<data>/<account-id>/`:
 
 ```sh
 lazyplanner sync \
@@ -170,6 +174,8 @@ lazyplanner sync \
   --username you \
   --password <app-password>
 ```
+
+`--password` is visible in `ps` output and shell history — prefer `password_command` or the config file's `[[account]]` block for anything but a quick one-off.
 
 ## Build and Install
 

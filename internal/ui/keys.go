@@ -347,7 +347,7 @@ func (a *app) enterResizeMode() {
 	a.resizePrevLeft, a.resizePrevDetail = a.leftWidth, a.detailWidth // for Esc-revert
 	a.resizing = true
 	a.updateStatus()
-	a.flash("RESIZE · ←/→ overview · H/L detail · Enter keep · Esc cancel")
+	a.flash("RESIZE · ←/→ overview · H/L detail · Enter keep · Esc/q cancel")
 }
 
 // exitResizeMode leaves the sub-mode; revert restores the pre-resize widths (Esc)

@@ -24,11 +24,11 @@
 | MOV — main.md — Yank/paste, Grab, SELECT, Recurring items, Pane sizing | 93 | 93 | 0 | 0 |
 | KEY — main.md — Keybindings table, : commands, Mouse | 124 | 124 | 0 | 0 |
 | DEC — main.md — Settled Decisions + Runtime file locations | 108 | 108 | 0 | 0 |
-| RDM — README.md — whole file | 224 | 220 | 4 | 0 |
-| HLP — internal/ui/help.go — the :help cheat sheet | 146 | 143 | 3 | 0 |
-| **Total** | **962** | **954** | **7** | **1** |
+| RDM — README.md — whole file | 224 | 224 | 0 | 0 |
+| HLP — internal/ui/help.go — the :help cheat sheet | 146 | 146 | 0 | 0 |
+| **Total** | **962** | **961** | **0** | **1** |
 
-**Confirmed divergences pending owner triage (21):** all 21 owner-triaged 2026-07-24 as fix-doc. The 14 main.md-region divergences (LAY-27, LAY-57, LAY-58, LAY-59, LAY-60, TSK-06, TSK-13, CRT-21, MOV-56, MOV-57, MOV-91, KEY-020, KEY-021, KEY-047) are fixed — see each row's evidence for the fix-doc note. Still pending in this pass: RDM-47, RDM-48, RDM-89, RDM-183, HLP-16, HLP-75, HLP-76 (README.md + help.go batch).
+**Confirmed divergences (21):** all 21 owner-triaged 2026-07-24 as fix-doc and now landed — 14 in the main.md batch (LAY-27, LAY-57, LAY-58, LAY-59, LAY-60, TSK-06, TSK-13, CRT-21, MOV-56, MOV-57, MOV-91, KEY-020, KEY-021, KEY-047), 7 in the README.md + help.go batch (RDM-47, RDM-48, RDM-89, RDM-183, HLP-16, HLP-75, HLP-76). Every row's evidence carries its own `fix-doc landed 2026-07-24: …` note.
 
 ## LAY — main.md — UI Design intro + Layout
 
