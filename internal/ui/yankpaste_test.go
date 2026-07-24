@@ -23,8 +23,8 @@ func TestPasteReparentsWithinList(t *testing.T) {
 
 	a.selectTreeByUID(mover.UID)
 	a.yankTask()
-	if a.yankUID != mover.UID {
-		t.Fatalf("yankUID = %q, want %q", a.yankUID, mover.UID)
+	if len(a.yankUIDs) != 1 || a.yankUIDs[0] != mover.UID {
+		t.Fatalf("yankUIDs = %v, want [%q]", a.yankUIDs, mover.UID)
 	}
 
 	a.selectTreeByUID(parent.UID) // paste target
@@ -32,7 +32,7 @@ func TestPasteReparentsWithinList(t *testing.T) {
 	if got := todoBySummary(a.store, "Mover").ParentUID; got != parent.UID {
 		t.Errorf("Mover parent after paste = %q, want %q", got, parent.UID)
 	}
-	if a.yankUID != mover.UID {
+	if len(a.yankUIDs) != 1 || a.yankUIDs[0] != mover.UID {
 		t.Error("clipboard should persist after a paste (multi-paste)")
 	}
 
@@ -58,7 +58,7 @@ func TestMoveSubtreeAcrossLists(t *testing.T) {
 	a.createTask(srcCal, mover.UID, "Child")
 	child := todoBySummary(a.store, "Child")
 
-	a.yankUID = mover.UID
+	a.yankUIDs = []string{mover.UID}
 	a.moveSubtree(mover.UID, "", srcCal, dstCal)
 
 	if loc, ok := a.store.Locate(mover.UID); !ok || loc.CalID != dstCal {
@@ -73,7 +73,7 @@ func TestMoveSubtreeAcrossLists(t *testing.T) {
 	if got := todoBySummary(a.store, "Mover").ParentUID; got != "" {
 		t.Errorf("moved root parent = %q, want empty (top level)", got)
 	}
-	if a.yankUID != mover.UID {
+	if len(a.yankUIDs) != 1 || a.yankUIDs[0] != mover.UID {
 		t.Error("clipboard should persist after a move (multi-paste)")
 	}
 
@@ -131,7 +131,7 @@ func TestMoveSubtreeRollsBackOnFailure(t *testing.T) {
 	}
 	defer os.Chmod(srcDir, 0o700) // let t.TempDir clean up
 
-	a.yankUID = mover.UID
+	a.yankUIDs = []string{mover.UID}
 	a.moveSubtree(mover.UID, "", srcCal, dstCal)
 
 	// Both nodes remain in the source; the dest holds no stray copy.

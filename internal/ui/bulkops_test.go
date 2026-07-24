@@ -401,3 +401,102 @@ func TestBulkDeleteReadOnlySkipped(t *testing.T) {
 		t.Fatalf("summary must count the read-only skip, got %q", s)
 	}
 }
+
+// TestBulkYankPasteUnder: cut a range of siblings, paste under another task —
+// all roots move (order preserved), one undo step, clipboard persists.
+func TestBulkYankPasteUnder(t *testing.T) {
+	now := time.Date(2026, 7, 5, 9, 0, 0, 0, time.UTC)
+	a := newRootedTestApp(t, now)
+	a.setMode(modeTasks)
+	target := putTodo(t, a, testCalID(a), "", "a target", now, true)
+	u1 := putTodo(t, a, testCalID(a), "", "b move1", now, true)
+	u2 := putTodo(t, a, testCalID(a), "", "c move2", now, true)
+	a.refresh(target)
+	a.setFocus(a.tree)
+
+	a.selectTreeByUID(u1)
+	a.enterSelect()
+	a.selectTreeByUID(u2)
+	a.bulkYank(true) // cut
+	if a.selecting {
+		t.Fatal("yank must exit SELECT")
+	}
+	if len(a.yankUIDs) != 2 {
+		t.Fatalf("clipboard = %v, want two roots", a.yankUIDs)
+	}
+
+	a.selectTreeByUID(target)
+	undoBefore := len(a.undo)
+	a.pasteUnderSelection()
+	for _, u := range []string{u1, u2} {
+		loc, _ := a.store.Locate(u)
+		if td := findTodo(loc.Object, u); td == nil || td.ParentUID != target {
+			t.Fatalf("%s must be re-parented under the target", u)
+		}
+	}
+	if len(a.undo) != undoBefore+1 {
+		t.Fatal("multi-paste must be one undo step")
+	}
+	if len(a.yankUIDs) != 2 {
+		t.Fatal("clipboard must persist after paste")
+	}
+}
+
+// TestBulkYankDedupesSubtree: yanking a parent and its child cuts one root —
+// the child travels inside the parent's subtree, not as a second root.
+func TestBulkYankDedupesSubtree(t *testing.T) {
+	now := time.Date(2026, 7, 5, 9, 0, 0, 0, time.UTC)
+	a := newRootedTestApp(t, now)
+	a.setMode(modeTasks)
+	parent := putTodo(t, a, testCalID(a), "", "folder", now, true)
+	leaf := putTodo(t, a, testCalID(a), parent, "leaf", now, true)
+	a.refresh(parent)
+	a.setFocus(a.tree)
+	// Range parent→leaf only (not selectTreeRangeAll): the shared fixture seeds
+	// its own top-level "grocery" task, and a whole-tree range would pick that
+	// up as an unrelated third row — this test is about subtree dedup, not the
+	// whole tree, so the range is bounded to exactly the folder's own subtree.
+	a.selectTreeByUID(parent)
+	a.enterSelect()
+	a.selectTreeByUID(leaf)
+	a.bulkYank(false) // copy
+	if len(a.yankUIDs) != 1 || a.yankUIDs[0] != parent {
+		t.Fatalf("clipboard roots = %v, want just the parent", a.yankUIDs)
+	}
+}
+
+// TestBulkYankTreeOnly: y in a calendar-days range flashes and keeps SELECT.
+func TestBulkYankTreeOnly(t *testing.T) {
+	now := time.Date(2026, 7, 5, 9, 0, 0, 0, time.UTC)
+	a := newRootedTestApp(t, now)
+	a.setMode(modeCalendar)
+	a.refresh("")
+	a.enterSelect()
+	a.bulkYank(true)
+	if !a.selecting || len(a.yankUIDs) != 0 {
+		t.Fatal("yank outside the tree must flash and keep SELECT with an empty clipboard")
+	}
+}
+
+// TestBulkPasteCycleGuard: pasting a cut range onto one of its own roots (or
+// into a root's subtree) is refused before any write.
+func TestBulkPasteCycleGuard(t *testing.T) {
+	now := time.Date(2026, 7, 5, 9, 0, 0, 0, time.UTC)
+	a := newRootedTestApp(t, now)
+	a.setMode(modeTasks)
+	u1 := putTodo(t, a, testCalID(a), "", "a root1", now, true)
+	u2 := putTodo(t, a, testCalID(a), "", "b root2", now, true)
+	a.refresh(u1)
+	a.setFocus(a.tree)
+	a.selectTreeByUID(u1)
+	a.enterSelect()
+	a.selectTreeByUID(u2)
+	a.bulkYank(true)
+
+	a.selectTreeByUID(u2) // paste target = one of the cut roots
+	a.pasteUnderSelection()
+	loc, _ := a.store.Locate(u1)
+	if td := findTodo(loc.Object, u1); td == nil || td.ParentUID != "" {
+		t.Fatal("cycle-guarded paste must not move anything")
+	}
+}

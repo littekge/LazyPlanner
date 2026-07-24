@@ -225,6 +225,39 @@ func (a *app) bulkDeleteRoots(targets []editTarget) ([]editTarget, bulkSkip) {
 	return roots, skips
 }
 
+// bulkYank (y/Y in SELECT) puts the selected task roots on the clipboard —
+// tree context only: the clipboard is a task-subtree concept, and paste needs
+// a tree target. Roots are the ancestor-deduped range in visible order; each
+// root's subtree travels with it on paste, exactly like a single-item yank.
+func (a *app) bulkYank(cut bool) {
+	if a.selContext() != selTree {
+		a.flash("Yank works in the task tree (t)")
+		return
+	}
+	targets := a.selRange()
+	if targets == nil {
+		a.exitSelect()
+		a.flash("Selection no longer valid")
+		return
+	}
+	roots, skips := a.bulkDeleteRoots(targets)
+	if len(roots) == 0 {
+		a.flash(bulkSummary("on clipboard", 0, skips))
+		return
+	}
+	a.yankUIDs = a.yankUIDs[:0]
+	for _, r := range roots {
+		a.yankUIDs = append(a.yankUIDs, r.uid)
+	}
+	a.yankCut = cut
+	verb := "Copied"
+	if cut {
+		verb = "Cut"
+	}
+	a.exitSelect()
+	a.flash(fmt.Sprintf("%s %d task(s) — p paste under · P paste at top", verb, len(a.yankUIDs)))
+}
+
 // bulkDelete (d in SELECT) deletes every selected item — tasks with their whole
 // subtrees — after one confirm naming the full count. Mirrors deleteWholeObject's
 // semantics exactly: whole-resource delete per uid, no scope picker (a recurring

@@ -106,10 +106,10 @@ type app struct {
 	forceCreate   bool // set for the duration of a forced create action
 	pendingCount  int  // accumulated vim count (e.g. 3 in "3j"); 0 when none
 	searchQuery   string
-	searchIdx     int    // which match n/N is currently on
-	searchRestore func() // restores the pre-search selection on cancel
-	yankUID       string // task on the yank/copy clipboard (y cut / Y copy); "" when empty
-	yankCut       bool   // clipboard mode: true = cut (move), false = copy (duplicate)
+	searchIdx     int      // which match n/N is currently on
+	searchRestore func()   // restores the pre-search selection on cancel
+	yankUIDs      []string // task roots on the yank/copy clipboard, in visible order; nil when empty
+	yankCut       bool     // clipboard mode: true = cut (move), false = copy (duplicate)
 
 	// Grab mode (m): temporal manipulation of the current item — move an event's
 	// day/hour or resize it, or nudge a task's due date. Modal; hjkl edit, Enter

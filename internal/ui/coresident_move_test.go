@@ -64,7 +64,7 @@ func TestCoResidentMoveDragsBystander(t *testing.T) {
 	}
 
 	// Cut only the Mover and paste into the "work" list.
-	a.yankUID = moverUID
+	a.yankUIDs = []string{moverUID}
 	a.moveSubtree(moverUID, "", "personal", "work")
 
 	// The Bystander was never selected — it must stay put in "personal".
