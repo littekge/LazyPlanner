@@ -30,7 +30,7 @@ func (a *app) showConflicts() {
 	list.SetSelectedStyle(selectionStyle)
 	list.SetBackgroundColor(tcell.ColorDefault)
 	list.SetBorder(true).SetBorderColor(accentColor)
-	list.SetTitle(" Conflicts — Enter to resolve · Esc to close ").SetTitleColor(accentColor)
+	list.SetTitle(" Conflicts — Enter to resolve · Esc/q to close ").SetTitleColor(accentColor)
 	list.SetInputCapture(func(ev *tcell.EventKey) *tcell.EventKey {
 		if ev.Key() == tcell.KeyEscape || ev.Rune() == 'q' {
 			a.closeModal(pageConflicts)

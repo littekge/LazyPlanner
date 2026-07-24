@@ -4,6 +4,16 @@
 
 ---
 
+## 2026-07-24 — Fix: conflicts modal title advertises Esc/q (follow-up to Batch C/D finding #18)
+
+- The v1.5.0 phase 2 doc batch (Batch C/D, finding #18) updated the `:help` line to advertise that the conflicts list closes on "Esc/q" but left the conflicts modal's title string advertising only "Esc" — an inconsistency now fixed.
+- Updated `internal/ui/conflicts.go` line 33: conflicts list title now reads `" Conflicts — Enter to resolve · Esc/q to close "` (was `" Conflicts — Enter to resolve · Esc to close "`), matching the documented behavior (the `SetInputCapture` already handles both keys, verified).
+- Added regression test `TestConflictsModalTitleAdvertisesQ` in `internal/ui/conflicts_test.go` — verifies the title advertises the `q` close key. Compiles and passes headlessly.
+- Files: `internal/ui/conflicts.go`, `internal/ui/conflicts_test.go`.
+- Tests: one new `TestConflictsModalTitleAdvertisesQ`; all existing tests still pass.
+- Gate: `go build ./...`, `go test ./...`, `go vet ./...`, `staticcheck ./...`, `gofmt -l internal/ui` all clean.
+- No issues.
+
 ## 2026-07-24 — v1.5.0 phase 2 doc fixes (Batch C/D): help.go cheat sheet — undocumented keys and modal chrome (matrix findings #9–#12, #15–#18)
 
 - Doc-only pass over the `:help` cheat sheet (`internal/ui/help.go`) landing the owner-approved Batch C/D matrix findings; each behavior was verified against the actual key-handling code (`keys.go`, `grab.go`, `bulkops.go`, `treeview.go`, `forms.go`, `list.go`) before the row was written or reworded — no source behavior changed.
