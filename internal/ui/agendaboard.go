@@ -111,6 +111,51 @@ func defaultTitleColor(it model.AgendaItem) tcell.Color {
 	return eventColor
 }
 
+// layoutBlocks builds each item's detail lines and its start row in the board's
+// virtual coordinate space (row 0 is a leading gap so the first item's top
+// border has somewhere to draw) — the layout math shared by Draw and itemAtY so
+// hit-testing can never disagree with what was drawn.
+func (b *agendaBoard) layoutBlocks() (blocks [][]styledLine, starts []int, total int) {
+	blocks = make([][]styledLine, len(b.items))
+	starts = make([]int, len(b.items))
+	line := 1
+	for i, it := range b.items {
+		tc := defaultTitleColor(it)
+		if b.itemColor != nil {
+			if cc, ok := b.itemColor(it); ok {
+				tc = cc.fg
+			}
+		}
+		blocks[i] = agendaItemLines(it, tc, b.clock24, b.folderItem(it))
+		starts[i] = line
+		line += len(blocks[i]) + 1 // block plus a one-row gap
+	}
+	return blocks, starts, line
+}
+
+// itemAtY maps an absolute screen row to the agenda item whose text is drawn
+// there, or -1 (the header, a gap/border row, outside the pane, or past the last
+// item). It uses the scroll position of the last Draw, so it resolves what is
+// actually on screen — the treeNodeAtY precedent for the custom-drawn board.
+func (b *agendaBoard) itemAtY(screenY int) int {
+	_, y, w, h := b.GetInnerRect()
+	if w < 6 || h < 2 || len(b.items) == 0 {
+		return -1 // mirrors Draw's bail-out: nothing was drawn
+	}
+	contentTop := y + 2
+	if screenY < contentTop || screenY >= y+h {
+		return -1
+	}
+	row := screenY - contentTop + b.scroll
+	blocks, starts, _ := b.layoutBlocks()
+	for i := range blocks {
+		if row >= starts[i] && row < starts[i]+len(blocks[i]) {
+			return i
+		}
+	}
+	return -1
+}
+
 func (b *agendaBoard) Draw(screen tcell.Screen) {
 	b.Box.DrawForSubclass(screen, b)
 	x, y, w, h := b.GetInnerRect()
@@ -132,23 +177,7 @@ func (b *agendaBoard) Draw(screen tcell.Screen) {
 		return
 	}
 
-	// Lay out blocks in a virtual coordinate space; row 0 is a leading gap so the
-	// first item's top border has somewhere to draw.
-	blocks := make([][]styledLine, len(b.items))
-	starts := make([]int, len(b.items))
-	line := 1
-	for i, it := range b.items {
-		tc := defaultTitleColor(it)
-		if b.itemColor != nil {
-			if cc, ok := b.itemColor(it); ok {
-				tc = cc.fg
-			}
-		}
-		blocks[i] = agendaItemLines(it, tc, b.clock24, b.folderItem(it))
-		starts[i] = line
-		line += len(blocks[i]) + 1 // block plus a one-row gap
-	}
-	total := line
+	blocks, starts, total := b.layoutBlocks()
 
 	// Scroll minimally to keep the selected block (and its border rows) visible.
 	selTop := starts[b.selected] - 1

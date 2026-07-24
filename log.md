@@ -4,6 +4,13 @@
 
 ---
 
+## 2026-07-24 — Agenda board: layoutBlocks extraction + itemAtY hit-testing (gap-closer A, part 1)
+
+- Extracted `agendaBoard.Draw`'s inline block layout into `layoutBlocks()` and added `itemAtY(screenY)` — screen row → item index, -1 on header/gap/outside/past-last — sharing the exact layout math so hit-testing can't disagree with what was drawn (the `treeNodeAtY` precedent). Rendering unchanged.
+- Tests: `internal/ui/agendaclick_test.go` (new) — a full-pane row walk asserting both sides of every window, plus empty-board and scrolled-board cases. The test fixture's own `now` date had to move off 2026-07-05 (the store fixture's `meeting.ics` lands there, so an "empty" board wasn't actually empty) and each seeded event needed a unique summary (`putTimedEvent`'s UID is derived from summary alone, so a shared literal collided all events onto one UID) — both fixed in the test file; `layoutBlocks`/`itemAtY` match the brief verbatim.
+- Full gate green.
+- Files: `internal/ui/agendaboard.go`, `internal/ui/agendaclick_test.go` (new), `log.md`.
+
 ## 2026-07-24 — Fix: moveSubtreeOps source rewrite version-checked (v1.5.0 step 0)
 
 - The COVERAGE.md-flagged gap: `moveSubtreeOps` (`internal/ui/yankpaste.go`) rewrote a cross-list move's source resource with a bare `store.Put`, silently overwriting a sync pull that updated a co-resident bystander between the loop's Locate and the write. Now `store.PutIfUnchanged` against `loc.Prev` — a mid-move pull fails the move cleanly (all-or-nothing rollback, clipboard kept for retry), matching `reparentOps`.
