@@ -55,6 +55,14 @@ type timeGridView struct {
 	eventMode  bool // cycling the selected day's items (all-day, then timed events + tasks)
 	eventIndex int
 
+	// SELECT-mode range, set by the app event-side and read at draw time (plain
+	// fields only — the draw-lock rule). selDayAnchor is the day-range anchor
+	// (zero = none; the other end is tg.selected); selAnchorUID/selAnchorOcc
+	// identify the drilled-item anchor ("" = none; the other end is eventIndex).
+	selDayAnchor time.Time
+	selAnchorUID string
+	selAnchorOcc time.Time
+
 	// items is the per-day drill list — all-day items, then timed events and due
 	// tasks by time (model.DayAgenda order). The drill cycles these so a task is
 	// selectable (and thus completable/editable) like an event; it's separate from
@@ -536,10 +544,35 @@ func (tg *timeGridView) Draw(screen tcell.Screen) {
 	sepStyle := tcell.StyleDefault.Foreground(borderIdle)
 	sel := tg.selectedItem()
 
-	// Header: one date per column (selected day reversed).
+	// The drilled SELECT range: the anchor item's index in the selected day's
+	// list, paired with the cursor (eventIndex), normalized low→high.
+	selFrom, selTo := -1, -1
+	if tg.eventMode && tg.selAnchorUID != "" {
+		if ai := itemIndex(tg.daySelectables(), tg.selAnchorUID, tg.selAnchorOcc); ai >= 0 {
+			selFrom, selTo = ai, tg.eventIndex
+			if selFrom > selTo {
+				selFrom, selTo = selTo, selFrom
+			}
+		}
+	}
+	inSelRange := func(uid string, start time.Time) bool {
+		if selFrom < 0 {
+			return false
+		}
+		i := itemIndex(tg.daySelectables(), uid, start)
+		return i >= selFrom && i <= selTo
+	}
+
+	// Header: one date per column. The cursor day reverses; inside an active
+	// day-range the cursor also underlines (so it stays distinguishable from the
+	// plain-reversed range members) and every other in-range day reverses too.
 	for di, day := range tg.days {
 		style := tcell.StyleDefault.Foreground(accentColor).Bold(true)
-		if model.SameDay(day, tg.selected) {
+		cur := model.SameDay(day, tg.selected)
+		switch {
+		case cur && !tg.selDayAnchor.IsZero():
+			style = style.Reverse(true).Underline(true) // cursor end of a day-range
+		case cur, dayInRange(tg.selDayAnchor, tg.selected, day):
 			style = style.Reverse(true)
 		}
 		printStyled(screen, colStart+di*colW+1, y, colW-1, day.Format("Mon 2"), style)
@@ -631,6 +664,9 @@ func (tg *timeGridView) Draw(screen tcell.Screen) {
 		for _, p := range places {
 			selected := sel != nil && sel.Event != nil && !sel.Event.AllDay && model.SameDay(day, tg.selected) &&
 				p.Occ.Event == sel.Event && p.Occ.Start.Equal(sel.Start)
+			if !selected && model.SameDay(day, tg.selected) && p.Occ.Event != nil {
+				selected = inSelRange(p.Occ.Event.UID, p.Occ.Start)
+			}
 			tg.drawBlock(screen, p, day, colStart+di*colW, colW, vs, selected)
 		}
 		// Timed due-task markers, drawn on top at their due time; the cycled task on
@@ -638,6 +674,9 @@ func (tg *timeGridView) Draw(screen tcell.Screen) {
 		_, timedTasks := tg.dueParts(day)
 		for _, t := range timedTasks {
 			selected := sel != nil && sel.Todo != nil && sel.Todo.UID == t.UID && model.SameDay(day, tg.selected)
+			if !selected && model.SameDay(day, tg.selected) {
+				selected = inSelRange(t.UID, t.Due)
+			}
 			tg.drawTaskMarker(screen, t, colStart+di*colW, colW, vs, selected)
 		}
 	}

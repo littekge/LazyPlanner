@@ -143,7 +143,13 @@ func (a *app) onCalDay(day time.Time) {
 		a.buildCenterCalendar()
 	}
 	a.setDayDetail(day)
-	a.updateStatus()
+	if a.selecting {
+		// syncSelectionVisuals already ends with updateStatus, so the range gets
+		// restyled and the status bar refreshed in one call.
+		a.syncSelectionVisuals()
+	} else {
+		a.updateStatus()
+	}
 }
 
 func (a *app) dayInGrid(day time.Time) bool {

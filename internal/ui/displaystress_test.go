@@ -155,6 +155,44 @@ func TestDisplayStress(t *testing.T) {
 			drawGeom(t, st.name, a.root, g.w, g.h)
 		}
 	}
+
+	// SELECT-mode range active: the range visuals (tree reverse-video, month/
+	// time-grid day-range boxes, drilled-item highlighting) must survive the
+	// same hostile content and geometries — new draw branches are a new
+	// freeze/panic surface. 'V' starts the range where the state above left the
+	// cursor, then spray extends it to the extremes before drawing.
+	selectStates := []struct {
+		name  string
+		enter func()
+	}{
+		{"select-tasks", func() { a.globalKeys(runeKey('t')); a.globalKeys(runeKey('V')) }},
+		{"select-calendar-month", func() { a.globalKeys(runeKey('c')); a.globalKeys(runeKey('V')) }},
+		{"select-calendar-week", func() {
+			a.globalKeys(runeKey('c'))
+			a.globalKeys(runeKey('v'))
+			a.globalKeys(runeKey('V'))
+		}},
+		{"select-calendar-month-drilled", func() {
+			a.globalKeys(runeKey('c'))
+			a.globalKeys(tcell.NewEventKey(tcell.KeyEnter, 0, tcell.ModNone))
+			a.globalKeys(runeKey('V'))
+		}},
+		{"select-calendar-day-drilled", func() {
+			a.globalKeys(runeKey('c'))
+			a.globalKeys(runeKey('v'))
+			a.globalKeys(runeKey('v'))
+			a.globalKeys(tcell.NewEventKey(tcell.KeyEnter, 0, tcell.ModNone))
+			a.globalKeys(runeKey('V'))
+		}},
+	}
+	for _, st := range selectStates {
+		st.enter()
+		spray(a)
+		for _, g := range stressGeoms {
+			drawGeom(t, st.name, a.root, g.w, g.h)
+		}
+		a.exitSelect()
+	}
 }
 
 // spray presses a burst of navigation keys so the highlight/drill lands on

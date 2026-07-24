@@ -553,10 +553,20 @@ func (a *app) build() {
 
 	// Callbacks.
 	a.month.onSelectDay = a.onCalDay
-	a.month.onSelectEvent = func(it model.AgendaItem) { a.setAgendaItemDetail(it) }
+	a.month.onSelectEvent = func(it model.AgendaItem) {
+		a.setAgendaItemDetail(it)
+		if a.selecting {
+			a.syncSelectionVisuals()
+		}
+	}
 	a.month.onExit = func() { a.setFocus(a.calendars) }
 	a.timegrid.onSelectDay = a.onCalDay
-	a.timegrid.onSelectEvent = func(it model.AgendaItem) { a.setAgendaItemDetail(it) }
+	a.timegrid.onSelectEvent = func(it model.AgendaItem) {
+		a.setAgendaItemDetail(it)
+		if a.selecting {
+			a.syncSelectionVisuals()
+		}
+	}
 	a.timegrid.onExit = func() { a.setFocus(a.calendars) }
 
 	// Color items by their calendar's (synced) color, falling back to the default
@@ -603,7 +613,12 @@ func (a *app) build() {
 	// TreeView.Draw infinite loop (v0.42.0) that hangs the app when a deep node's
 	// indent exceeds the tree pane's width. See log.md 2026-07-10.
 	a.tree.SetGraphics(false)
-	a.tree.SetChangedFunc(func(node *tview.TreeNode) { a.showTreeNode(node) })
+	a.tree.SetChangedFunc(func(node *tview.TreeNode) {
+		a.showTreeNode(node)
+		if a.selecting {
+			a.syncSelectionVisuals()
+		}
+	})
 	a.tree.SetSelectedFunc(func(node *tview.TreeNode) {
 		node.SetExpanded(!node.IsExpanded())
 		// Keep the folder disclosure marker (▸/▾) in sync with the new state.

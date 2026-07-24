@@ -30,6 +30,14 @@ type calendarView struct {
 	eventMode  bool // cycling events within the selected day
 	eventIndex int
 
+	// SELECT-mode range, set by the app event-side and read at draw time (plain
+	// fields only — the draw-lock rule). selDayAnchor is the day-range anchor
+	// (zero = none; the other end is cv.selected); selAnchorUID/selAnchorOcc
+	// identify the drilled-item anchor ("" = none; the other end is eventIndex).
+	selDayAnchor time.Time
+	selAnchorUID string
+	selAnchorOcc time.Time
+
 	onSelectDay   func(day time.Time)
 	onSelectEvent func(item model.AgendaItem)
 	onExit        func() // Esc in day mode: hand focus back to the overview
@@ -258,6 +266,11 @@ func (cv *calendarView) drawCell(screen tcell.Screen, day time.Time, cellX, cell
 		}
 		drawBox(screen, cellX, cellY, cellW, cellH, tcell.StyleDefault.Foreground(boxColor))
 		cx, cy, cw, ch = cellX+1, cellY+1, cellW-2, cellH-2
+	} else if dayInRange(cv.selDayAnchor, cv.selected, day) {
+		// A day inside the SELECT range gets the accent outline; the cursor day
+		// keeps the focused style above so the two ends stay distinguishable.
+		drawBox(screen, cellX, cellY, cellW, cellH, tcell.StyleDefault.Foreground(accentColor))
+		cx, cy, cw, ch = cellX+1, cellY+1, cellW-2, cellH-2
 	}
 	if cw < 1 || ch < 1 {
 		return
@@ -287,6 +300,18 @@ func (cv *calendarView) drawCell(screen tcell.Screen, day time.Time, cellX, cell
 	}
 	n := len(items)
 
+	// The drilled SELECT range, computed once per cell: the anchor item's index
+	// in this day's list, paired with the cursor (eventIndex), normalized low→high.
+	selFrom, selTo := -1, -1
+	if selected && cv.eventMode && cv.selAnchorUID != "" {
+		if ai := itemIndex(items, cv.selAnchorUID, cv.selAnchorOcc); ai >= 0 {
+			selFrom, selTo = ai, cv.eventIndex
+			if selFrom > selTo {
+				selFrom, selTo = selTo, selFrom
+			}
+		}
+	}
+
 	drawItem := func(i, row int) {
 		style := itemStyle(items[i])
 		if cv.itemColor != nil {
@@ -294,8 +319,18 @@ func (cv *calendarView) drawCell(screen tcell.Screen, day time.Time, cellX, cell
 				style = style.Foreground(cc.fg)
 			}
 		}
-		if selected && cv.eventMode && i == cv.eventIndex {
-			style = style.Reverse(true)
+		if selected && cv.eventMode {
+			switch {
+			case i == cv.eventIndex:
+				style = style.Reverse(true)
+				if selFrom >= 0 {
+					// Range active: the cursor item stays distinguishable from
+					// the reversed range rows.
+					style = style.Bold(true).Underline(true)
+				}
+			case selFrom >= 0 && i >= selFrom && i <= selTo:
+				style = style.Reverse(true)
+			}
 		}
 		printStyled(screen, cx, row, cw, itemLabel(items[i], day, cv.folderItem(items[i]), cv.clock24), style)
 	}

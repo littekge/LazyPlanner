@@ -4,6 +4,20 @@
 
 ---
 
+## 2026-07-23 — v1.4.0: SELECT range visuals
+
+- **Task 3 of the v1.4.0 SELECT-mode build**: wired the range derived in Task 2 (`selRange`/`itemIndex`) into the three views that display it.
+- **Shared helper**: `dayInRange(anchor, cursor, day)` in `internal/ui/selection.go` — whether a day falls inside `[anchor, cursor]` (either order); a zero anchor means no active range.
+- **Tree**: `a.syncTreeSelection()` walks the visible tree rows and sets `TreeNode.SetTextStyle` to the theme-adaptive `selectionStyle` for every row inside the range, `tcell.StyleDefault` otherwise — restoring every row on exit. Event-driven only (never a draw path), per the tview-freeze guardrail.
+- **`syncSelectionVisuals`** is now a full replacement: after the existing anchor-validation/flash, it pushes plain `selDayAnchor`/`selAnchorUID`/`selAnchorOcc` fields into both `calendarView` and `timeGridView` (cleared first, set only for the active context), calls `syncTreeSelection`, then `updateStatus`. The grids derive the other end of the range from their own `selected`/`eventIndex` at draw time — no app-lock calls from any `Draw` path.
+- **Month grid** (`calendarview.go`): a day inside a day-range gets an accent-colored outline box (the cursor day keeps its existing focused-style box, so the two ends stay visually distinct); a drilled day's items between the anchor and the cursor draw reverse-video, with the cursor item itself bold+underlined so it doesn't read as just another range row.
+- **Time grid** (`timegridview.go`): the day header reverses every in-range day, with the cursor day also underlined; a drilled item-range highlights matching event blocks and task markers the same way, via a shared `inSelRange` closure. The collapsed all-day "+N" band keeps its existing cursor-only highlight (documented limitation — collapse already hides individual membership).
+- **`app.go`**: the tree's `SetChangedFunc`, the month/time-grid `onSelectEvent` closures, and the shared `onCalDay` day-move handler now call `a.syncSelectionVisuals()` when `a.selecting`, so cursor motion restyles the range live.
+- **Test-dimension deviation from the brief**: `TestDrilledRangeMarksItems` originally used an 84×30 pane (matching the brief). At that geometry the month grid's fixed 6-row layout gives a day cell only one content line; combined with the fixture's pre-existing 2026-07-05 "Project meeting" event (3 items total that day), the cell's overflow logic collapses everything to a single "+3 more" line — no item is ever drawn individually, regardless of highlighting logic. Bumped to 84×48 (verified minimum is 84×40; picked 48 for headroom) with a comment explaining why; confirmed by a throwaway probe that the implementation is correct once the cell is tall enough (reversed-cell count matched exactly `len("eventone")+len("eventtwo")`).
+- **`displaystress_test.go`**: extended `TestDisplayStress` with five `select-*` states (tree, month day-range, week day-range, month-drilled, day-drilled) that press `V` from each existing state and `spray` the cursor before drawing across the full `stressGeoms` matrix — the same watchdog/panic-recover harness, now covering the new SELECT draw branches.
+- Full gate green: `go test ./...`, `go vet ./...`, `staticcheck ./...`, `go build ./...`, `gofmt -l` clean (pre-existing unrelated `gofmt` findings in `internal/model` and `vendor/` untouched).
+- Files: `internal/ui/selection.go`, `internal/ui/calendarview.go`, `internal/ui/timegridview.go`, `internal/ui/app.go`, `internal/ui/render.go`, `internal/ui/displaystress_test.go`; new `internal/ui/selectionvisuals_test.go`.
+
 ## 2026-07-23 — Tests: SELECT range boundary coverage (days/drill reversed, single, cap)
 
 - **Coverage gap** (reviewer-found on Task 2's own tests): `treeRange` had reversed-cursor and single-item boundary cases (`TestTreeRange`), but `daysRange`/`drillRange` only had a forward-only happy-path case each — no reversed direction, no single-item/single-day, and no test of the `maxSelectDays` cap.

@@ -92,20 +92,71 @@ func (a *app) exitSelect() {
 	a.syncSelectionVisuals()
 }
 
+// dayInRange reports whether day falls inside [anchor, cursor] (either order).
+// A zero anchor means no active day-range.
+func dayInRange(anchor, cursor, day time.Time) bool {
+	if anchor.IsZero() {
+		return false
+	}
+	from, to := anchor, cursor
+	if from.After(to) {
+		from, to = to, from
+	}
+	d := model.DayStart(day)
+	return !d.Before(model.DayStart(from)) && !d.After(model.DayStart(to))
+}
+
+// syncTreeSelection re-styles the visible tree rows to mark the range. In-range
+// rows carry the theme-adaptive selectionStyle (reverse video — the legibility
+// guardrail: never a hardcoded color pair on the terminal-default background).
+func (a *app) syncTreeSelection() {
+	inRange := map[string]bool{}
+	if a.selecting && a.selContext() == selTree {
+		for _, t := range a.treeRange() {
+			inRange[t.uid] = true
+		}
+	}
+	for _, n := range visibleTreeNodes(a.tree.GetRoot()) {
+		td, ok := n.GetReference().(*model.Todo)
+		if !ok {
+			continue
+		}
+		if inRange[td.UID] {
+			n.SetTextStyle(selectionStyle)
+		} else {
+			n.SetTextStyle(tcell.StyleDefault)
+		}
+	}
+}
+
 // syncSelectionVisuals refreshes everything that displays the selection and
 // validates the anchor: if the range can no longer be derived (the anchor was
 // deleted remotely, the drilled day's items changed), SELECT exits with a
-// flash rather than acting on a guess. Event-driven only — never a draw path.
+// flash rather than acting on a guess. Event-driven only — never a draw path;
+// the grids only need the plain anchor fields pushed in (they derive the other
+// end of the range from their own selected/eventIndex at draw time), so
+// per-move sync work here is limited to the tree restyle and the status count.
 func (a *app) syncSelectionVisuals() {
 	if a.selecting && a.selRange() == nil {
 		a.selecting = false
 		a.selAnchorUID = ""
 		a.selAnchorOcc = time.Time{}
 		a.selAnchorDay = time.Time{}
-		a.updateStatus()
 		a.flash("Selection cleared — the items changed")
-		return
 	}
+	a.month.selDayAnchor, a.timegrid.selDayAnchor = time.Time{}, time.Time{}
+	a.month.selAnchorUID, a.timegrid.selAnchorUID = "", ""
+	a.month.selAnchorOcc, a.timegrid.selAnchorOcc = time.Time{}, time.Time{}
+	if a.selecting {
+		switch a.selContext() {
+		case selDays:
+			a.month.selDayAnchor, a.timegrid.selDayAnchor = a.selAnchorDay, a.selAnchorDay
+		case selDrill:
+			a.month.selAnchorUID, a.timegrid.selAnchorUID = a.selAnchorUID, a.selAnchorUID
+			a.month.selAnchorOcc, a.timegrid.selAnchorOcc = a.selAnchorOcc, a.selAnchorOcc
+		}
+	}
+	a.syncTreeSelection()
 	a.updateStatus()
 }
 
