@@ -4,6 +4,14 @@
 
 ---
 
+## 2026-07-24 — v1.5.0 phase 1: spec-diff sweep complete; claim inventory committed
+
+- **The exhaustive two-direction spec↔program diff ran** (design phase 1): 962 behavioral claims extracted from main.md's design sections, README.md, and the `:help` cheat sheet, each verified against the code by a parallel agent fan-out; a six-lens reverse sweep hunted undocumented user-visible behavior; every claimed divergence was adversarially re-verified by an independent skeptic before recording.
+- **Results**: 940 claims hold · **21 confirmed divergences pending owner triage** · 1 unverifiable (a purpose statement). Six verifier-claimed divergences were skeptic-refuted and recorded as holds. The reverse sweep produced 30 doc-gap/behavior findings (6 undocumented `:` command aliases, undocumented CLI flags/config semantics, missing mouse/mode-swallow docs, and a few candidate code fixes), queued for the same triage.
+- **Operational note**: the run hit the session usage limit mid-refute; a workflow resume then cache-missed the whole verify layer (verify prompts embed extractor output, which re-serialized differently on restore) and was stopped early — the 14 outstanding skeptics re-ran as a small self-contained workflow instead. Two verifier verdict-flips from the partial re-run (KEY-047, TSK-13) were adjudicated the same way (both confirmed).
+- **Deliverable**: `docs/audit/specdiff/CLAIMS.md` (new) — the full 962-row ledger with per-region tables, statuses, and evidence. No code or doc fixes in this increment: divergences land only after per-finding owner triage, per the design.
+- Files: `docs/audit/specdiff/CLAIMS.md` (new), `log.md`.
+
 ## 2026-07-24 — Whole-branch review of the v1.5.0 step-0/gap-closer arc; COVERAGE.md phase-3 note widened
 
 - **Final whole-branch review** (base `82e68d8` → `046443c`, all five plan tasks): verdict **ready to merge**, no Critical or Important findings. The race-test invariant, the accordion's interaction with every adjacent mode/resize path, and both `moveSubtreeOps` callers' rollback behavior were traced explicitly and held.
