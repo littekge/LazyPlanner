@@ -130,24 +130,41 @@ type app struct {
 	// so a cancel can delete the new series and restore the master.
 	grabSplitMaster     string
 	grabSplitMasterPrev *store.Resource
-	mode                int
-	viewMode            int
-	anchor              time.Time
-	weekStartMonday     bool
-	clock24             bool // time_format: 24h clock when true
-	dateISO             bool // date_format: ISO (2006-01-02) when true, else US
-	showCompleted       bool
-	tasklistIDs         []string            // calendar ids parallel to the tasklists panel
-	calColors           map[string]calColor // calendar id → resolved server color; mappable only
-	itemColors          map[string]calColor // event/todo UID → its calendar's color
-	colorMode           colorMode           // how server colors are rendered (auto/16/off)
-	folders             map[string]bool     // task UIDs that are folders (≥1 incomplete child); global, for tree + calendar + agenda markers
-	treeListID          string              // calendar id the tree currently shows (to detect list changes)
-	zoomUID             string              // task UID the tree is re-rooted at (> zoom-in / < zoom-out); "" = list root
-	suspendTree         bool                // ignore tasklist change events while the panel is rebuilt
-	stickyDone          map[string]bool     // tasks completed while hidden, kept visible until the list is left
-	focusStack          []focusState        // pre-modal focus states, one per open modal (supports nesting, e.g. a color picker over the calendar form)
-	formDrill           bool                // the front caretForm modal is in DRILL (editing a field); surfaces in the mode badge
+
+	// Bulk grab (m in SELECT): a uniform date-shift over the selected items —
+	// single-item grab's per-type keys (events ±hour, tasks ±day) are incoherent
+	// over a mixed set, so bulk h/l = ±1 day and j/k = ±1 week for everything,
+	// times of day untouched. Non-empty bulkGrab routes grab keys to the bulk
+	// handler; bulkGrabMoved gates the undo push (Enter with no nudge = no-op).
+	bulkGrab      []bulkGrabItem
+	bulkGrabMoved bool
+	// Pre-grab drill snapshot (calendar-drilled SELECT only): a nudge that moves
+	// every grabbed item off the drilled day empties it, and reDrill silently
+	// un-drills when there's nothing left to cycle through. Captured once at
+	// startBulkGrab so cancelBulkGrab can restore the exact pre-grab view once
+	// the data itself is back, instead of trusting the grid's own drill state —
+	// which may already be the collapsed one from mid-grab.
+	bulkGrabDay     time.Time
+	bulkGrabIdx     int
+	bulkGrabDrilled bool
+	mode            int
+	viewMode        int
+	anchor          time.Time
+	weekStartMonday bool
+	clock24         bool // time_format: 24h clock when true
+	dateISO         bool // date_format: ISO (2006-01-02) when true, else US
+	showCompleted   bool
+	tasklistIDs     []string            // calendar ids parallel to the tasklists panel
+	calColors       map[string]calColor // calendar id → resolved server color; mappable only
+	itemColors      map[string]calColor // event/todo UID → its calendar's color
+	colorMode       colorMode           // how server colors are rendered (auto/16/off)
+	folders         map[string]bool     // task UIDs that are folders (≥1 incomplete child); global, for tree + calendar + agenda markers
+	treeListID      string              // calendar id the tree currently shows (to detect list changes)
+	zoomUID         string              // task UID the tree is re-rooted at (> zoom-in / < zoom-out); "" = list root
+	suspendTree     bool                // ignore tasklist change events while the panel is rebuilt
+	stickyDone      map[string]bool     // tasks completed while hidden, kept visible until the list is left
+	focusStack      []focusState        // pre-modal focus states, one per open modal (supports nesting, e.g. a color picker over the calendar form)
+	formDrill       bool                // the front caretForm modal is in DRILL (editing a field); surfaces in the mode badge
 
 	// SELECT mode (V): a contiguous multi-select range anchored where the mode
 	// was entered. The selected set is always DERIVED anchor→cursor in visible
@@ -741,6 +758,9 @@ func (a *app) globalKeys(ev *tcell.EventKey) *tcell.EventKey {
 	// Grab mode is modal too: hjkl edit the grabbed item's timing, Enter keeps,
 	// Esc reverts. It claims every key so nothing leaks to the views.
 	if a.grabbing {
+		if len(a.bulkGrab) > 0 {
+			return a.handleBulkGrabKey(ev)
+		}
 		return a.handleGrabKey(ev)
 	}
 	// The pane-resize sub-mode (Ctrl-W) is modal: ←/→ size the overview, H/L the

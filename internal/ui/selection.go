@@ -143,7 +143,16 @@ func (a *app) syncTreeSelection() {
 // in the same call — the user would never see it.
 func (a *app) syncSelectionVisuals() {
 	cleared := false
-	if a.selecting && a.selRange() == nil {
+	// A bulk grab's own refresh calls (each nudge, and cancel's revert) go
+	// through the same refresh()/refreshKeepingDrill() this reads its live
+	// state from, and refresh() ends with its own call to this function. A
+	// nudge that empties the drilled day leaves the grid transiently un-drilled
+	// until the caller redrills it — reading that as "the range vanished"
+	// would kill the selection mid-grab (or strand a cancel out of SELECT)
+	// over a rebuild-ordering artifact, not an actual change to what's
+	// selected. Skip the clearing check for that window; bulkGrab only empties
+	// once the grid has already been redrilled onto the final position.
+	if a.selecting && len(a.bulkGrab) == 0 && a.selRange() == nil {
 		a.selecting = false
 		a.selAnchorUID = ""
 		a.selAnchorOcc = time.Time{}
@@ -339,7 +348,7 @@ func (a *app) handleSelectKey(ev *tcell.EventKey) *tcell.EventKey {
 			a.bulkYank(false)
 			return nil
 		case r == 'm':
-			a.flash("Bulk grab lands in a later build step")
+			a.startBulkGrab()
 			return nil
 		}
 	}
