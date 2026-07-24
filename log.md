@@ -4,6 +4,28 @@
 
 ---
 
+## 2026-07-24 — v1.5.0 phase 2 close-out bookkeeping
+
+- Phase 2 (the key×context consistency matrix) is complete — 529 verified cells, 20 owner-triaged
+  divergences all fixed, plus the `j`/`k`→`motionArrow` refactor. Updated `main.md`'s v1.5.0 Build
+  Plan status line in place to record phase 2 as shipped; phase 3 (deep audit) remains pending.
+- Re-checked the deferred "q-inert-in-forms doc scoping" item from `notes.md`: verified against the
+  code (`app.go`'s `globalKeys` gates the top-level quit-on-`q` behind `!a.modalOpen()`; `forms.go`'s
+  `navKey` handles only `KeyEscape`, never `'q'`, so a form's focused text field receives `q` as
+  literal text; the account picker (`command.go`), color picker (`colorpicker.go`), conflicts list
+  (`conflicts.go`), and help modal (`help.go`) each explicitly close on `q`). Both `README.md:149`
+  and `help.go:30` already state the "closes a non-form dialog — inert inside a data-entry form"
+  scoping correctly; no doc change was needed.
+- `notes.md` trimmed to just what remains: phase 3 (deep audit) and the release-gate checklist,
+  with "key×context matrix reconciled" flipped ✗→✓ (the only remaining ✗ is "≥1 audit pass").
+- `docs/audit/COVERAGE.md`: added brief phase-2 context notes to the "SELECT mode + bulk ops + bulk
+  grab" row (bulk-grab axis alignment, J/K todo-grab flash — still `never` for a real audit pass)
+  and the "UI input handlers" row (q-close on the account/color pickers, undo-drill preservation,
+  the motionArrow DRY refactor) so phase 3 has context on what phase 2 already touched.
+- Files: `main.md`, `notes.md`, `docs/audit/COVERAGE.md`, `log.md`. No code changed.
+- Gate: `go build ./...`, `go test ./...` both clean (docs-only change).
+- No issues.
+
 ## 2026-07-24 — Fix: conflicts modal title advertises Esc/q (follow-up to Batch C/D finding #18)
 
 - The v1.5.0 phase 2 doc batch (Batch C/D, finding #18) updated the `:help` line to advertise that the conflicts list closes on "Esc/q" but left the conflicts modal's title string advertising only "Esc" — an inconsistency now fixed.
