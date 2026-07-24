@@ -80,10 +80,43 @@ func (a *app) startBulkGrab() {
 	a.flash(a.bulkGrabStatus())
 }
 
+// eventBulkNudgeDays maps a grab motion key to the number of days it shifts an
+// event's start (and end, if any): h/l ±1 day, j/k ±1 week. Single-item grab
+// has no week-axis analog for events (its j/k nudges by the HOUR in a timed
+// calendar view instead), so this mapping is bulk grab's own; it is preserved
+// unchanged by the v1.5.0 phase-2 finding #4 fix, which only realigned the
+// task axis (taskNudgeDays, in grab.go) with single-item grab.
+var eventBulkNudgeDays = map[rune]int{'h': -1, 'l': 1, 'j': 7, 'k': -7}
+
+// bulkGrabCounts reports how many grabbed items are tasks vs. events, used to
+// pick wording for the status/shift flashes that matches whichever axis
+// mapping(s) are actually in play for the current selection.
+func (a *app) bulkGrabCounts() (nTodo, nEvent int) {
+	for _, it := range a.bulkGrab {
+		if it.isTodo {
+			nTodo++
+		} else {
+			nEvent++
+		}
+	}
+	return nTodo, nEvent
+}
+
 // bulkGrabStatus describes the bulk-grab controls, shared by the entry flash and
-// the persistent help bar (updateStatus) so the two can't drift.
+// the persistent help bar (updateStatus) so the two can't drift. Tasks and
+// events shift on opposite axes (taskNudgeDays vs. eventBulkNudgeDays above),
+// so a mixed selection names both rather than asserting a single mapping that
+// wouldn't hold for half the selection.
 func (a *app) bulkGrabStatus() string {
-	return fmt.Sprintf("GRAB ×%d · h/l ±day · j/k ±week · Enter keep · Esc cancel", len(a.bulkGrab))
+	nTodo, nEvent := a.bulkGrabCounts()
+	switch {
+	case nEvent == 0:
+		return fmt.Sprintf("GRAB ×%d · j/k ±day · h/l ±week · Enter keep · Esc cancel", nTodo)
+	case nTodo == 0:
+		return fmt.Sprintf("GRAB ×%d · h/l ±day · j/k ±week · Enter keep · Esc cancel", nEvent)
+	default:
+		return fmt.Sprintf("GRAB ×%d · tasks j/k ±day·h/l ±week, events h/l ±day·j/k ±week · Enter keep · Esc cancel", len(a.bulkGrab))
+	}
 }
 
 // handleBulkGrabKey consumes every key while a bulk grab is active, mirroring
@@ -95,23 +128,17 @@ func (a *app) handleBulkGrabKey(ev *tcell.EventKey) *tcell.EventKey {
 	case tcell.KeyEscape:
 		a.cancelBulkGrab()
 	case tcell.KeyLeft:
-		a.bulkGrabShift(-1)
+		a.bulkGrabShift('h')
 	case tcell.KeyRight:
-		a.bulkGrabShift(1)
+		a.bulkGrabShift('l')
 	case tcell.KeyDown:
-		a.bulkGrabShift(7)
+		a.bulkGrabShift('j')
 	case tcell.KeyUp:
-		a.bulkGrabShift(-7)
+		a.bulkGrabShift('k')
 	case tcell.KeyRune:
 		switch ev.Rune() {
-		case 'h':
-			a.bulkGrabShift(-1)
-		case 'l':
-			a.bulkGrabShift(1)
-		case 'j':
-			a.bulkGrabShift(7)
-		case 'k':
-			a.bulkGrabShift(-7)
+		case 'h', 'l', 'j', 'k':
+			a.bulkGrabShift(ev.Rune())
 		case 'J', 'K':
 			a.flash("Resize doesn't apply to a multi-selection")
 		}
@@ -119,13 +146,16 @@ func (a *app) handleBulkGrabKey(ev *tcell.EventKey) *tcell.EventKey {
 	return nil
 }
 
-// bulkGrabShift applies one ±days nudge to every grabbed item, committing each
-// version-checked. A mid-nudge failure or stale item reverts THIS nudge's
-// partial writes (our own writes an instant ago) and — for stale — ends the
-// grab keeping earlier completed nudges, mirroring abortGrabStale's rule of
-// never force-restoring over a server change.
-func (a *app) bulkGrabShift(days int) {
+// bulkGrabShift applies one motion to every grabbed item, committing each
+// version-checked. Tasks and events shift by different day counts for the same
+// key (taskNudgeDays vs. eventBulkNudgeDays) — matching single-item grab's task
+// axis while leaving its (unrelated) event behavior alone. A mid-nudge failure
+// or stale item reverts THIS nudge's partial writes (our own writes an instant
+// ago) and — for stale — ends the grab keeping earlier completed nudges,
+// mirroring abortGrabStale's rule of never force-restoring over a server change.
+func (a *app) bulkGrabShift(r rune) {
 	ctx := context.Background()
+	todoDays, eventDays := taskNudgeDays[r], eventBulkNudgeDays[r]
 	var nudged []func()
 	revertNudge := func() {
 		for i := len(nudged) - 1; i >= 0; i-- {
@@ -149,7 +179,7 @@ func (a *app) bulkGrabShift(days int) {
 				return
 			}
 			d := draftFromTodo(td)
-			d.Due = d.Due.AddDate(0, 0, days)
+			d.Due = d.Due.AddDate(0, 0, todoDays)
 			newObj, err = model.EditTodo(loc.Object, it.uid, d, a.now, a.loc)
 		} else {
 			ev := findEvent(loc.Object, it.uid)
@@ -159,9 +189,9 @@ func (a *app) bulkGrabShift(days int) {
 				return
 			}
 			d := draftFromEvent(ev)
-			d.Start = d.Start.AddDate(0, 0, days)
+			d.Start = d.Start.AddDate(0, 0, eventDays)
 			if !d.End.IsZero() {
-				d.End = d.End.AddDate(0, 0, days)
+				d.End = d.End.AddDate(0, 0, eventDays)
 			}
 			newObj, err = model.EditEvent(loc.Object, it.uid, d, a.now, a.loc)
 		}
@@ -186,7 +216,17 @@ func (a *app) bulkGrabShift(days int) {
 	}
 	a.bulkGrabMoved = true
 	a.refreshKeepingDrill("")
-	a.flash(fmt.Sprintf("Shifted %d item(s) %+d day(s) · Enter keep · Esc cancel", len(a.bulkGrab), days))
+	nTodo, nEvent := a.bulkGrabCounts()
+	var msg string
+	switch {
+	case nEvent == 0:
+		msg = fmt.Sprintf("Shifted %d task(s) %+d day(s) · Enter keep · Esc cancel", nTodo, todoDays)
+	case nTodo == 0:
+		msg = fmt.Sprintf("Shifted %d event(s) %+d day(s) · Enter keep · Esc cancel", nEvent, eventDays)
+	default:
+		msg = fmt.Sprintf("Shifted %d item(s): tasks %+dd, events %+dd · Enter keep · Esc cancel", len(a.bulkGrab), todoDays, eventDays)
+	}
+	a.flash(msg)
 }
 
 // abortBulkGrabStale ends the grab when an item changed underneath (a sync

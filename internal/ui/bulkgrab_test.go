@@ -77,6 +77,41 @@ func TestBulkGrabShiftsMixed(t *testing.T) {
 	}
 }
 
+// TestBulkGrabTaskAxisMatchesSingleItem: bulk-grabbing a selection of tasks
+// shifts the due date by the SAME axis mapping as single-item grab — j/k ±1
+// day, h/l ±1 week (README.md:130) — not bulk grab's old (opposite) task
+// mapping of h/l ±day, j/k ±week.
+func TestBulkGrabTaskAxisMatchesSingleItem(t *testing.T) {
+	now := time.Date(2026, 7, 6, 9, 30, 0, 0, time.UTC)
+	a := newRootedTestApp(t, now)
+	a.setMode(modeCalendar)
+	task := putTodo(t, a, testCalID(a), "", "due today", now, true)
+	a.refresh("")
+	a.month.reDrill(model.DayStart(now), 0)
+	a.setFocus(a.calendarPrimitive())
+	a.enterSelect()
+	a.startBulkGrab()
+	if !a.grabbing || len(a.bulkGrab) != 1 {
+		t.Fatalf("grabbing=%v n=%d, want true/1", a.grabbing, len(a.bulkGrab))
+	}
+
+	a.handleBulkGrabKey(tcell.NewEventKey(tcell.KeyRune, 'j', tcell.ModNone))
+	loc, _ := a.store.Locate(task)
+	td := findTodo(loc.Object, task)
+	wantAfterJ := now.AddDate(0, 0, 1)
+	if td == nil || !td.Due.Equal(wantAfterJ) {
+		t.Fatalf("after j: due = %v, want %v (+1 day, matching single-item grab's j/k axis)", td.Due, wantAfterJ)
+	}
+
+	a.handleBulkGrabKey(tcell.NewEventKey(tcell.KeyRune, 'l', tcell.ModNone))
+	loc, _ = a.store.Locate(task)
+	td = findTodo(loc.Object, task)
+	wantAfterL := wantAfterJ.AddDate(0, 0, 7)
+	if td == nil || !td.Due.Equal(wantAfterL) {
+		t.Fatalf("after l: due = %v, want %v (+1 week, matching single-item grab's h/l axis)", td.Due, wantAfterL)
+	}
+}
+
 // TestBulkGrabEscRevertsToSelect: Esc restores every pre-grab snapshot and
 // returns to SELECT with the range intact (retry-friendly), no undo step.
 func TestBulkGrabEscRevertsToSelect(t *testing.T) {

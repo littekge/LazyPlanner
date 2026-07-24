@@ -20,6 +20,12 @@ import (
 
 const grabHourStep = time.Hour
 
+// taskNudgeDays maps a grab motion key to the number of days it shifts a
+// task's due date: j/k ±1 day, h/l ±1 week (README.md:130 — the canonical
+// mapping). Bulk grab reuses this exact map for its own task shifts so the
+// two can never drift back out of sync (v1.5.0 phase-2 finding #4).
+var taskNudgeDays = map[rune]int{'j': 1, 'k': -1, 'l': 7, 'h': -7}
+
 // startGrab enters grab mode on the current target. Events and dated tasks are
 // grabbable; an undated task is skipped with a hint. A recurring event first
 // prompts for scope (this occurrence / this & future / all) via the picker.
@@ -216,7 +222,7 @@ func (a *app) grabNudge(r rune) {
 			a.abortGrabStale()
 			return
 		}
-		days := map[rune]int{'j': 1, 'k': -1, 'l': 7, 'h': -7}[r]
+		days := taskNudgeDays[r]
 		if days == 0 {
 			return
 		}

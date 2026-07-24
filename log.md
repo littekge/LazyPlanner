@@ -4,6 +4,15 @@
 
 ---
 
+## 2026-07-24 — v1.5.0 phase 2: bulk grab's task date-shift axis now matches single-item grab (matrix finding #4)
+
+- Confirmed the inconsistency: single-item grab (`grabNudge`, `internal/ui/grab.go`) nudges a task's due date `j`/`k` ±1 day, `h`/`l` ±1 week (README.md:130, the canonical mapping). Bulk grab (`bulkGrabShift`, `internal/ui/bulkgrab.go`) applied the SAME raw `days` delta to every grabbed item regardless of type — `h`/`l` ±1 day, `j`/`k` ±1 week — so a bulk-grabbed task shifted on the opposite axis from a single-item-grabbed one.
+- Bulk grab also shifts events in the same call, and single-item grab has no week-axis analog for events (its `j`/`k` nudges by the hour in a timed calendar view instead) — so there was nothing to realign there. Extracted the task mapping into a shared `taskNudgeDays` map (`internal/ui/grab.go`), reused by both `grabNudge` and the new `bulkGrabShift(r rune)` (now keyed on the rune rather than a pre-computed day count) so the two can't drift apart again; added a sibling `eventBulkNudgeDays` map in `bulkgrab.go` holding bulk grab's existing (unchanged) event mapping, so a bulk grab now applies a per-item-type day delta for the same keypress.
+- `bulkGrabStatus` and the post-shift flash now name both axes when a selection mixes tasks and events, rather than asserting one mapping that would be wrong for half the selection.
+- TDD: `TestBulkGrabTaskAxisMatchesSingleItem` (`internal/ui/bulkgrab_test.go`) RED against the unmodified bulk mapping (`j` shifted a task's due by a week, not a day), GREEN after the fix; existing `TestBulkGrabShiftsMixed`, `TestBulkGrabHelpBarShowsShiftGranularity` stay green (their shifts happen to sum to the same total either way).
+- Files: `internal/ui/grab.go`, `internal/ui/bulkgrab.go`, `internal/ui/bulkgrab_test.go`.
+- Full gate green (`go test ./...`, `go vet ./...`, `staticcheck ./...`, `go build ./...`); `gofmt` clean.
+
 ## 2026-07-24 — v1.5.0 phase 2: deleteCollection's pane-switch hint names the current c/t keys (matrix finding #20)
 
 - `deleteCollection` (`internal/ui/calendar.go`)'s flash for deleting outside the Calendars/Tasks panes read `"Switch to Calendars (1) or Tasks (2) to delete a list"` — `1`/`2` were the pane-focus keys before panel focus moved onto `c`/`t`/`a` (off the number row, freeing digits for vim counts). The stale hint pointed users at keys that no longer do anything.
