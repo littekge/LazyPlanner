@@ -692,6 +692,9 @@ func (a *app) updateStatus() {
 	if n := len(a.store.LoadErrors()); n > 0 {
 		left += fmt.Sprintf("  [red]!%d load error(s)[-]", n)
 	}
+	if a.selecting {
+		left = fmt.Sprintf("%d selected", len(a.selRange())) + " · " + left
+	}
 	a.statusLeft.SetText(left)
 
 	a.renderSyncStatus()

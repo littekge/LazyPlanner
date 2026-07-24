@@ -92,11 +92,144 @@ func (a *app) exitSelect() {
 	a.syncSelectionVisuals()
 }
 
-// syncSelectionVisuals refreshes everything that displays the selection.
-// Extended by later build steps (range validation, view range fields); it is
-// always event-driven — never called from a draw path.
+// syncSelectionVisuals refreshes everything that displays the selection and
+// validates the anchor: if the range can no longer be derived (the anchor was
+// deleted remotely, the drilled day's items changed), SELECT exits with a
+// flash rather than acting on a guess. Event-driven only — never a draw path.
 func (a *app) syncSelectionVisuals() {
+	if a.selecting && a.selRange() == nil {
+		a.selecting = false
+		a.selAnchorUID = ""
+		a.selAnchorOcc = time.Time{}
+		a.selAnchorDay = time.Time{}
+		a.updateStatus()
+		a.flash("Selection cleared — the items changed")
+		return
+	}
 	a.updateStatus()
+}
+
+// maxSelectDays caps a calendar day-range so f/b can't build a multi-year
+// span whose materialization (dayItems per day) would stall the UI.
+const maxSelectDays = 366
+
+// selRange materializes the selection into targets in visible order. nil means
+// the anchor can no longer be resolved (deleted remotely, day items changed) —
+// callers exit SELECT rather than guess.
+func (a *app) selRange() []editTarget {
+	if !a.selecting {
+		return nil
+	}
+	switch a.selContext() {
+	case selTree:
+		return a.treeRange()
+	case selDays:
+		return a.daysRange()
+	case selDrill:
+		return a.drillRange()
+	}
+	return nil
+}
+
+// treeRange walks the visible tree rows (display order, collapsed subtrees
+// excluded — fold keys are inert while selecting) and slices anchor→cursor.
+func (a *app) treeRange() []editTarget {
+	var rows []*model.Todo
+	ai, ci := -1, -1
+	cur := a.tree.GetCurrentNode()
+	for _, n := range visibleTreeNodes(a.tree.GetRoot()) {
+		td, ok := n.GetReference().(*model.Todo)
+		if !ok {
+			continue
+		}
+		if td.UID == a.selAnchorUID {
+			ai = len(rows)
+		}
+		if n == cur {
+			ci = len(rows)
+		}
+		rows = append(rows, td)
+	}
+	if ai < 0 || ci < 0 {
+		return nil
+	}
+	if ai > ci {
+		ai, ci = ci, ai
+	}
+	out := make([]editTarget, 0, ci-ai+1)
+	for _, td := range rows[ai : ci+1] {
+		out = append(out, editTarget{isTodo: true, uid: td.UID, occStart: td.Due, allDay: td.DueAllDay, recurring: td.Recurring})
+	}
+	return out
+}
+
+// daysRange materializes every visible item on the selected date interval.
+// Hidden calendars are excluded (dayItems already filters them); a multi-day
+// event spanning several selected days is deduped to one target.
+func (a *app) daysRange() []editTarget {
+	g, ok := a.calendarPrimitive().(calGrid)
+	if !ok || a.selAnchorDay.IsZero() {
+		return nil
+	}
+	day, _, _ := g.drillState()
+	from, to := a.selAnchorDay, model.DayStart(day)
+	if from.After(to) {
+		from, to = to, from
+	}
+	if to.Sub(from) > maxSelectDays*24*time.Hour {
+		to = from.AddDate(0, 0, maxSelectDays)
+	}
+	var out []editTarget
+	seen := map[string]bool{}
+	for d := from; !d.After(to); d = d.AddDate(0, 0, 1) {
+		for _, it := range a.dayItems(d) {
+			t := targetFromItem(it)
+			if seen[t.uid] {
+				continue
+			}
+			seen[t.uid] = true
+			out = append(out, t)
+		}
+	}
+	return out
+}
+
+// drillRange slices the drilled day's item list anchor→cursor in the same
+// linear order Enter cycles (both grids drill the model.DayAgenda order).
+func (a *app) drillRange() []editTarget {
+	g, ok := a.calendarPrimitive().(calGrid)
+	if !ok {
+		return nil
+	}
+	day, drilled, idx := g.drillState()
+	if !drilled {
+		return nil
+	}
+	items := a.dayItems(day)
+	ai := itemIndex(items, a.selAnchorUID, a.selAnchorOcc)
+	if ai < 0 || idx < 0 || idx >= len(items) {
+		return nil
+	}
+	ci := idx
+	if ai > ci {
+		ai, ci = ci, ai
+	}
+	out := make([]editTarget, 0, ci-ai+1)
+	for _, it := range items[ai : ci+1] {
+		out = append(out, targetFromItem(it))
+	}
+	return out
+}
+
+// itemIndex finds the item with uid at occStart in a day's agenda order, or -1.
+func itemIndex(items []model.AgendaItem, uid string, occStart time.Time) int {
+	for i, it := range items {
+		t := targetFromItem(it)
+		if t.uid == uid && t.occStart.Equal(occStart) {
+			return i
+		}
+	}
+	return -1
 }
 
 // handleSelectKey routes keys while SELECT is active. Motion returns the event

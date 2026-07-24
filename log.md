@@ -4,6 +4,16 @@
 
 ---
 
+## 2026-07-23 — v1.4.0: SELECT range derivation
+
+- Task 2 of the v1.4.0 SELECT-mode feature: `a.selRange() []editTarget` materializes the anchor→cursor range for each of the three SELECT contexts, and `syncSelectionVisuals` gains an anchor-validation guard so a range that can no longer be derived exits SELECT instead of acting on a guess.
+- `internal/ui/selection.go`: `treeRange()` slices the visible tree rows (`visibleTreeNodes`) between the anchor UID and the cursor node, either direction, inclusive. `daysRange()` walks the selected date interval day-by-day (`a.dayItems`), deduping a multi-day event to one target and capping the span at the new `maxSelectDays = 366` so `f`/`b` can't build a multi-year materialization that stalls the UI. `drillRange()` slices the drilled day's item list between the anchor (found by the new `itemIndex` helper, matching on UID + occurrence start) and the cursor index. `selRange()` dispatches on `selContext()`; nil means the anchor is unresolvable (deleted remotely, or — for a day range — no items in the interval) and every caller (`syncSelectionVisuals`) treats nil as "exit SELECT", never "empty result to act on".
+- `syncSelectionVisuals` (`selection.go`) now validates: `a.selecting && a.selRange() == nil` clears every anchor field, updates the status line, and flashes "Selection cleared — the items changed" instead of silently doing nothing. Wired as the last line of `refresh(selUID)` (`edit.go`) so a background sync's refresh is what actually catches a remotely-deleted anchor.
+- `updateStatus` (`render.go`) prefixes the status line with `"N selected · "` while selecting, `N = len(a.selRange())`.
+- **TDD**: `internal/ui/selection_test.go` extended — `TestTreeRange` (forward/reversed/single-item ranges over a 5-task tree), `TestTreeRangeAnchorVanished` (a store-level delete + `refresh` exits SELECT), `TestDaysRange` (a 3-day range with a spanning event deduped to one target), `TestDrillRange` (drilled-day anchor→cursor slice), and `TestSelectRangeSyncRace` (500 `selRange()` calls against a goroutine repeatedly deleting/recreating one resource via raw store calls, run under `-race` — never panics, never returns a target for the mid-deletion resource). RED confirmed (`undefined: a.selRange`) before implementation, GREEN after; race detector clean.
+- Full gate green: `go test ./...`, `go vet ./...`, `staticcheck ./...`, `go build ./...`, `gofmt -l` clean.
+- Files: `internal/ui/selection.go`, `internal/ui/selection_test.go`, `internal/ui/edit.go`, `internal/ui/render.go`.
+
 ## 2026-07-23 — Bugfix: modified arrow keys leaked through SELECT key layer
 
 - **Bug** (reviewer-found on Task 1): `handleSelectKey`'s arrow-key case matched on `ev.Key()` alone, so a modified arrow — Ctrl+Left/Ctrl+Right — passed through as "motion" while selecting. `globalKeys` then fell past the vim-count/`motionArrow` path (no count, not a letter) onto the pre-existing Ctrl-gated resize handlers, calling `a.resizeLeft(...)` — mutating the pane layout and persisting state to disk mid-select, contradicting SELECT's swallow-everything contract.

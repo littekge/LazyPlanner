@@ -780,6 +780,7 @@ func (a *app) refresh(selUID string) {
 		a.buildAgendaCenter()
 	}
 	a.updateStatus()
+	a.syncSelectionVisuals()
 }
 
 // currentTreeUID returns the UID of the task currently highlighted in the tree,

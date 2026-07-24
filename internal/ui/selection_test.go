@@ -1,6 +1,9 @@
 package ui
 
 import (
+	"context"
+	"fmt"
+	"sync"
 	"testing"
 	"time"
 
@@ -209,5 +212,165 @@ func TestSelectEscKeepsDrill(t *testing.T) {
 	}
 	if !a.gridDrilled() {
 		t.Fatal("Esc from SELECT must land back in DRILL, not day navigation")
+	}
+}
+
+// TestTreeRange: anchor→cursor over visible rows, inclusive, either direction;
+// nil when the anchor vanished (e.g. a background sync deleted it).
+func TestTreeRange(t *testing.T) {
+	now := time.Date(2026, 7, 5, 9, 0, 0, 0, time.UTC)
+	a := newRootedTestApp(t, now)
+	a.setMode(modeTasks)
+	var uids []string
+	for _, s := range []string{"A", "B", "C", "D", "E"} {
+		uids = append(uids, putTodo(t, a, testCalID(a), "", "task "+s, now, true))
+	}
+	a.refresh(uids[0])
+	a.setFocus(a.tree)
+
+	// Visible order is the smart sort (same due date → title order A..E).
+	a.selectTreeByUID(uids[1]) // anchor at B
+	a.enterSelect()
+	a.selectTreeByUID(uids[3]) // cursor at D
+	got := a.selRange()
+	if len(got) != 3 || got[0].uid != uids[1] || got[2].uid != uids[3] {
+		t.Fatalf("forward range = %+v, want B..D", got)
+	}
+
+	// Reversed: cursor above the anchor selects the same rows.
+	a.selectTreeByUID(uids[0])
+	got = a.selRange()
+	if len(got) != 2 || got[0].uid != uids[0] || got[1].uid != uids[1] {
+		t.Fatalf("reversed range = %+v, want A..B", got)
+	}
+
+	// Single-item range: cursor on the anchor.
+	a.selectTreeByUID(uids[1])
+	if got = a.selRange(); len(got) != 1 || got[0].uid != uids[1] {
+		t.Fatalf("single range = %+v, want just B", got)
+	}
+	a.exitSelect()
+}
+
+// TestTreeRangeAnchorVanished: after the anchor's task is gone, selRange is nil
+// and syncSelectionVisuals (run by refresh) exits SELECT with a flash.
+func TestTreeRangeAnchorVanished(t *testing.T) {
+	now := time.Date(2026, 7, 5, 9, 0, 0, 0, time.UTC)
+	a := newRootedTestApp(t, now)
+	a.setMode(modeTasks)
+	u1 := putTodo(t, a, testCalID(a), "", "task A", now, true)
+	u2 := putTodo(t, a, testCalID(a), "", "task B", now, true)
+	a.refresh(u1)
+	a.setFocus(a.tree)
+	a.selectTreeByUID(u1)
+	a.enterSelect()
+
+	// Simulate a remote deletion landing via sync: delete + refresh.
+	loc, _ := a.store.Locate(u1)
+	if err := a.store.Delete(context.Background(), loc.CalID, loc.Name); err != nil {
+		t.Fatal(err)
+	}
+	a.refresh(u2)
+	if a.selecting {
+		t.Fatal("SELECT must exit when the anchor vanishes")
+	}
+}
+
+// TestDaysRange: the date interval materializes every visible item once — a
+// multi-day event spanning several selected days is deduped to one target.
+func TestDaysRange(t *testing.T) {
+	now := time.Date(2026, 7, 6, 9, 0, 0, 0, time.UTC) // Monday
+	a := newRootedTestApp(t, now)
+	a.setMode(modeCalendar)
+	putEvent(t, a, testCalID(a), "day1", now, false)
+	putEvent(t, a, testCalID(a), "day3", now.AddDate(0, 0, 2), false)
+	// A two-day timed event covering day1→day2 (spans midnight).
+	putSpanningEvent(t, a, testCalID(a), "span", now, now.AddDate(0, 0, 1).Add(2*time.Hour))
+	a.refresh("")
+
+	a.month.selected = model.DayStart(now)
+	a.enterSelect()
+	a.month.selected = model.DayStart(now.AddDate(0, 0, 2)) // extend to day3
+	got := a.selRange()
+	count := map[string]int{}
+	for _, tg := range got {
+		count[tg.uid]++
+	}
+	if len(got) != 3 {
+		t.Fatalf("range = %d targets, want 3 (day1, span, day3)", len(got))
+	}
+	for uid, n := range count {
+		if n != 1 {
+			t.Fatalf("uid %s appears %d times, want 1 (multi-day dedupe)", uid, n)
+		}
+	}
+	a.exitSelect()
+}
+
+// TestSelectRangeSyncRace: derive the range continuously while a background
+// goroutine mutates the store (the sync scenario) — run under -race. The store
+// is internally locked; this asserts derivation never panics or returns
+// targets for items that are mid-deletion, in the TestConcurrentSyncAndEditsRace
+// mold (internal/sync/sync_test.go:372).
+func TestSelectRangeSyncRace(t *testing.T) {
+	now := time.Date(2026, 7, 5, 9, 0, 0, 0, time.UTC)
+	a := newRootedTestApp(t, now)
+	a.setMode(modeTasks)
+	anchor := putTodo(t, a, testCalID(a), "", "anchor", now, true)
+	for i := 0; i < 20; i++ {
+		putTodo(t, a, testCalID(a), "", fmt.Sprintf("task %02d", i), now, true)
+	}
+	a.refresh(anchor)
+	a.setFocus(a.tree)
+	a.selectTreeByUID(anchor)
+	a.enterSelect()
+
+	// Snapshot one resource to churn: the goroutine may not touch t (t.Fatal is
+	// test-goroutine-only), so it uses raw store calls exclusively.
+	churn := putTodo(t, a, testCalID(a), "", "churn", now, true)
+	churnLoc, ok := a.store.Locate(churn)
+	if !ok {
+		t.Fatal("churn task missing")
+	}
+	stop := make(chan struct{})
+	var wg sync.WaitGroup
+	wg.Add(1)
+	go func() { // the "sync" goroutine: delete/recreate a resource repeatedly
+		defer wg.Done()
+		ctx := context.Background()
+		for {
+			select {
+			case <-stop:
+				return
+			default:
+			}
+			_ = a.store.Delete(ctx, churnLoc.CalID, churnLoc.Name)
+			_, _ = a.store.Put(ctx, churnLoc.CalID, churnLoc.Name, churnLoc.Object)
+		}
+	}()
+	for i := 0; i < 500; i++ {
+		_ = a.selRange() // must never panic; content raced deliberately
+	}
+	close(stop)
+	wg.Wait()
+	a.exitSelect()
+}
+
+// TestDrillRange: within a drilled day, the range covers the item list between
+// anchor and cursor in drill-cycling order.
+func TestDrillRange(t *testing.T) {
+	now := time.Date(2026, 7, 5, 9, 0, 0, 0, time.UTC)
+	a := newRootedTestApp(t, now)
+	a.setMode(modeCalendar)
+	putEvent(t, a, testCalID(a), "e1", now, false)
+	putEvent(t, a, testCalID(a), "e2", now.Add(time.Hour), false)
+	putEvent(t, a, testCalID(a), "e3", now.Add(2*time.Hour), false)
+	a.refresh("")
+	a.month.reDrill(model.DayStart(now), 0)
+	a.enterSelect()
+	a.month.eventIndex = 2 // cursor on the third item
+	got := a.selRange()
+	if len(got) != 3 {
+		t.Fatalf("drill range = %d targets, want 3", len(got))
 	}
 }
