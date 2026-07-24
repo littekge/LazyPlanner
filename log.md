@@ -4,6 +4,13 @@
 
 ---
 
+## 2026-07-23 — Bugfix: V on an empty calendar day exited SELECT immediately
+
+- **Bug** (reviewer-found on Task 2): `daysRange()` returned a bare `nil` both when the anchor was genuinely unresolvable *and* when the selected date interval simply materialized no items. `syncSelectionVisuals` treats any `nil` range as "anchor vanished" and exits SELECT — but a date anchor (`selAnchorDay`) can never vanish the way a tree UID or drilled item can, so an empty day is a *valid* empty selection. The bug: pressing `V` on an un-drilled calendar day with no events/due tasks flipped `a.selecting` back off inside the same `enterSelect()` call, before the user could extend the range (`f`/`b`) onto a day that does have items.
+- **Fix** (`internal/ui/selection.go`): `daysRange()` still returns `nil` for its two genuine-anchor-loss guards (no `calGrid`, `selAnchorDay.IsZero()`), but now initializes the accumulator as `out := []editTarget{}` instead of `var out []editTarget`, so an interval with no matching items returns a non-nil empty slice — distinguishable from a lost anchor. `treeRange`/`drillRange` are untouched; their `nil` still means a genuinely lost anchor (deleted UID, cursor index out of range).
+- **Repro-first (TDD)**: `TestDaysRangeEmptyDayStaysSelected` (`internal/ui/selection_test.go`) enters SELECT in calendar mode on a day with no items and asserts `a.selecting` stays true and `selRange()` returns a non-nil empty slice; RED before the fix (`a.selecting` was false), GREEN after. Full gate re-run clean (`go test ./...`, `go vet ./...`, `staticcheck ./...`, `go build ./...`).
+- Files: `internal/ui/selection.go`, `internal/ui/selection_test.go`, `log.md`.
+
 ## 2026-07-23 — v1.4.0: SELECT range derivation
 
 - Task 2 of the v1.4.0 SELECT-mode feature: `a.selRange() []editTarget` materializes the anchor→cursor range for each of the three SELECT contexts, and `syncSelectionVisuals` gains an anchor-validation guard so a range that can no longer be derived exits SELECT instead of acting on a guess.

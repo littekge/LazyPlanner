@@ -165,7 +165,12 @@ func (a *app) treeRange() []editTarget {
 
 // daysRange materializes every visible item on the selected date interval.
 // Hidden calendars are excluded (dayItems already filters them); a multi-day
-// event spanning several selected days is deduped to one target.
+// event spanning several selected days is deduped to one target. Unlike a tree
+// UID or a drilled item, a date anchor can never "vanish", so an interval that
+// simply holds no items is a valid empty selection — the caller must be able
+// to tell that apart from "anchor unresolvable" (nil), or V on an empty day
+// would exit SELECT before the user can extend the range onto a day that does
+// have items.
 func (a *app) daysRange() []editTarget {
 	g, ok := a.calendarPrimitive().(calGrid)
 	if !ok || a.selAnchorDay.IsZero() {
@@ -179,7 +184,7 @@ func (a *app) daysRange() []editTarget {
 	if to.Sub(from) > maxSelectDays*24*time.Hour {
 		to = from.AddDate(0, 0, maxSelectDays)
 	}
-	var out []editTarget
+	out := []editTarget{}
 	seen := map[string]bool{}
 	for d := from; !d.After(to); d = d.AddDate(0, 0, 1) {
 		for _, it := range a.dayItems(d) {

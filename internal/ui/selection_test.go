@@ -307,6 +307,32 @@ func TestDaysRange(t *testing.T) {
 	a.exitSelect()
 }
 
+// TestDaysRangeEmptyDayStaysSelected: a date anchor is always resolvable
+// (unlike a tree UID or drilled item, it can't "vanish"), so entering SELECT on
+// a day with no items must stay selected — an empty materialized range is a
+// valid empty selection, not a lost anchor. The range should be extendable
+// toward days that do have items.
+func TestDaysRangeEmptyDayStaysSelected(t *testing.T) {
+	now := time.Date(2026, 7, 6, 9, 0, 0, 0, time.UTC) // Monday, no events seeded
+	a := newRootedTestApp(t, now)
+	a.setMode(modeCalendar)
+	a.refresh("")
+
+	a.month.selected = model.DayStart(now)
+	a.enterSelect()
+	if !a.selecting {
+		t.Fatal("SELECT must stay active when the selected day has no items")
+	}
+	got := a.selRange()
+	if got == nil {
+		t.Fatal("selRange on an empty-but-anchored day must be a non-nil empty slice, not nil (nil means lost anchor)")
+	}
+	if len(got) != 0 {
+		t.Fatalf("range = %+v, want empty", got)
+	}
+	a.exitSelect()
+}
+
 // TestSelectRangeSyncRace: derive the range continuously while a background
 // goroutine mutates the store (the sync scenario) — run under -race. The store
 // is internally locked; this asserts derivation never panics or returns
