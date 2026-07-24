@@ -69,6 +69,23 @@ func TestGrabTimeHintIsModeAware(t *testing.T) {
 	}
 }
 
+// TestGrabTimeHintAllDayEventAlreadyInWeekDayViewDoesNotSuggestSwitching locks
+// matrix finding #2: grabbing an all-day event and nudging j/k/J/K (the
+// timed-only motions) must not tell the user to "switch to week/day view (v)"
+// when they are already in week/day view — an all-day event simply has no
+// time to change or resize, regardless of which view is active.
+func TestGrabTimeHintAllDayEventAlreadyInWeekDayViewDoesNotSuggestSwitching(t *testing.T) {
+	a := newRootedTestApp(t, time.Date(2026, 7, 5, 9, 0, 0, 0, time.UTC))
+	a.mode = modeCalendar
+	a.viewMode = viewWeek
+	a.grabAllDay = true
+
+	h := a.grabTimeHint("change the time")
+	if strings.Contains(h, "switch to week/day view") {
+		t.Errorf("hint for an already-in-week/day-view all-day grab = %q, must not suggest switching views", h)
+	}
+}
+
 // TestSpaceOnDrilledEventFlashes locks L5: Space on a drilled event flashes
 // (events can't be completed) instead of silently flipping a calendar's visibility.
 func TestSpaceOnDrilledEventFlashes(t *testing.T) {

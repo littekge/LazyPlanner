@@ -152,8 +152,13 @@ func (a *app) grabStatus() string {
 // grabTimeHint explains how to reach the week/day time-grid to do action (change
 // the time / resize), which only works on a timed event there. In calendar mode
 // `v` cycles to week/day; in agenda mode `v` is a no-op, so name the destination
-// rather than a dead key.
+// rather than a dead key. A grabbed all-day event has no time to act on
+// regardless of the active view, so it never tells the user to switch to a
+// view they may already be in.
 func (a *app) grabTimeHint(action string) string {
+	if a.grabAllDay {
+		return "all-day events have no time to " + action
+	}
 	if a.mode == modeCalendar {
 		return "switch to week/day view (v) to " + action
 	}

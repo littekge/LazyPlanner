@@ -4,6 +4,14 @@
 
 ---
 
+## 2026-07-24 — v1.5.0 phase 2: grab hint stops telling an already-in-week/day-view user to switch views (matrix finding #2)
+
+- `grabTimeHint` (`internal/ui/grab.go`) fires when a grabbed item isn't "timed" — which is true both when the user isn't in week/day view *and* when the grabbed item is an all-day event. It unconditionally returned `"switch to week/day view (v) to " + action` for calendar mode, so nudging j/k/J/K on a grabbed all-day event while already in week/day view told the user to switch to a view they were already in — an all-day event has no time to change regardless of view.
+- `grabTimeHint` now checks `a.grabAllDay` (already tracked on grab entry) first and returns `"all-day events have no time to " + action` in that case, before falling through to the existing mode-aware switch-view wording for genuinely-not-in-week/day-view timed events.
+- TDD: `TestGrabTimeHintAllDayEventAlreadyInWeekDayViewDoesNotSuggestSwitching` (`internal/ui/lowfixes_test.go`) RED against the unmodified function (hint named "switch to week/day view" even with `viewMode = viewWeek`), GREEN after the fix; existing `TestGrabTimeHintIsModeAware` stays green.
+- Files: `internal/ui/grab.go`, `internal/ui/lowfixes_test.go`.
+- Full gate green (`go test ./...`, `go vet ./...`, `staticcheck ./...`, `go build ./...`); `gofmt` clean.
+
 ## 2026-07-24 — v1.5.0 phase 2: SELECT hint bar no longer claims gg/G "ends" the range (matrix finding #1)
 
 - The SELECT-mode help bar (`internal/ui/render.go`, the `a.selecting` branch of `updateStatus`) literally read `"gg/G ends"`, but `gg`/`G` in SELECT extend the range to the top/bottom (`gotoTop`/`gotoBottom` stay in effect while selecting) — they never end or exit the mode. This contradicted both the real behavior and `:help`'s own `"extend the range"` wording for the same chord, misleading anyone who read the hint bar.
