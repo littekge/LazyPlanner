@@ -76,7 +76,7 @@ Run `lazyplanner` with no arguments to open the TUI (seed the cache with `import
 
 **Moving & grabbing.** `H`/`L` outdent/indent (re-parent); `y`/`Y` cut/copy a task with its subtree and `p`/`P` paste (the clipboard persists for repeat pastes). `m` enters **grab mode** to move an item in time — an event by hour/day (`J`/`K` resize its end), a task's due date by day/week — with `Enter` to keep and `Esc` to revert. `u` undoes the last change this session.
 
-**Selecting multiple items.** `V` enters **SELECT** mode — a badge-shown mode like GRAB, where movement extends a contiguous range (tree rows, calendar days, or a drilled day's items) instead of just moving the cursor. One bulk action then applies to everything selected, as a single `u` undo step.
+**Selecting multiple items.** `V` enters **SELECT** mode — a badge-shown mode like GRAB, where movement extends a contiguous range (tree rows, calendar days, or a drilled day's items) instead of just moving the cursor. One bulk action then applies to everything selected as one compound `u` undo step (yank/copy is undone at paste time; a bulk grab interrupted by a stale item keeps the nudges already landed).
 
 **Recurring items.** The full form has a **Repeat** field — `None`, a preset built from the item's date (`Daily`, `Weekly on <weekday>`, `Monthly on day <n>`, `Yearly on <mon day>`), or **Custom…** for any rule the app understands (an "every N" interval, a weekly weekday set via a compact toggle strip, monthly by day-of-month or by nth/last weekday, yearly, and a never/on-date/after-N-times end). A rule the app can't represent is shown as *Custom rule (kept)* and left untouched unless you change it; picking a rule on a plain item makes it recurring, and `None` clears it.
 

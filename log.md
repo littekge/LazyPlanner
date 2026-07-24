@@ -4,6 +4,14 @@
 
 ---
 
+## 2026-07-24 — Docs: cross-doc consistency follow-up from the doc-batch review
+
+- The doc-batch reviewer found two sibling-surface inconsistencies left by the sweep's ID scoping: main.md still said `Enter` *cycles* a drilled day's events (main.md:126 + the keybindings-table Enter row) after help.go was corrected, and README's SELECT bullet still carried the un-scoped one-undo-step wording main.md:207 was corrected away from.
+- Settled the Enter contradiction against the code directly: `handleDayMode` Enter starts the drill (first item); `handleEventMode` has no Enter case — `j`/`k`/arrows cycle. Both main.md sites now say drill-then-j/k, matching `:help`.
+- README's SELECT bullet now carries the same scoping as main.md (yank/copy undone at paste; a stale-interrupted bulk grab keeps landed nudges).
+- CLAIMS.md rows LAY-23/KEY-028/RDM-111 annotated with the follow-up rewording.
+- Files: `main.md`, `README.md`, `docs/audit/specdiff/CLAIMS.md`, `log.md`.
+
 ## 2026-07-24 — v1.5.0 phase 1: README + :help spec-diff fix-doc batch (owner triage, Batch B)
 
 - **Lands the README.md + `internal/ui/help.go` half of the owner-triaged spec-diff fixes** — the remaining 7 of 21 confirmed divergences plus the README-side reverse-sweep doc gaps. Every edit corrects the docs toward what the code actually does: (1) a calendar's color tints the calendar grids/agenda/time-grid but not the task tree, scoped off README's "every view" (RDM-47); (2) 2D drilled navigation is week/day time-grid only — the month grid's drill is a 1D item-list walk (RDM-48); (3) `Enter` drills the weekday strip like a text field, `Space` toggles a day only once drilled (RDM-89); (4) the `q`/`Ctrl-C` keybindings-table row rewritten honestly — `q` quits/closes non-form dialogs and is inert inside data-entry forms, `Ctrl-C` force-quits immediately even over an open form, both flush pending changes best-effort (RDM-183); (5) help.go's Enter row no longer claims it cycles a drilled day's events (that's j/k/arrows) — Enter is only the initial dive in (HLP-16); (6) help.go's `e`/`d` recurring-item row split in two — "this & future" is event-only, a recurring task's scope picker offers only this-task/all-tasks (HLP-75/76).

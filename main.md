@@ -123,7 +123,7 @@ The vdir data lives under *data* paths, **not** `~/.cache` — it can hold offli
 
 **The Main pane** follows the active overview panel:
 
-- **Calendars** → focus lands on the Calendars list (arrow keys highlight each calendar; `Space` hides/shows the highlighted calendar on the calendar+agenda views, remembered in the state file). The Main pane shows the calendar view: month grid (default) or the week/day hourly time-grid. `Enter` dives into the grid (arrows move days, `Enter` cycles the selected day's events, `Esc` returns to the list). `[` / `]` cycle the highlighted calendar and `{` / `}` cycle the highlighted task list from any pane (independent overview selectors). Of the view/forward/back/today keys, only `gt` truly works from any pane (it switches the Main pane to the calendar itself); `v`/`f`/`b` act on the calendar view and no-op silently from the Tasks or Agenda overview.
+- **Calendars** → focus lands on the Calendars list (arrow keys highlight each calendar; `Space` hides/shows the highlighted calendar on the calendar+agenda views, remembered in the state file). The Main pane shows the calendar view: month grid (default) or the week/day hourly time-grid. `Enter` dives into the grid (arrows move days, `Enter` drills into the selected day's items — `j`/`k` cycle them — and `Esc` returns to the list). `[` / `]` cycle the highlighted calendar and `{` / `}` cycle the highlighted task list from any pane (independent overview selectors). Of the view/forward/back/today keys, only `gt` truly works from any pane (it switches the Main pane to the calendar itself); `v`/`f`/`b` act on the calendar view and no-op silently from the Tasks or Agenda overview.
 - **Tasks** → focus lands on the Tasks list; selecting a list opens its full collapsible subtask tree in the Main pane, with inline priority / due date / completion status.
 - **Agenda** → focus lands on the Agenda list; moving its highlight draws an **outline box** around the matching block in the Main pane (the same cursor style as the calendar's selected day), auto-scrolling to it. The Main pane shows the day's events and tasks with full descriptions, at **full width** (the Detail pane is hidden), scrollable when a day overflows.
 
@@ -257,7 +257,7 @@ The keyboard interface feels like **vim, not lazygit**: single keys for panel fo
 | `+` / `-` / `0` | In week/day view: zoom the hour-row height in/out; `0` resets to auto-fit (remembered across launches). Elsewhere: `+`/`-` expand / restore the Main pane (accordion) |
 | `Ctrl-←` / `Ctrl-→` | Narrow / widen the overview column (quick keyboard resize) |
 | `Ctrl-W` | Resize sub-mode: `←`/`→` overview, `H`/`L` Detail, `Enter` keep, `Esc`/`q` cancel |
-| `Enter` | Select / open in Main (drill into a day and cycle its events) |
+| `Enter` | Select / open in Main (drill into a day; `j`/`k` then cycle its items) |
 | `i` prefix | Create: `it`/`iT` task, `ie`/`iE` event, `is`/`iS` subtask (Shift = full form), `ic` calendar, `il` list. `i!`… (e.g. `i!e`) forces creation on an unknown-type (`[?]`) calendar — read-only and known-wrong-type are never forced |
 | `e` | Edit selected (full form); with the Calendars **or** Tasks overview panel focused, open the calendar/list **edit form** (name + color) — symmetric with `d` |
 | `s` prefix | Quick-set a task field: `sp` priority, `sd` due date (one-line inputs; blank clears) |
