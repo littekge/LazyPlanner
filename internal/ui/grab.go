@@ -252,6 +252,19 @@ func (a *app) grabNudge(r rune) {
 			if !d.End.IsZero() {
 				d.End = d.End.AddDate(0, 0, n)
 			}
+			// A whole-series day-move (scope all/future) must keep a day-pinning
+			// rule (weekly BYDAY, monthly nth-weekday) consistent with the moved
+			// anchor — otherwise the series stays on the old day, the moved DTSTART
+			// falls outside its own rule, and the event vanishes from the calendar.
+			// Re-anchor the rule; block an opaque "kept" rule we can't reason about.
+			if a.grabScope != scopeThis && base.Recurring {
+				recur, blocked := model.ReanchoredRecurrence(base, d.Start)
+				if blocked {
+					a.flash("Can't shift the day of this custom repeat rule — edit the rule instead")
+					return
+				}
+				d.Recur = recur
+			}
 		case 'j', 'k': // ±1 hour (timed events, in week/day view)
 			if !timed {
 				a.flash(a.grabTimeHint("change the time"))

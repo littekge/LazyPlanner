@@ -4,6 +4,15 @@
 
 ---
 
+## 2026-07-23 — Bugfix: grab-all day-move made recurring events with a day-pinning rule disappear
+
+- **Bug** (owner-reported): grabbing a recurring event at scope *all* and moving the day (`h`/`l`) made it vanish from the calendar. **Root cause** (systematic-debugging, verified with a UI repro): the day-move shifts `DTSTART` but `EditEvent` preserves the RRULE, so a day-pinning `BY*` (weekly `BYDAY`, monthly nth-weekday — every v1.3.0 preset carries one) kept firing on the *old* day; the moved `DTSTART` fell outside its own set (anchor occurrence dropped) and the UI then navigated to the moved day, which had no occurrence → "disappeared". Plain `FREQ=WEEKLY` (no `BY*`) already worked, which is why it was intermittent.
+- **Fix**: `model.ReanchoredRecurrence(master, newStart)` (`internal/model/recur_edit.go`) derives the rule to write on a whole-series day-move — weekly weekday sets shift as a whole (Mon,Thu → Tue,Fri), monthly nth-weekday re-derives from the new date; daily/plain-weekly/monthly-by-day/yearly need no rewrite (no day-pinning `BY*`, `DTSTART` re-anchors them); a rule outside the editable vocabulary (*Custom rule (kept)*) **blocks** the day-move with a hint (owner-chosen) rather than risk corruption. Wired into grab's `h`/`l` branch for scope all/future (`internal/ui/grab.go`); scope *this occurrence* is unaffected (it writes a per-instance override, not the master).
+- **Repro-first (TDD)**: `internal/model/reanchor_test.go` (per-frequency re-anchor + block + no-op table) and `internal/ui/grab_recur_reanchor_test.go` (the promoted repro: a weekly-BYDAY grab-all +1 day now lands the whole series on the new weekday and stays visible; plain-weekly unregressed). Both RED before, green after.
+- **Guardrail** (`CLAUDE.md`): added "moving a recurring item's anchor must keep the rule consistent with it — never leave `DTSTART` contradicting its own `BY*`" (the same invariant the v1.3.0 Custom sub-form enforces). Docs: `main.md` grab-mode section describes the re-anchoring + kept-rule block.
+- Full gate green (`go test ./...`, `go vet ./...`, `staticcheck ./...`, `go build ./...`); grab suite clean.
+- Files: `internal/model/recur_edit.go`, `internal/model/reanchor_test.go` (new), `internal/ui/grab.go`, `internal/ui/grab_recur_reanchor_test.go` (new), `main.md`, `CLAUDE.md`, `log.md`.
+
 ## 2026-07-23 — v1.3.0: Custom repeat sub-form redesign (dynamic fields + weekday strip)
 
 - Reworked the Custom… repeat sub-form (`internal/ui/recurcustom.go`) from a static 13-field wall into a dynamic form that shows only the fields relevant to the current selection: Every, Unit, Ends always; the weekday strip only for weeks; "Monthly by" only for months; Until/Count only for the matching Ends choice. Unit/Ends changes re-lay-out the form live (`layoutCustomRepeat`, via `caretForm.clearItems`/`addExisting`), preserving values in fields that stay visible. Modal height 22→12.

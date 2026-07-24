@@ -9,6 +9,54 @@ import (
 	"github.com/teambition/rrule-go"
 )
 
+// ReanchoredRecurrence returns the recurrence rule a grab day-move must write so
+// the series stays consistent with the moved start (newStart). A day-move shifts
+// DTSTART but the RRULE is otherwise preserved; if the rule pins a day
+// independently of DTSTART (weekly BYDAY, monthly nth-weekday), the moved anchor
+// then contradicts its own rule — the series keeps firing on the old day and the
+// moved instance falls outside the set, so the event appears to vanish. This
+// derives the rule to write instead:
+//   - weekly with an explicit weekday set: shift every weekday by the same delta,
+//     so a multi-day set moves as a whole (Mon,Thu +1 → Tue,Fri);
+//   - monthly by nth-weekday: re-derive the nth/weekday from newStart (a "last"
+//     rule stays "last");
+//   - daily, plain weekly, monthly-by-day-of-month, yearly: no day-pinning BY* —
+//     the moved DTSTART re-anchors these on its own, so (nil, false) = no rewrite;
+//   - a rule outside the editable vocabulary (a "kept" custom RRULE) or an
+//     unparseable one: (nil, true) so the caller blocks the day-move rather than
+//     silently corrupting a rule it can't reason about.
+//
+// A non-recurring event (no RRULE) returns (nil, false).
+func ReanchoredRecurrence(master *Event, newStart time.Time) (recur *RecurSpec, blocked bool) {
+	if master.Raw.Props.Get(ical.PropRecurrenceRule) == nil {
+		return nil, false // non-recurring or RDATE-only — the DTSTART move suffices
+	}
+	option, err := master.Raw.Props.RecurrenceRule()
+	if err != nil || option == nil {
+		return nil, true // unparseable rule — can't safely re-anchor
+	}
+	spec, ok := RecurSpecFromRule(option, master.Start)
+	if !ok {
+		return nil, true // "kept" custom rule outside the editable vocabulary
+	}
+	switch {
+	case spec.Freq == FreqWeekly && len(spec.Weekdays) > 0:
+		shift := ((int(newStart.Weekday())-int(master.Start.Weekday()))%7 + 7) % 7
+		for i, wd := range spec.Weekdays {
+			spec.Weekdays[i] = time.Weekday((int(wd) + shift) % 7)
+		}
+		return &spec, false
+	case spec.Freq == FreqMonthly && spec.MonthlyNth != 0:
+		spec.MonthlyWeekday = newStart.Weekday()
+		if spec.MonthlyNth != -1 { // a "last <weekday>" rule stays last; a positive nth re-derives
+			spec.MonthlyNth = (newStart.Day()-1)/7 + 1
+		}
+		return &spec, false
+	default:
+		return nil, false // no day-pinning BY* — DTSTART carries the day
+	}
+}
+
 // Recurrence-editing primitives implementing the three scopes — this occurrence,
 // this-and-future, and all — for VEVENTs and VTODOs. "All" is just the existing
 // EditEvent/EditTodo on the master; the functions here handle the other two.
