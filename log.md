@@ -37,6 +37,8 @@
 - Files: `internal/ui/quickfield.go`, `internal/ui/quickfield_test.go` (existing `TestParseSetPriority` updated for the new 3-value signature), `internal/ui/quickfield_warn_test.go` (new).
 - Full gate green (`go test ./...`, `go vet ./...`, `staticcheck ./...`, `go build ./...`); `gofmt` clean.
 
+## 2026-07-24 — Docs: cross-doc consistency follow-up from the doc-batch review
+
 - The doc-batch reviewer found two sibling-surface inconsistencies left by the sweep's ID scoping: main.md still said `Enter` *cycles* a drilled day's events (main.md:126 + the keybindings-table Enter row) after help.go was corrected, and README's SELECT bullet still carried the un-scoped one-undo-step wording main.md:207 was corrected away from.
 - Settled the Enter contradiction against the code directly: `handleDayMode` Enter starts the drill (first item); `handleEventMode` has no Enter case — `j`/`k`/arrows cycle. Both main.md sites now say drill-then-j/k, matching `:help`.
 - README's SELECT bullet now carries the same scoping as main.md (yank/copy undone at paste; a stale-interrupted bulk grab keeps landed nudges).
