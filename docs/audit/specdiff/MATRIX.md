@@ -1372,3 +1372,26 @@ unreachable branch or update its string; low priority.
 | 18 | D | Help/Conflicts modal chrome under-advertises keys | DOC GAP | fix doc |
 | 19 | E | Dead `calendarView` hjkl rune cases | code hygiene | fix code |
 | 20 | E | Stale `deleteCollection` 1/2 flash string | code hygiene | fix code |
+
+---
+
+## 6. Owner triage dispositions (2026-07-24)
+
+All 20 findings approved for action. Judgment calls settled by the owner:
+
+- **#4 (GRAB axis swap)** → **fix code: align bulk grab to single-item** (`j`/`k`=±day,
+  `h`/`l`=±week — the mapping README:130 already documents). Bulk grab is the outlier.
+- **#7 (q-close on account/color pickers)** → **fix code: add `q`-close to both** (matches the
+  conflicts list; makes the blanket doc claim true).
+- **#3 + #13 (static hint bar)** → **fix code: make the bottom hint bar mode-adaptive** — reflect
+  the active mode/context (hide no-op keys like `f`/`b`/`v` outside Calendar mode; show
+  mode-appropriate hints for RESIZE/forms/modals instead of the fixed NORMAL string). Findings #3
+  and #13 collapse into this one code change.
+- **Clear-cut batches (A, C, D, E, plus #5 `u`-undo-drops-drill and #6 `J`/`K` silent-no-op)** →
+  **proceed as recommended**: code fixes for the 2 UI-text bugs (#1, #2), #5, #6, and Batch E
+  hygiene; doc fixes for all Batch C/D README/`:help` gaps. Each code fix repro-first, one commit
+  each; doc fixes may batch.
+
+**Note on #14 (Enter):** the doc fix is narrow — correct README:120's stale "cycle a day's events"
+clause. `help.go:27` and the `render.go:735` hint bar were already corrected in phase 1
+(controller-verified 2026-07-24).
