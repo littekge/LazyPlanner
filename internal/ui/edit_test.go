@@ -8,6 +8,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/littekge/LazyPlanner/internal/model"
 	"github.com/littekge/LazyPlanner/internal/store"
 )
 
@@ -98,6 +99,77 @@ func TestToggleCompleteAndUndo(t *testing.T) {
 	loc, ok := a.store.Locate("grocery@lazyplanner.test")
 	if !ok || findTodo(loc.Object, "grocery@lazyplanner.test").Completed() {
 		t.Error("undo did not restore the incomplete state")
+	}
+}
+
+// TestUndoWhileDrilledKeepsDrill reproduces the v1.5.0 phase-2 bug where undoing
+// a mutation while drilled into a calendar day (event-cycling) silently kicked
+// the user back out to day navigation. Every sibling mutation path (Space-complete
+// via refreshKeepingDrill, delete via refresh(""), form-save via the modal
+// captureFocus/restoreFocus stack) preserves the grid's drill across its refresh;
+// undoLast passed the mutation's non-empty selUID straight to plain refresh,
+// which only preserves drill when selUID == "" — dropping it here.
+func TestUndoWhileDrilledKeepsDrill(t *testing.T) {
+	now := time.Date(2026, 7, 5, 9, 0, 0, 0, time.UTC)
+	a := newWritableTestApp(t, now)
+	a.setMode(modeCalendar)
+	a.viewMode = viewDay
+	a.anchor = model.DayStart(now)
+
+	calID := a.selectedTasklistID()
+	if calID == "" {
+		t.Fatal("no task list selected")
+	}
+	a.createTask(calID, "", "Errand today")
+	errand := todoBySummary(a.store, "Errand")
+	if errand == nil {
+		t.Fatal("seed task missing")
+	}
+
+	a.buildCenterCalendar()
+	g, ok := a.calendarPrimitive().(calGrid)
+	if !ok {
+		t.Fatal("calendar primitive is not a calGrid")
+	}
+
+	// Drill onto the task's row (its position among the anchor day's items).
+	items := a.dayItems(a.anchor)
+	idx := -1
+	for i, it := range items {
+		if it.Todo != nil && it.Todo.UID == errand.UID {
+			idx = i
+		}
+	}
+	if idx < 0 {
+		t.Fatal("task not present among the drilled day's items")
+	}
+	g.reDrill(a.anchor, idx)
+	if _, drilled, _ := g.drillState(); !drilled {
+		t.Fatal("precondition: not drilled")
+	}
+
+	a.toggleComplete()
+	if !todoBySummary(a.store, "Errand").Completed() {
+		t.Fatal("task did not complete")
+	}
+	g2, ok := a.calendarPrimitive().(calGrid)
+	if !ok {
+		t.Fatal("calendar primitive missing after toggle")
+	}
+	if _, drilled, _ := g2.drillState(); !drilled {
+		t.Fatal("toggle-complete should have kept the drill (sibling path) — test setup is broken")
+	}
+
+	a.undoLast()
+	if todoBySummary(a.store, "Errand").Completed() {
+		t.Error("undo did not restore the incomplete state")
+	}
+	g3, ok := a.calendarPrimitive().(calGrid)
+	if !ok {
+		t.Fatal("calendar primitive missing after undo")
+	}
+	if _, drilled, _ := g3.drillState(); !drilled {
+		t.Error("undoLast kicked the user out of the drilled calendar day (drill state dropped)")
 	}
 }
 

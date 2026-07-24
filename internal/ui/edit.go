@@ -719,7 +719,11 @@ func (a *app) undoLast() {
 			return
 		}
 	}
-	a.refresh(step.selUID)
+	// refreshKeepingDrill, not refresh: undo is a direct mutation like Space-complete
+	// (not a modal path with its own captureFocus/restoreFocus), so it must use the
+	// same drill-preservation mechanism — otherwise undoing while drilled into a
+	// calendar day silently kicks the user back out to day navigation.
+	a.refreshKeepingDrill(step.selUID)
 	// Undo is itself a local change to push (it doesn't call pushUndo).
 	a.scheduleSyncDebounced()
 	a.flash("Undid " + step.label)

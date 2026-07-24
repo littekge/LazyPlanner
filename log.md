@@ -4,6 +4,14 @@
 
 ---
 
+## 2026-07-24 — v1.5.0 phase 2: undo (u) keeps the calendar drill state (matrix finding #5)
+
+- `undoLast` (`internal/ui/edit.go`) called plain `a.refresh(step.selUID)` to rebuild the views after reversing a mutation. Every sibling direct-mutation path (Space-complete's `refreshKeepingDrill(t.uid)`, bulk grab/bulk ops/recurrence-scope mutations) preserves the calendar grid's drill-in (event-cycling) state across the rebuild; `refresh` itself only auto-preserves drill when its `selUID` argument is `""` (the background-sync case) — a non-empty `selUID` (which most undo steps carry, e.g. `"toggle done"`'s `t.uid`) skipped that branch, so undoing while drilled into a calendar day silently kicked the user back out to day navigation.
+- Changed `undoLast` to call `a.refreshKeepingDrill(step.selUID)` instead of `a.refresh(step.selUID)` — the same drill-preservation mechanism the sibling direct-mutation paths already use, applied consistently to undo.
+- TDD: `TestUndoWhileDrilledKeepsDrill` (`internal/ui/edit_test.go`) drills the calendar grid onto a due-today task, completes it (confirming the sibling Space-complete path keeps the drill, as a setup precondition), then calls `undoLast` and asserts the grid is still drilled. RED against the unmodified `undoLast` (drill state lost after undo), confirmed by re-running against a stashed pre-fix `edit.go`; GREEN after the fix.
+- Files: `internal/ui/edit.go`, `internal/ui/edit_test.go`.
+- Full gate green (`go test ./...`, `go vet ./...`, `staticcheck ./...`, `go build ./...`); `gofmt` clean.
+
 ## 2026-07-24 — v1.5.0 phase 2: J/K on a grabbed todo flashes feedback instead of a silent no-op (matrix finding #6)
 
 - `grabNudge` (`internal/ui/grab.go`) handled a todo's motion via `taskNudgeDays[r]`, a map with no `J`/`K` entries — so resizing (which only makes sense for an event's end) fell through to `days == 0` and returned with zero feedback, leaving the user unsure whether the keypress landed. Bulk grab already flashes `"Resize doesn't apply to a multi-selection"` for the same class of key-doesn't-fit-the-selection case.
