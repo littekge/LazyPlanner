@@ -110,7 +110,12 @@ func (a *app) handleSelectKey(ev *tcell.EventKey) *tcell.EventKey {
 		a.flash("Select cancelled")
 		return nil
 	case tcell.KeyLeft, tcell.KeyRight, tcell.KeyUp, tcell.KeyDown, tcell.KeyHome, tcell.KeyEnd:
-		return ev
+		if ev.Modifiers() == tcell.ModNone {
+			return ev
+		}
+		// A modified arrow (Ctrl-Left/Right resizes the left column) is not
+		// motion — falling through would leak a layout mutation past SELECT's
+		// swallow-everything guarantee, so it's swallowed like everything else.
 	case tcell.KeyRune:
 		switch r := ev.Rune(); {
 		case r == 'h' || r == 'j' || r == 'k' || r == 'l' || r == 'G' || r == 'f' || r == 'b':

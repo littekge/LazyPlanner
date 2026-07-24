@@ -95,9 +95,11 @@ func (a *app) resolvePrefix(ev *tcell.EventKey) {
 	if ev.Key() != tcell.KeyRune {
 		return // Esc (or any non-rune) cancels
 	}
-	// While SELECT is active only the pure-motion chord (gg) may run — every
-	// other continuation edits data or jumps context under the active range
-	// (gt switches to Calendar mode; gd/i/s/z open modals or mutate).
+	// While SELECT is active only the pure-motion chord (gg) may run. The `g`
+	// prefix is the only one that reaches here mid-select — handleSelectKey
+	// swallows i/s/z before startPrefix ever fires — but gt/gd still must be
+	// blocked: gt switches to Calendar mode and gd opens the goto-date modal,
+	// either of which would jump context out from under the active range.
 	if a.selecting && !(p == 'g' && ev.Rune() == 'g') {
 		a.flash("Not available while selecting (Esc to cancel)")
 		return

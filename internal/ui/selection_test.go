@@ -134,6 +134,31 @@ func TestSelectKeyLayer(t *testing.T) {
 	}
 }
 
+// TestSelectSwallowsModifiedArrows: a modified arrow (Ctrl-Left/Right resizes
+// the left column outside SELECT) is not motion — it must be swallowed like
+// every other non-motion key, not leaked through to the pre-existing Ctrl-gated
+// resize handlers in globalKeys.
+func TestSelectSwallowsModifiedArrows(t *testing.T) {
+	now := time.Date(2026, 7, 5, 9, 0, 0, 0, time.UTC)
+	a := newRootedTestApp(t, now)
+	a.setMode(modeTasks)
+	a.setFocus(a.tree)
+	a.enterSelect()
+
+	before := a.leftWidth
+	a.globalKeys(tcell.NewEventKey(tcell.KeyLeft, 0, tcell.ModCtrl))
+	if a.leftWidth != before {
+		t.Fatalf("Ctrl-Left while selecting must not resize: leftWidth %d -> %d", before, a.leftWidth)
+	}
+	a.globalKeys(tcell.NewEventKey(tcell.KeyRight, 0, tcell.ModCtrl))
+	if a.leftWidth != before {
+		t.Fatalf("Ctrl-Right while selecting must not resize: leftWidth %d -> %d", before, a.leftWidth)
+	}
+	if !a.selecting {
+		t.Fatal("SELECT must still be active after the swallowed modified arrows")
+	}
+}
+
 // TestSelectPrefixGate: while selecting, gg still jumps (pure motion) but gt/gd
 // (context jumps / modals) are blocked — gotoToday switches to Calendar mode,
 // which would yank the context out from under the range.
