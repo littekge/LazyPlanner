@@ -111,6 +111,47 @@ func TestGrabEventMoveResizeCancel(t *testing.T) {
 	}
 }
 
+// TestGrabResizeOnTodoFlashesInsteadOfSilentNoop: J/K (resize) has no meaning
+// for a grabbed task (only events have an end to resize). Bulk grab already
+// flashes an explicit "doesn't apply" message for a key that doesn't fit the
+// selection; single-item grab must do the same instead of a silent no-op that
+// leaves the user wondering whether the keypress landed at all.
+func TestGrabResizeOnTodoFlashesInsteadOfSilentNoop(t *testing.T) {
+	a := newWritableTestApp(t, time.Date(2026, 7, 5, 9, 0, 0, 0, time.UTC))
+	a.setMode(modeTasks)
+	cal := a.selectedTasklistID()
+	a.createTask(cal, "", "Deadline 2026-07-20")
+	td := todoBySummary(a.store, "Deadline")
+	if td == nil || !td.HasDue {
+		t.Fatalf("setup: dated task not created (td=%v)", td)
+	}
+	a.buildTree()
+	a.selectTreeByUID(td.UID)
+
+	a.startGrab()
+	if !a.grabbing {
+		t.Fatal("should be grabbing a dated task")
+	}
+
+	a.statusLeft.SetText("") // isolate this nudge's flash from the grab-entry flash
+	a.grabNudge('J')
+	if got := a.statusLeft.GetText(true); got == "" {
+		t.Error("J on a grabbed todo must flash feedback, not silently leave the status line unchanged")
+	}
+	if got := todoBySummary(a.store, "Deadline").Due; got.Day() != 20 {
+		t.Errorf("J must not move a task's due date, got day %d", got.Day())
+	}
+
+	a.statusLeft.SetText("")
+	a.grabNudge('K')
+	if got := a.statusLeft.GetText(true); got == "" {
+		t.Error("K on a grabbed todo must flash feedback, not silently leave the status line unchanged")
+	}
+	if got := todoBySummary(a.store, "Deadline").Due; got.Day() != 20 {
+		t.Errorf("K must not move a task's due date, got day %d", got.Day())
+	}
+}
+
 // TestGrabKeyWiring: the m key enters grab mode and grab keys are intercepted by
 // globalKeys (not leaked to the views).
 func TestGrabKeyWiring(t *testing.T) {

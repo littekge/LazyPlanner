@@ -4,6 +4,14 @@
 
 ---
 
+## 2026-07-24 — v1.5.0 phase 2: J/K on a grabbed todo flashes feedback instead of a silent no-op (matrix finding #6)
+
+- `grabNudge` (`internal/ui/grab.go`) handled a todo's motion via `taskNudgeDays[r]`, a map with no `J`/`K` entries — so resizing (which only makes sense for an event's end) fell through to `days == 0` and returned with zero feedback, leaving the user unsure whether the keypress landed. Bulk grab already flashes `"Resize doesn't apply to a multi-selection"` for the same class of key-doesn't-fit-the-selection case.
+- Added an explicit `J`/`K` check ahead of the `taskNudgeDays` lookup in the todo branch of `grabNudge`, flashing `"Resize doesn't apply to a task's due date"` (mirroring bulk grab's wording/style) before returning. Grabbed-event `J`/`K` resize behavior is untouched — the new check only fires in the `!a.grabIsEvent` branch.
+- TDD: `TestGrabResizeOnTodoFlashesInsteadOfSilentNoop` (`internal/ui/grab_test.go`) RED against the unmodified code (status line left unchanged after clearing it pre-nudge), GREEN after the fix; confirmed RED by re-running against a stashed pre-fix `grab.go`. Existing `TestGrabEventMoveResizeCancel`, `TestGrabTaskDueNudge`, `TestGrabKeyWiring` stay green.
+- Files: `internal/ui/grab.go`, `internal/ui/grab_test.go`.
+- Full gate green (`go test ./...`, `go vet ./...`, `staticcheck ./...`, `go build ./...`); `gofmt` clean.
+
 ## 2026-07-24 — v1.5.0 phase 2: bulk grab's task date-shift axis now matches single-item grab (matrix finding #4)
 
 - Confirmed the inconsistency: single-item grab (`grabNudge`, `internal/ui/grab.go`) nudges a task's due date `j`/`k` ±1 day, `h`/`l` ±1 week (README.md:130, the canonical mapping). Bulk grab (`bulkGrabShift`, `internal/ui/bulkgrab.go`) applied the SAME raw `days` delta to every grabbed item regardless of type — `h`/`l` ±1 day, `j`/`k` ±1 week — so a bulk-grabbed task shifted on the opposite axis from a single-item-grabbed one.

@@ -222,6 +222,14 @@ func (a *app) grabNudge(r rune) {
 			a.abortGrabStale()
 			return
 		}
+		if r == 'J' || r == 'K' {
+			// Resize only makes sense for an event's end; a task has none. Bulk
+			// grab already flashes an explicit "doesn't apply" message for a key
+			// that doesn't fit the selection — mirror that instead of a silent
+			// no-op that leaves the user wondering whether the keypress landed.
+			a.flash("Resize doesn't apply to a task's due date")
+			return
+		}
 		days := taskNudgeDays[r]
 		if days == 0 {
 			return
