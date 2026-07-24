@@ -102,9 +102,15 @@ func (a *app) setPriorityPrompt() {
 		return
 	}
 	a.promptInput("Priority (1-9 / high·med·low, blank clears)", "! ", func(text string) {
-		p, ok := parseSetPriority(text, a.now, a.loc)
+		p, ok, warning := parseSetPriority(text, a.now, a.loc)
 		if !ok {
-			a.flash("priority: 1-9 or high/med/low (blank clears)")
+			// Relay the quick-add parser's obvious-typo warning when it has one
+			// (matches setDuePrompt's qa.Warnings[0] relay), else the generic hint.
+			if warning != "" {
+				a.flash("priority: " + warning)
+			} else {
+				a.flash("priority: 1-9 or high/med/low (blank clears)")
+			}
 			return
 		}
 		a.applyTodoField(uid, "set priority", func(d *model.TodoDraft) { d.Priority = p })
@@ -146,15 +152,20 @@ func (a *app) setDuePrompt() {
 
 // parseSetPriority reads a priority from the quick-set input, reusing the
 // quick-add token rules. Blank / "0" / "none" clears it (returns 0, true).
-func parseSetPriority(text string, now time.Time, loc *time.Location) (int, bool) {
+// On failure, warning carries the quick-add parser's obvious-typo message
+// (e.g. "!hgh" for "!high") when it produced one, else "".
+func parseSetPriority(text string, now time.Time, loc *time.Location) (priority int, ok bool, warning string) {
 	text = strings.TrimSpace(text)
 	text = strings.TrimPrefix(text, "!")
 	if text == "" || text == "0" || strings.EqualFold(text, "none") {
-		return 0, true
+		return 0, true, ""
 	}
 	qa := model.ParseQuickAdd("!"+text, now, loc)
 	if qa.Priority == 0 {
-		return 0, false
+		if len(qa.Warnings) > 0 {
+			warning = qa.Warnings[0]
+		}
+		return 0, false, warning
 	}
-	return qa.Priority, true
+	return qa.Priority, true, ""
 }

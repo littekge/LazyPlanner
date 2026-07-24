@@ -26,7 +26,7 @@ func TestParseSetPriority(t *testing.T) {
 		{"12", 0, false}, // out of 1-9 range
 	}
 	for _, c := range cases {
-		got, ok := parseSetPriority(c.in, now, time.UTC)
+		got, ok, _ := parseSetPriority(c.in, now, time.UTC)
 		if got != c.want || ok != c.wantK {
 			t.Errorf("parseSetPriority(%q) = (%d,%v), want (%d,%v)", c.in, got, ok, c.want, c.wantK)
 		}

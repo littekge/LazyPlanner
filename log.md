@@ -4,7 +4,13 @@
 
 ---
 
-## 2026-07-24 — Docs: cross-doc consistency follow-up from the doc-batch review
+## 2026-07-24 — v1.5.0 phase 1: sp relays the parser's typo warning (Batch C, fix 1/4)
+
+- `sp` (set priority) failed silently to the generic "priority: 1-9 or high/med/low (blank clears)" hint even when the quick-add parser recognized the input as an obvious typo (e.g. `!hgh` for `!high`) — `sd` (set due) already relays `qa.Warnings[0]` in that case, so `sp` was the odd one out.
+- `parseSetPriority` now returns a third value, the parser's first warning (if any), reusing the same `model.ParseQuickAdd` call it already made; `setPriorityPrompt` flashes `"priority: " + warning` when present, falling back to the unchanged generic string when the input isn't recognized as a near-miss at all (e.g. punctuation-only garbage).
+- TDD: `TestSetPriorityFlashesParserWarning` (RED against the old 2-value signature/behavior — flash was the generic string) now GREEN; `TestSetPriorityFlashesGenericFallback` pins the no-warning fallback path so it can't regress to always-warn.
+- Files: `internal/ui/quickfield.go`, `internal/ui/quickfield_test.go` (existing `TestParseSetPriority` updated for the new 3-value signature), `internal/ui/quickfield_warn_test.go` (new).
+- Full gate green (`go test ./...`, `go vet ./...`, `staticcheck ./...`, `go build ./...`); `gofmt` clean.
 
 - The doc-batch reviewer found two sibling-surface inconsistencies left by the sweep's ID scoping: main.md still said `Enter` *cycles* a drilled day's events (main.md:126 + the keybindings-table Enter row) after help.go was corrected, and README's SELECT bullet still carried the un-scoped one-undo-step wording main.md:207 was corrected away from.
 - Settled the Enter contradiction against the code directly: `handleDayMode` Enter starts the drill (first item); `handleEventMode` has no Enter case — `j`/`k`/arrows cycle. Both main.md sites now say drill-then-j/k, matching `:help`.
