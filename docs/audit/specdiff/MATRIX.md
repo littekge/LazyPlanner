@@ -1091,3 +1091,284 @@ filling adjacent rows. Raw, uncollapsed, same as above.
   (`textview.go:1340-1381`) shows `TextView`'s native `InputHandler` also binds `g`/`G` (jump to
   top/bottom) and `h`/`l` (horizontal scroll) — a broader key set than either the scaffold or any
   doc surface states. Slice 5's filled `j k / arrows / PgUp PgDn` row for `modals (help)`.
+
+---
+
+## 5. Divergences — for owner triage
+
+> Dedup of §4's 43 raw entries (32 per-slice write-ups + 11 cross-cutting (a)-(k)) into 20 distinct
+> findings, cross-referenced to their §3 rows. No re-verification performed here — a completeness
+> critic already confirmed no fabricated/unsupported verdicts in §3; this section is organization
+> and recommendation only. One raw entry — cross-cutting **(g)**, MATRIX.md §2.2's own
+> half-right drop reasoning for "GRAB × overview" — is **not** listed below: it flags this document's
+> own now-corrected scaffold reasoning (already fixed in place at §2.2 and reflected in §3's GRAB ·
+> Tasks/Agenda overview rows), not an app-facing code/doc mismatch, so there's nothing left to
+> triage. Two Slice-2 "additional observations" (the search-scope note; the `v`/`.`/`f`/`b`
+> drill-consistency note) were explicitly marked "not counted" / "not a fix" in their own slice and
+> are omitted here for the same reason.
+
+### Batch A — Real code bugs: wrong/misleading UI text (fix code)
+
+**1. SELECT hint bar claims "gg/G ends" — they actually extend the range.**
+Keys/contexts: `gg`, `G` · SELECT × month grid, week-day grid (§3 rows; Slice 3 raw #1; cross-cutting (h)).
+Mismatch: the persistent SELECT hint (`render.go:722`, `"gg/G ends"`) contradicts both the real
+behavior — `selection.go:345,358-359` pass `gg`/`G` through unhandled specifically so `gotoTop`/
+`gotoBottom` (`keys.go:184-195,233-270`) *extend* the range — and the app's own `:help` text
+(`help.go:77`, "extend the range"). Only `Esc`/`V` actually end SELECT.
+Classification: **CODE BUG**. Resolution: **fix code** — change `render.go:722`'s clause to
+"gg/G extend" (or drop it; "hjkl extend" already covers it).
+
+**2. GRAB shows "switch to week/day view" for an all-day event already in that view.**
+Keys/contexts: `j`/`k`, `J`/`K` · GRAB × week-day grid (§3 rows; Slice 3 raw #3; cross-cutting (i)).
+Mismatch: `grabTimeHint` (`grab.go:156-161`) assumes "not timed" always means "wrong view," but
+`timed` (`grab.go:244`) is also false for an all-day event even while already in the week/day
+time-grid — so nudging/resizing a grabbed all-day event there flashes a factually wrong "switch to
+week/day view (v)" message telling the user to go somewhere they already are.
+Classification: **CODE BUG**. Resolution: **fix code** — give `grabTimeHint` a distinct message for
+the AllDay-in-week/day-view case (e.g. "all-day events have no time to nudge here").
+
+**3. The fixed NORMAL hint bar shows "f/b prev/next · v view" in Tasks mode, where both no-op.**
+Keys/contexts: `f`, `b`, `v` · NORMAL × task tree / Tasks overview (cross-cutting (d); not tied to a
+non-`holds` §3 row — each key's own row stays `holds` since no doc *promises* otherwise, but the
+live hint text itself is misleading).
+Mismatch: `render.go:735`'s curated NORMAL hint string is identical across all modes; `f`/`b`/`v`
+are gated to `a.mode == modeCalendar` (`app.go:973-993`) and silently no-op in Tasks mode, yet the
+hint bar keeps advertising them as live.
+Classification: **CODE BUG** (misleading live UI text). Resolution: **fix code** — make the curated
+hint string mode-aware, dropping `f/b`/`v` when `a.mode == modeTasks`.
+
+### Batch B — Behavioral inconsistencies needing a design call
+
+**4. Single-item GRAB and bulk GRAB swap the h/l vs. j/k axis for the same object type (task due date).** ⚠️ NEEDS OWNER JUDGMENT
+Keys/contexts: `h`/`l`, `j`/`k` · GRAB × task tree, Tasks overview; GRAB (bulk) × task tree (§3 rows;
+Slice 1 raw #1; Slice 3 corroboration; cross-cutting (c)).
+Mismatch: single-item grab (`grab.go:214`, map `{'j':1,'k':-1,'l':7,'h':-7}`) uses h/l=±1 week,
+j/k=±1 day, matching README.md:130. Bulk grab (`bulkgrab.go:97-114`, `bulkGrabStatus`
+`bulkgrab.go:86`) uses the **opposite** mapping — h/l=±1 day, j/k=±1 week — for the same task
+due-date nudge. No doc surface states the swap is intentional.
+Classification: **INCONSISTENCY**. Question for the owner: is the axis swap between single and bulk
+grab intentional (bulk standardizes on the event-grab convention since bulk selections mix item
+types), or an oversight? Resolution is **fix code** (make bulk match single-item grab) if
+unintentional, or **fix doc** (call out the swap explicitly in both grab hints) if intentional.
+
+**5. `u` (undo) while drilled into a calendar day silently drops the drill state.**
+Keys/contexts: `u` · NORMAL/DRILL × month grid, week-day grid (no §3 row exists for this DRILL
+combination — the scaffold has only NORMAL rows for `u`, see `MATRIX.md:389-395`; Slice 2 raw #2;
+cross-cutting (e)).
+Mismatch: `undoLast()` calls `a.refresh(step.selUID)` with a **non-empty** `selUID`
+(`edit.go:698-726`), but `refresh()`'s drill-preserving branch only fires when `selUID == ""`
+(`edit.go:746-766`). Every sibling mutation path honors the "don't kick the user out of a drilled
+day" rule — `toggleComplete` routes through `refreshKeepingDrill` (`edit.go:354`), the delete
+confirm passes `""` (`edit.go:475`) — but `undoLast` does neither, so pressing `u` while drilled
+silently kicks the grid back to NORMAL day-navigation.
+Classification: **INCONSISTENCY** (no doc promises drill survives undo either way — this is an
+internal-consistency bug, not a doc contradiction). Resolution: **fix code** — pass `""` from
+`undoLast` when the calendar is currently drilled, or route through `refreshKeepingDrill` like
+`toggleComplete` does.
+
+**6. `J`/`K` on a grabbed *todo* is a silent no-op everywhere, while bulk grab flashes an explicit message for the same key.**
+Keys/contexts: `J`/`K` · GRAB × month grid, week-day grid, agenda board, Agenda overview (§3 rows;
+Slice 3 raw #4).
+Mismatch: for an event, `J`/`K` always produce feedback — resize (if timed) or an explanatory flash
+via `grabTimeHint` (`grab.go:281-298`). For a todo, the nudge map has no `J`/`K` entries
+(`grab.go:214`) so `grabNudge` just `return`s with **zero feedback** (`grab.go:215-217`). Bulk
+grab's parallel case explicitly flashes `"Resize doesn't apply to a multi-selection"`
+(`bulkgrab.go:115-117`) for the identical key on the identical object type.
+Classification: **INCONSISTENCY**. Resolution: **fix code** — add a `J`/`K`-on-todo flash mirroring
+bulk grab's, in `grabNudge`'s todo branch; the fix is unambiguous, only the wording is open.
+
+**7. Account picker and color picker have no `q`-close, contradicting the app's own blanket claim.** ⚠️ NEEDS OWNER JUDGMENT
+Keys/contexts: `q` · modals (account picker, color picker) (§3 rows 523, 526; Slice 5 table rows
+1-2; cross-cutting (b)).
+Mismatch: `:help` (`help.go:29`) and `README.md:143` both state `q` closes "a non-form dialog" as a
+blanket rule. Help (`help.go:125`) and Conflicts (`conflicts.go:35`) honor it, but the account
+picker's list (`command.go:172-186`) and the color picker (`colorpicker.go:132-167`) have no `'q'`
+case in their `SetInputCapture`/`InputHandler` — confirmed against `tview.List`'s own default
+handler too (no rune cases at all).
+Classification: **INCONSISTENCY**. Question for the owner: should these two pickers gain a `q` case
+to match every other modal (**fix code**, straightforward — mirror the Conflicts list), or is
+Esc-only intentional for list-backed pickers, in which case the blanket `:help`/README claim needs a
+named exception (**fix doc**)? The existing precedent (Help/Conflicts both support `q`) leans toward
+fix-code, but it's the owner's call.
+
+### Batch C — README keybindings-table gaps (fix doc)
+
+**8. `Y` / `P` / `>` / `<` / `i!` are all missing from the README keybindings table.**
+Keys/contexts: all NORMAL contexts (task tree, calendar grids, all three overview panels, agenda
+board) (§3 rows for `Y`/`P` throughout; §3 rows 358-361 for `>`/`<`; §3 row 145 for `i!`; Slice 1 raw
+#4-5; Slice 2 raw #3; Slice 3 raw #7-9(partial); Slice 4 raw #2-3).
+Mismatch: all five keys are real, working bindings correctly described in `:help` and/or README's
+Usage prose (`README.md:59,71,77`) but have **no row of their own** in the canonical keybindings
+table (`README.md:113-144`) — exactly the table/prose drift CLAUDE.md's own README rules warn
+against. The table currently folds `Y`/`P` under one `y`/`p` row and omits `>`/`<`/`i!` entirely.
+Classification: **DOC GAP**. Resolution: **fix doc** — add table rows (or expand existing rows'
+Key columns) for `Y`, `P`, `>`, `<`, and `i!`.
+
+**9. Bare `J`/`K` in the task tree (native tview child/parent jump) is undocumented anywhere.**
+Keys/contexts: `J`, `K` · NORMAL × task tree (§3 rows 199-200; §1.1 note, `MATRIX.md:38-45`).
+Mismatch: `globalKeys` has no `case 'J'`/`'K'` and `motionArrow` is lowercase-only, so a bare `J`/`K`
+falls through to `tview.TreeView`'s own native `InputHandler` (`treeview.go:839-844`): `J` jumps to
+the current node's first child, `K` jumps to its parent. This is a real, reachable, working
+binding — absent from the hint bar, `:help`, README, and even this matrix's own key axis (§1) until
+the note was added.
+Classification: **DOC GAP**. Resolution: **fix doc** — add a row to README/`:help` documenting the
+native tree-jump (or explicitly decide it's an implementation detail not worth surfacing, and note
+that decision in main.md).
+
+**10. `V` also cancels an active SELECT — undocumented as a second exit key.**
+Keys/contexts: `V` · SELECT × task tree, month grid, week-day grid (§3 rows 466-468; Slice 1 raw #3;
+Slice 3 raw #11).
+Mismatch: pressing `V` again while already in SELECT calls `exitSelect()` + flashes "Select
+cancelled" (`selection.go:360-363`) — a second way out, functionally identical to `Esc`. The live
+hint bar correctly shows `"Esc/V cancel"` (`render.go:722`), but `:help`'s `V` row (`help.go:76`)
+only describes *entering* SELECT and its cancel row (`help.go:83`) names only `Esc`; README's `V`
+row (`README.md:131`) likewise only says `Esc` cancels.
+Classification: **DOC GAP**. Resolution: **fix doc** — add "`V` also cancels" to `:help`'s Esc row
+(or the `V` row) and to README.
+
+**11. `p`/`P` are silently restricted to Tasks mode, with the restriction undocumented.**
+Keys/contexts: `p`, `P` · NORMAL × calendar grids, agenda board (§3 rows 187, 191-197; Slice 3 raw
+#9).
+Mismatch: `paste()` (`yankpaste.go:57-84`) gates on `a.mode != modeTasks` and flashes "Switch to a
+task list (t) to paste" everywhere else. Neither `:help` (`help.go:68`) nor README (`README.md:68,
+129`) documents this Tasks-mode-only restriction — both read as if paste works wherever a task is
+targeted, the same way `y`/`Y`/`m`/`s…` do (which have no such restriction).
+Classification: **DOC GAP**. Resolution: **fix doc** — state the Tasks-mode restriction next to the
+`p`/`P` entries in `:help` and README (distinct from finding #8's table-omission of `P`, which is
+also present here and covered by that fix).
+
+### Batch D — `:help` / hint-bar / doc completeness gaps (fix doc, one exception flagged)
+
+**12. `Space` (SELECT bulk-complete) silently skips events in a mixed day-range, undocumented.**
+Keys/contexts: `Space` · SELECT × month grid, week-day grid (§3 rows 470-471; Slice 3 raw #12).
+Mismatch: `bulkComplete()` skips every non-todo (event) target, counting it under
+`skips.add("event(s)")` (`bulkops.go:90-95`) — plausible in a calendar day-range selection.
+`:help`'s generic `"(skips)"` row (`help.go:82`) lists several skip reasons but never mentions
+events.
+Classification: **DOC GAP**. Resolution: **fix doc** — add "event(s) (Space only completes tasks)"
+to the `(skips)` row.
+
+**13. The bottom hint bar (`a.hints`) never adapts for RESIZE, forms, or any modal.** ⚠️ NEEDS OWNER JUDGMENT
+Keys/contexts: all 9 RESIZE keys (§3 rows 485,488,489 and neighbors; Slice 5 table row 8);
+generalizes to forms/modals (cross-cutting (a)).
+Mismatch: `updateStatus()` (`render.go:706-736`) branches `a.hints` text for `a.grabbing`/
+`a.selecting` only — there's no branch for `a.resizing`, `a.modalOpen()`, or `a.formDrill`. RESIZE's
+correct hint text does reach the user, but via `a.flash()` into the left status area
+(`keys.go:351`), not the bottom hint bar — inconsistent with sibling sub-modes GRAB/SELECT, which
+get bespoke bottom-bar text for the duration of the mode.
+Classification: **INCONSISTENCY**. Question for the owner: should RESIZE/forms/modals get the same
+bottom-hint-bar treatment as GRAB/SELECT (**fix code** — add an `a.resizing` branch etc. to
+`updateStatus`), or is routing that feedback through `flash()`/left-status/modal titles the
+deliberate design, in which case it just needs stating (**fix doc** — a code comment plus a line in
+this guardrail file)?
+
+**14. `Enter` is a silent no-op in Agenda (both the board and the Agenda-overview list), undocumented.**
+Keys/contexts: `Enter` · NORMAL × agenda board, Agenda overview (§3 rows 341, 344; Slice 3 raw #6;
+Slice 4 raw #4).
+Mismatch: `a.agendaList` has no `SetSelectedFunc` and its items carry no `Selected` callback
+(`render.go:74-84`), so tview's default List Enter handler does nothing. README's Enter row
+(`README.md:120`, "Dive into the center; cycle a day's events; open a list / expand a task") and
+`:help`'s Enter row (`help.go:27`) both omit an Agenda exception, so a reader has no way to learn
+Enter is inert there. (This is by design — Agenda has no keyboard drill-in, MATRIX.md §2.2 — just
+undocumented.)
+Classification: **DOC GAP**. Resolution: **fix doc** — add "(no effect in Agenda — the highlight
+already drives the board)" to both rows.
+
+**15. GRAB's month-grid hour-nudge/resize block (`j`/`k`/`J`/`K`) is correct but undocumented as week/day-only.**
+Keys/contexts: `j`/`k`, `J`/`K` · GRAB × month grid (§3 row 413; Slice 3 raw #5).
+Mismatch: both are unconditionally blocked in month view (`timed` is always false when
+`viewMode == viewMonth`, `grab.go:244`) — intentional, and correctly reflected in `grabStatus()`'s
+month branch (which omits `j/k`/`J/K` from its own hint). But neither `:help` (`help.go:69`) nor
+README (`README.md:130`) states that hour-nudge/resize require the week/day grid — both read as a
+blanket "hjkl day/hour, J/K resize" that a reader could reasonably expect to work from month view.
+Classification: **DOC GAP**. Resolution: **fix doc** — note the week/day-only restriction next to
+the `m` row in both surfaces.
+
+**16. `h`/`l` shift horizontal scroll, not the highlight, on every flat `tview.List` panel — contradicts the "hjkl moves the highlight" claim.**
+Keys/contexts: `h`/`l` (as part of "hjkl / arrows") · NORMAL × Calendars overview, Tasks overview,
+Agenda overview, agenda board (§3 rows 203-206; Slice 3 raw #2; Slice 4 raw #1).
+Mismatch: `motionArrow` translates `h`→Left, `l`→Right and feeds them to the focused `tview.List`'s
+own `InputHandler`; `list.go:628-631` treats `KeyLeft`/`KeyRight` as horizontal-scroll-offset moves,
+not `currentItem` moves — only `j`/`k` (Down/Up) actually move the highlight on a flat list. Every
+doc surface (persistent hint "hjkl move", `:help`'s "move the highlight", README's "Move the
+highlight … `h` `l`") states `hjkl` moves the highlight uniformly; on these four panels, `h`/`l`
+visibly do nothing. (§3 classified the agenda-board instance `code-diverges` and the three overview
+instances `doc-stale` — same root cause, inconsistent labeling in the matrix itself; treated here as
+one finding.)
+Classification: **DOC GAP** (the behavior matches ordinary `tview.List` semantics; rebinding `h`/`l`
+to move the highlight on a flat list would be a UX change, not a bug fix). Resolution: **fix doc** —
+add a footnote to the README table row / `:help` entry that `h`/`l` scroll rather than move the
+highlight on these four flat-list panels (only `j`/`k`/vertical-arrows do there).
+
+**17. Forms' `Tab`/`Shift-Tab` are undocumented synonyms for `j`/`k`/`Enter` field navigation.**
+Keys/contexts: `Tab`, `Shift-Tab` · forms (NORMAL, DRILL) (§3 rows 495, 496, 507, 508; Slice 5 table
+rows 5-7).
+Mismatch: `normalKey` (`forms.go:219-224`) groups `Tab` with `j`/Down and `Shift-Tab` with `k`/Up;
+`drillKey` (`forms.go:302-307`) groups `Tab` with `Enter` (commit + advance) and `Shift-Tab` with
+commit + move to the *previous* field. None of this is named in `:help`'s Forms section
+(`help.go:33,37`) or README (`README.md:73`, Enter only) — a reader relying on the global "Tab
+cycles panels" row (`README.md:116`) would reasonably expect Tab to do that inside a form too,
+instead of being silently repurposed. Shift-Tab's DRILL-only *backward* commit-and-move has no doc
+mention at all, in either surface.
+Classification: **DOC GAP**. Resolution: **fix doc** — name Tab/Shift-Tab as synonyms in `:help`'s
+Forms NORMAL and DRILL rows, and add the backward-DRILL behavior to both.
+
+**18. Help/Conflicts modal chrome and `:help` under-advertise available close/scroll keys.**
+Keys/contexts: `q` · modals (help, conflicts); scroll keys · modals (help) (Slice 5 table rows 3-4;
+cross-cutting (k)).
+Mismatch: the Help and Conflicts modal titles read "Esc to close" only, though `q` (and `?` for
+Help) also close them per code and per `:help`'s own generic `q` row — the in-modal chrome
+under-advertises. Separately, the Help overlay's underlying `tview.TextView` natively binds `g`/`G`
+(jump top/bottom) and `h`/`l` (horizontal scroll) in addition to the documented `j`/`k`/arrows/
+PgUp/PgDn (`vendor/.../textview.go:1340-1381`) — broader than any doc surface, including this
+matrix's own earlier citation, states.
+Classification: **DOC GAP** (cosmetic). Resolution: **fix doc** — extend both modal titles to
+mention `q`/`?`, and add `g`/`G`/`h`/`l` to `:help`'s description of the Help overlay's own scroll
+keys.
+
+### Batch E — Code hygiene (no user-facing behavior change)
+
+**19. `calendarView`'s per-rune `h`/`j`/`k`/`l` cases are unreachable dead code.**
+Keys/contexts: internal only — `calendarView.handleDayMode`/`handleEventMode`
+(`calendarview.go:129-139,173-185`) (Slice 2 additional observation; cross-cutting (f)).
+Mismatch: `globalKeys`'s `motionArrow` (`keys.go:147-164`) unconditionally translates every raw
+`h`/`j`/`k`/`l` keypress to the matching arrow key before any widget-level rune case can fire, so
+these cases can never execute via any keyboard path. Observable behavior is correct either way.
+Classification: **DOC GAP** (mislabeled by the task's own taxonomy — really code hygiene, not a
+behavior or doc mismatch). Resolution: **fix code** — delete the dead cases; low priority, no user
+impact.
+
+**20. `deleteCollection`'s `default` branch flashes a stale message referencing an obsolete `1`/`2` mode-switch scheme.**
+Keys/contexts: internal only — `deleteCollection` (`calendar.go:284-286`) (Slice 4 additional
+finding; cross-cutting (j)).
+Mismatch: the branch flashes `"Switch to Calendars (1) or Tasks (2) to delete a list"`, but the
+current mode-switch scheme uses `c`/`t`/`a`, not `1`/`2`. The branch is unreachable from any current
+input path (`deleteContextual`, `keys.go:123-132`, only calls `deleteCollection` when focus is
+already `a.calendars`/`a.tasklists`), so this is dead code, not a live user-facing bug.
+Classification: **DOC GAP** (code hygiene, not user-facing). Resolution: **fix code** — delete the
+unreachable branch or update its string; low priority.
+
+### Summary table
+
+| # | Batch | Finding | Classification | Resolution |
+|---|---|---|---|---|
+| 1 | A | SELECT hint "gg/G ends" is wrong | CODE BUG | fix code |
+| 2 | A | GRAB all-day-event "switch to week/day view" message wrong when already there | CODE BUG | fix code |
+| 3 | A | NORMAL hint shows f/b/v as live in Tasks mode | CODE BUG | fix code |
+| 4 | B | Single vs. bulk GRAB h/l⇄j/k axis swap | INCONSISTENCY ⚠️ | fix code or fix doc |
+| 5 | B | `u`-undo drops calendar drill state | INCONSISTENCY | fix code |
+| 6 | B | `J`/`K` on grabbed todo: silent no-op vs. bulk's explicit flash | INCONSISTENCY | fix code |
+| 7 | B | Account/color picker missing `q`-close | INCONSISTENCY ⚠️ | fix code or fix doc |
+| 8 | C | `Y`/`P`/`>`/`<`/`i!` missing from README table | DOC GAP | fix doc |
+| 9 | C | Bare `J`/`K` tree-jump undocumented anywhere | DOC GAP | fix doc |
+| 10 | C | `V` also cancels SELECT, undocumented | DOC GAP | fix doc |
+| 11 | C | `p`/`P` Tasks-mode restriction undocumented | DOC GAP | fix doc |
+| 12 | D | `Space` silently skips events, undocumented | DOC GAP | fix doc |
+| 13 | D | Hint bar never adapts for RESIZE/forms/modals | INCONSISTENCY ⚠️ | fix code or fix doc |
+| 14 | D | `Enter` no-op in Agenda, undocumented | DOC GAP | fix doc |
+| 15 | D | GRAB month-grid hour/resize restriction undocumented | DOC GAP | fix doc |
+| 16 | D | `h`/`l` scroll-not-move on flat lists, contradicts docs | DOC GAP | fix doc |
+| 17 | D | Forms Tab/Shift-Tab synonyms undocumented | DOC GAP | fix doc |
+| 18 | D | Help/Conflicts modal chrome under-advertises keys | DOC GAP | fix doc |
+| 19 | E | Dead `calendarView` hjkl rune cases | code hygiene | fix code |
+| 20 | E | Stale `deleteCollection` 1/2 flash string | code hygiene | fix code |
