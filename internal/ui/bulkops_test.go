@@ -445,6 +445,177 @@ func TestBulkYankPasteUnder(t *testing.T) {
 	}
 }
 
+// TestBulkYankCopyPasteMultiRoot: Y two roots (one carrying a child), paste
+// into the same list — both roots copy with fresh UIDs, the child's parent
+// remaps to its own copied root (not the original), the originals are
+// untouched, and the whole paste is one undo step.
+func TestBulkYankCopyPasteMultiRoot(t *testing.T) {
+	now := time.Date(2026, 7, 5, 9, 0, 0, 0, time.UTC)
+	a := newRootedTestApp(t, now)
+	a.setMode(modeTasks)
+	root1 := putTodo(t, a, testCalID(a), "", "a root1", now, true)
+	child := putTodo(t, a, testCalID(a), root1, "a root1 child", now, true)
+	root2 := putTodo(t, a, testCalID(a), "", "b root2", now, true)
+	target := putTodo(t, a, testCalID(a), "", "c target", now, true)
+	a.refresh(root1)
+	a.setFocus(a.tree)
+
+	// The visible range root1→root2 includes child implicitly (it's nested
+	// under root1) — bulkYank's dedupe folds it into root1's subtree rather
+	// than yanking it as a third root.
+	a.selectTreeByUID(root1)
+	a.enterSelect()
+	a.selectTreeByUID(root2)
+	a.bulkYank(false) // copy
+	if len(a.yankUIDs) != 2 {
+		t.Fatalf("clipboard = %v, want two roots (root1, root2)", a.yankUIDs)
+	}
+
+	a.selectTreeByUID(target)
+	undoBefore := len(a.undo)
+	a.pasteUnderSelection()
+
+	// Originals untouched: same UID, same parent, still present.
+	for u, wantParent := range map[string]string{root1: "", child: root1, root2: ""} {
+		loc, ok := a.store.Locate(u)
+		if !ok {
+			t.Fatalf("original %s must survive a copy", u)
+		}
+		if td := findTodo(loc.Object, u); td == nil || td.ParentUID != wantParent {
+			t.Fatalf("original %s must keep parent %q", u, wantParent)
+		}
+	}
+
+	// Two fresh copies land under target: root1's copy and root2's copy.
+	var root1CopyUID string
+	for _, td := range todosBySummary(a, "a root1") {
+		if td.UID == root1 {
+			continue
+		}
+		if _, ok := a.store.Locate(td.UID); !ok || td.ParentUID != target {
+			t.Fatalf("root1 copy %s must be parented under target, got parent %q", td.UID, td.ParentUID)
+		}
+		root1CopyUID = td.UID
+	}
+	if root1CopyUID == "" {
+		t.Fatal("no fresh copy of root1 found")
+	}
+	root2CopyFound := false
+	for _, td := range todosBySummary(a, "b root2") {
+		if td.UID == root2 {
+			continue
+		}
+		if td.ParentUID != target {
+			t.Fatalf("root2 copy %s must be parented under target, got parent %q", td.UID, td.ParentUID)
+		}
+		root2CopyFound = true
+	}
+	if !root2CopyFound {
+		t.Fatal("no fresh copy of root2 found")
+	}
+
+	// The child's copy must be re-parented onto root1's copy, not the original.
+	childCopyFound := false
+	for _, td := range todosBySummary(a, "a root1 child") {
+		if td.UID == child {
+			continue
+		}
+		if td.ParentUID != root1CopyUID {
+			t.Fatalf("child copy %s parent = %q, want the copied root1 %q", td.UID, td.ParentUID, root1CopyUID)
+		}
+		childCopyFound = true
+	}
+	if !childCopyFound {
+		t.Fatal("no fresh copy of the child found")
+	}
+
+	if len(a.undo) != undoBefore+1 {
+		t.Fatalf("multi-root copy-paste must be one undo step, got %d", len(a.undo)-undoBefore)
+	}
+	a.undoLast()
+	for _, sum := range []string{"a root1", "a root1 child", "b root2"} {
+		if got := len(todosBySummary(a, sum)); got != 1 {
+			t.Fatalf("after undo, %q must appear exactly once (the original), got %d", sum, got)
+		}
+	}
+}
+
+// TestBulkYankCrossListMoveMultiRoot: y two roots (one carrying a child),
+// paste into a different writable list — both subtrees recreate in the
+// target and delete from the source, as one undo step that restores
+// everything in the source and removes the target copies.
+func TestBulkYankCrossListMoveMultiRoot(t *testing.T) {
+	now := time.Date(2026, 7, 5, 9, 0, 0, 0, time.UTC)
+	a := newRootedTestApp(t, now)
+	a.setMode(modeTasks)
+	srcCal := testCalID(a)
+	root1 := putTodo(t, a, srcCal, "", "a root1", now, true)
+	child := putTodo(t, a, srcCal, root1, "a root1 child", now, true)
+	root2 := putTodo(t, a, srcCal, "", "b root2", now, true)
+	a.refresh(root1)
+	a.setFocus(a.tree)
+
+	a.selectTreeByUID(root1)
+	a.enterSelect()
+	a.selectTreeByUID(root2)
+	a.bulkYank(true) // cut
+	if len(a.yankUIDs) != 2 {
+		t.Fatalf("clipboard = %v, want two roots (root1, root2)", a.yankUIDs)
+	}
+
+	// "work" becomes a second writable task list once it holds a VTODO (the
+	// TestStickyWorksOnNonFirstList idiom) — switch to it via SetCurrentItem,
+	// whose changed-callback rebuilds the tree for the new list.
+	a.createTask("work", "", "seed")
+	workIdx := -1
+	for i, id := range a.tasklistIDs {
+		if id == "work" {
+			workIdx = i
+		}
+	}
+	if workIdx < 0 {
+		t.Fatalf("work list not registered as a task list: %v", a.tasklistIDs)
+	}
+	undoBefore := len(a.undo) // after the seed task's own undo entry
+	a.tasklists.SetCurrentItem(workIdx)
+
+	a.pasteAtTop()
+
+	// A move (unlike a copy) keeps each item's UID — moveSubtreeOps recreates
+	// the same UID at the destination and removes it from the source, so
+	// "recreated in the target" means Locate(uid) now resolves to "work", and
+	// "deleted from the source" means it no longer resolves to srcCal.
+	for u, wantParent := range map[string]string{root1: "", child: root1, root2: ""} {
+		loc, ok := a.store.Locate(u)
+		if !ok {
+			t.Fatalf("%s must still exist (relocated, not deleted outright)", u)
+		}
+		if loc.CalID != "work" {
+			t.Fatalf("%s calID = %q, want %q (moved to the target list)", u, loc.CalID, "work")
+		}
+		if td := findTodo(loc.Object, u); td == nil || td.ParentUID != wantParent {
+			t.Fatalf("%s parent = %v, want %q", u, td, wantParent)
+		}
+	}
+	if len(a.undo) != undoBefore+1 {
+		t.Fatalf("cross-list multi-root move must be one undo step, got %d", len(a.undo)-undoBefore)
+	}
+
+	a.undoLast()
+	for u, wantParent := range map[string]string{root1: "", child: root1, root2: ""} {
+		loc, ok := a.store.Locate(u)
+		if !ok {
+			t.Fatalf("undo must restore %s", u)
+		}
+		if loc.CalID != srcCal {
+			t.Fatalf("undo: %s calID = %q, want back in the source %q", u, loc.CalID, srcCal)
+		}
+		if td := findTodo(loc.Object, u); td == nil || td.ParentUID != wantParent {
+			t.Fatalf("undo: %s parent = %v, want %q", u, td, wantParent)
+		}
+	}
+}
+
 // TestBulkYankDedupesSubtree: yanking a parent and its child cuts one root —
 // the child travels inside the parent's subtree, not as a second root.
 func TestBulkYankDedupesSubtree(t *testing.T) {

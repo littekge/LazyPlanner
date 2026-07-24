@@ -4,6 +4,16 @@
 
 ---
 
+## 2026-07-24 — Test: N>1 pasteMultiRoot copy + cross-list move coverage
+
+- **Final whole-branch review, item 3 (test gap)**: `TestBulkYankPasteUnder` was the only test exercising `pasteMultiRoot` (`internal/ui/yankpaste.go`), and it only covered the same-list reparent branch — the copy branch (`copySubtreeOps`) and the cross-list move branch (`moveSubtreeOps`) had no N>1 coverage at all.
+- **`TestBulkYankCopyPasteMultiRoot`** (`internal/ui/bulkops_test.go`): `Y` two roots — one carrying a child, folded in implicitly by the visible-range dedupe — paste into the same list. Asserts both roots copy with fresh UIDs, the child's copy re-parents onto its own copied root (not the original), the originals are untouched (same UID, same parent), and one `undoLast()` removes every copy.
+- **`TestBulkYankCrossListMoveMultiRoot`**: `y` the same two-root/one-child shape, paste into a second writable list ("work", made a task list by seeding one VTODO into it — the `TestStickyWorksOnNonFirstList` idiom — then switched to via `SetCurrentItem`, whose changed-callback rebuilds the tree). Asserts both subtrees recreate in the target and are gone from the source, as one undo step that restores everything.
+- **A cut preserves UID/identity — a copy doesn't**: `moveSubtreeOps` relocates the *same* UID to the destination calendar (only the moved root's parent link changes); `copySubtreeOps` mints fresh UIDs. The cross-list test's first draft assumed move behaved like copy (a "new UID at the destination, old one gone") and failed — a test-authoring mistake, not a production bug (confirmed by dumping the post-paste store state before touching anything); fixed by asserting `store.Locate(sameUID).CalID` moved from the source to the target, not by hunting for a fresh UID.
+- Both tests pass against the existing `pasteMultiRoot`/`copySubtreeOps`/`moveSubtreeOps` code unchanged — no production code touched.
+- Full gate green: `go test ./...`, `go vet ./...`, `staticcheck ./...`, `go build ./...`, `gofmt -l` clean.
+- Files: `internal/ui/bulkops_test.go`, `log.md`.
+
 ## 2026-07-23 — Fix: swallow bare 0 in SELECT (hour-zoom reset leaked through)
 
 - **Final whole-branch review, item 2 (Important)**: `handleSelectKey` passed every digit through unconditionally (`r >= '0' && r <= '9'`), including a bare `0` — which, with no pending count, falls to `globalKeys`' `case '0'` → `resetHourZoom()`, a week/day-grid layout+persisted-state mutation. Same class as the already-fixed modified-arrow leak (`TestSelectSwallowsModifiedArrows`).
