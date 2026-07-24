@@ -72,12 +72,12 @@ var helpSections = []struct {
 	}},
 	{"Select (multi-select)", [][2]string{
 		{"V", "enter SELECT — anchors at the cursor (task tree, calendar days, or a drilled day's items)"},
-		{"h j k l / gg / G", "extend the range (motion; context-switch keys are inert while selecting)"},
+		{"h j k l / f b / gg / G", "extend the range (motion incl. period shift; context-switch keys are inert while selecting)"},
 		{"Space", "bulk complete the range"},
 		{"d", "bulk delete the range (one confirm, whole subtrees)"},
 		{"y / Y", "bulk cut / copy the range to the clipboard (task tree only)"},
 		{"m", "bulk grab — one uniform date-shift over the whole range"},
-		{"(skips)", "recurring events, read-only/missing/already-done items skipped & counted (grab also skips undated tasks)"},
+		{"(skips)", "recurring, read-only, missing, already-done, or open-subtask folders — skipped & counted (grab also skips undated)"},
 		{"Esc", "cancel (from a nested grab, back to SELECT; from SELECT, exits to the underlying view)"},
 	}},
 	{"Calendar", [][2]string{

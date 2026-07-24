@@ -4,6 +4,15 @@
 
 ---
 
+## 2026-07-23 — Docs: SELECT ripple completeness (empty-day range, modified arrows, skip taxonomy)
+
+- **Reviewer follow-up on the v1.4.0 docs-ripple task**: four shipped behaviors were verified accurate during the first pass but never actually written into a doc. Closed all four; nothing else changed.
+- **main.md's SELECT-mode paragraph** gains, in place: (1) a contrast clause — a *lost* anchor (remote delete, emptied drilled day) clears the selection, but an anchored day range spanning only empty days is still a **valid** selection since a date anchor can't itself vanish (extend `f`/`b` toward a day with items); (2) "swallows context-switch and edit keys" widened to name **modified** motion keys explicitly (Ctrl-arrows can't sneak a pane resize in mid-select); (3) a truthful-counts clause — the skip filter runs *before* delete/yank's subtree-absorption dedupe, so the confirm/summary count always matches what's actually acted on (stated as behavior, not the two-pass implementation detail).
+- **Skip taxonomy**: added the missing `folders with open subtasks` category (bulk complete only) to main.md's skip list and to `:help`'s Select section skips row.
+- **`:help` motion row**: added `f`/`b` (period shift) to the Select section's motion keys — it passes through `handleSelectKey` like `hjkl`/`gg`/`G` but was omitted from the cheat sheet.
+- Full gate green: `go test ./...`, `go vet ./...`, `staticcheck ./...`, `go build ./...`, `gofmt -l` clean on `internal/ui/help.go`.
+- Files: `main.md`, `internal/ui/help.go`, `log.md`.
+
 ## 2026-07-23 — v1.4.0: docs ripple (README, :help, main.md build record, coverage ledger)
 
 - **Task 8 (final) of the v1.4.0 SELECT-mode build**: documentation only, no interface changes. Verified every claim against the shipped code (`internal/ui/selection.go`, `bulkops.go`, `bulkgrab.go`, `handleSelectKey`/`handleBulkGrabKey`/`globalKeys`) rather than the original task-8 brief/plan.
