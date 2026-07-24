@@ -502,7 +502,6 @@ With the planned feature line closing at v1.4.0 (v1.5.0 is polish & audit), no f
 - **Configurable keybindings** — a `[keys]` config section (the schema deliberately left room; see Configuration & credentials).
 - **Persistent trash** — undo today is session-scoped; deferred unless it proves needed.
 - **Conflict "keep both as separate items"** — a third resolution besides keep-local/keep-server; needs a new-UID clone.
-- **Detail-pane accordion collapse** — the `+`/`-` accordion only collapses the overview column today.
 - **Full-cell click mapping** in the calendar grids — a click anywhere in a day/hour cell, not just on a drawn event block, selects it.
 - **Full `sync-collection` delta sync** — **indefinitely deferred** (see the Incremental sync decision for the measured rationale); revisit only if a real pain point appears.
 

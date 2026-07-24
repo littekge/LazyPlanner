@@ -4,6 +4,14 @@
 
 ---
 
+## 2026-07-24 — Detail-pane accordion (gap-closer B)
+
+- `+`/`-` (outside the week/day hour-zoom) now collapses/restores the Detail pane together with the overview column — making main.md's Pane-sizing wording true and resolving the v1.5.0 design's seed finding (the Future-versions bullet contradicting it is removed). Restore honors `detailOn`, so Agenda mode's independent Detail-hiding is unaffected; `setMode`'s accordion auto-restore brings Detail back too.
+- TDD: `internal/ui/accordion_detail_test.go` (new) — collapse/restore round-trip and the setMode-restore path incl. the Agenda interaction; display-stress gains an `accordion-collapsed` state.
+- Docs: `help.go` hint row, README accordion wording, main.md Future-versions bullet removed.
+- Full gate green.
+- Files: `internal/ui/keys.go`, `internal/ui/app.go`, `internal/ui/accordion_detail_test.go` (new), `internal/ui/displaystress_test.go`, `internal/ui/help.go`, `README.md`, `main.md`, `log.md`.
+
 ## 2026-07-24 — Agenda board click-to-select + double-click re-target (gap-closer A, part 2)
 
 - `mouseCapture` gains a board case: single left click (Agenda mode) selects the item under the cursor via `agendaList.SetCurrentItem` (its changed func drives the board); double-click re-targets before `editSelected`, closing the pass-16 "edits the already-selected item" trap. Gap rows and the header are inert (`itemAtY` = -1).

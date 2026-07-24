@@ -492,10 +492,11 @@ func (a *app) resetHourZoom() {
 	a.flash("Hour rows: auto-fit")
 }
 
-// setAccordion collapses (on) or restores (off) the left overview column so the
-// Main view can fill the width — the lazygit +/- idiom. Collapsing moves focus
-// into the center so a hidden pane isn't focused. Not available in Agenda mode,
-// whose center navigation is driven by the (left) agenda list.
+// setAccordion collapses (on) or restores (off) the left overview column and
+// the Detail pane so the Main view can fill the width — the lazygit +/- idiom.
+// Collapsing moves focus into the center so a hidden pane isn't focused. Not
+// available in Agenda mode, whose center navigation is driven by the (left)
+// agenda list.
 func (a *app) setAccordion(on bool) {
 	if a.leftCol == nil {
 		return
@@ -507,9 +508,15 @@ func (a *app) setAccordion(on bool) {
 	a.accordion = on
 	if on {
 		a.body.ResizeItem(a.leftCol, 0, 0)
+		a.body.ResizeItem(a.detail, 0, 0)
 		a.setFocus(a.mainPrimitive())
 	} else {
 		a.body.ResizeItem(a.leftCol, a.leftWidth, 0)
+		// Restore Detail only where it belongs: detailOn is mode-owned (Agenda
+		// hides Detail independently of the accordion), so honor it here.
+		if a.detailOn {
+			a.body.ResizeItem(a.detail, a.detailWidth, 0)
+		}
 		a.setFocus(a.focusForMode())
 	}
 }

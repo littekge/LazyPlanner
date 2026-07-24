@@ -88,7 +88,7 @@ var helpSections = []struct {
 		{"g d", "go to date (smart-parsed)"},
 	}},
 	{"Layout", [][2]string{
-		{"+ / - / 0", "week/day: zoom hour height in/out · 0 = auto-fit (remembered) · else: +/- collapse / restore the overview (accordion)"},
+		{"+ / - / 0", "week/day: zoom hour height in/out · 0 = auto-fit (remembered) · else: +/- collapse / restore the overview and Detail (accordion)"},
 		{"Ctrl-← / Ctrl-→", "narrow / widen the overview column"},
 		{"Ctrl-W", "resize sub-mode: ←/→ overview · H/L Detail · Enter keep · Esc cancel"},
 	}},

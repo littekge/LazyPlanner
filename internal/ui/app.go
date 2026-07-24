@@ -715,6 +715,11 @@ func (a *app) setMode(m int) {
 	if a.accordion && a.leftCol != nil {
 		a.accordion = false
 		a.body.ResizeItem(a.leftCol, a.leftWidth, 0)
+		// Detail was collapsed with the accordion; restore it before the mode
+		// switch below applies its own showDetail (Agenda re-hides it).
+		if a.detailOn {
+			a.body.ResizeItem(a.detail, a.detailWidth, 0)
+		}
 	}
 	switch m {
 	case modeCalendar:

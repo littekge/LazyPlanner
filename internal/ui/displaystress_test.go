@@ -146,6 +146,11 @@ func TestDisplayStress(t *testing.T) {
 			a.globalKeys(tcell.NewEventKey(tcell.KeyEnter, 0, tcell.ModNone))
 		}},
 		{"agenda", func() { a.globalKeys(runeKey('a')) }},
+		{"accordion-collapsed", func() {
+			a.globalKeys(runeKey('t'))
+			a.buildTree()
+			a.setAccordion(true)
+		}},
 	}
 
 	for _, st := range states {

@@ -88,7 +88,7 @@ Editing (`e`), deleting (`d`), or grabbing (`m`) a recurring **event** opens a s
 - **`:config`** opens `config.toml` in `$EDITOR` and reloads on exit: a `color_mode` or credential change applies live, while an `auto`↔`truecolor` switch needs a restart. Editing the active account's connection (or removing it) can't be hot-swapped — use `:account` or restart.
 - `:calendar` edits are offline-first and sync **both ways** — a rename/recolor pushes via `PROPPATCH`, and a change made in NextCloud is pulled back without clobbering an unpushed local edit.
 - The status bar's left shows a vim-style **mode badge** — `NORMAL`, `DRILL` (drilled into a day, or editing a form field), `GRAB` — so a context-sensitive key like `hjkl` is never a surprise; its right shows the sync state and live conflict count.
-- `+`/`-` accordion-expand the center (or zoom the time-grid hour height in week/day view); `Ctrl-←`/`Ctrl-→` and `Ctrl-W` resize the panes, widths remembered across launches.
+- `+`/`-` accordion-expand the center by collapsing the side panels *and* Detail (or zoom the time-grid hour height in week/day view); `Ctrl-←`/`Ctrl-→` and `Ctrl-W` resize the panes, widths remembered across launches.
 - **Mouse**: click focuses a pane and selects the item under it — including the center agenda board — and double-click opens the edit form for the item under the cursor (tree or agenda). Wheel scrolls. `?` opens the full cheat sheet.
 
 ### Managing Calendars
@@ -132,7 +132,7 @@ After creating a calendar, run `lazyplanner import` to pull it into the local ca
 | `[` / `]` | Cycle the highlighted calendar (any mode) |
 | `{` / `}` | Cycle the highlighted task list (any mode) |
 | `f` / `b` · `gt` | Forward / back one period · jump to today |
-| `+` / `-` / `0` | Accordion collapse / restore · in week/day: zoom hour height, `0` = auto-fit |
+| `+` / `-` / `0` | Accordion collapse / restore overview + Detail · in week/day: zoom hour height, `0` = auto-fit |
 | `Ctrl-←` / `Ctrl-→` · `Ctrl-W` | Narrow / widen the overview column · resize sub-mode (overview + Detail) |
 | `r` | Sync now (= `:sync`) |
 | `:` · `gd` · `?` | Command line · go to date · help |
