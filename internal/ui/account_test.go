@@ -6,6 +6,7 @@ import (
 	"time"
 
 	"github.com/gdamore/tcell/v2"
+	"github.com/rivo/tview"
 )
 
 func multiAccountApp(t *testing.T) *app {
@@ -79,6 +80,31 @@ func TestAccountPickerSelectionIsLegible(t *testing.T) {
 	}
 	if !reversed {
 		t.Error("account picker selected row is not reverse-video — highlight would be illegible on our terminal-default theme")
+	}
+}
+
+// TestAccountPickerQCloses: ':help'/README promise that 'q' closes non-form
+// dialogs — the account picker's SetInputCapture previously only forwarded to
+// modalMotionKey (no Esc/'q' check of its own; it relied solely on
+// SetDoneFunc, which tview only fires for Esc), so 'q' silently did nothing.
+func TestAccountPickerQCloses(t *testing.T) {
+	a := multiAccountApp(t)
+	a.root = tview.NewPages()
+	a.root.AddPage(pageMain, a.layout(), true, true)
+
+	a.openAccountPicker()
+	if !a.root.HasPage(pageAccount) {
+		t.Fatal("precondition: account picker should be open")
+	}
+	list, ok := a.tv.GetFocus().(*tview.List)
+	if !ok {
+		t.Fatalf("account picker list not focused; got %T", a.tv.GetFocus())
+	}
+
+	handle := list.InputHandler()
+	handle(tcell.NewEventKey(tcell.KeyRune, 'q', tcell.ModNone), func(tview.Primitive) {})
+	if a.root.HasPage(pageAccount) {
+		t.Error("'q' should close the account picker")
 	}
 }
 

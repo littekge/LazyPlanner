@@ -171,6 +171,10 @@ func (a *app) accountPickerList() *tview.List {
 	}
 	list.SetDoneFunc(func() { a.closeModal(pageAccount) }) // Esc cancels
 	list.SetInputCapture(func(ev *tcell.EventKey) *tcell.EventKey {
+		if ev.Key() == tcell.KeyEscape || ev.Rune() == 'q' {
+			a.closeModal(pageAccount)
+			return nil
+		}
 		return modalMotionKey(ev)
 	})
 	return list

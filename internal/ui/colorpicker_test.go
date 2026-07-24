@@ -112,6 +112,30 @@ func TestColorPickerSelectCustomCancel(t *testing.T) {
 	}
 }
 
+// TestColorPickerQCloses: ':help'/README promise that 'q' closes non-form
+// dialogs — the swatch grid previously only closed on Esc (its InputHandler
+// had no 'q' case). The grid is the only focusable primitive on the pageColor
+// page; the "Custom hex…" entry hands off to a *separate* promptInput modal
+// only after this picker has already closed (see openColorPickerCallback), so
+// there is no in-picker hex text field 'q' could be swallowed away from.
+func TestColorPickerQCloses(t *testing.T) {
+	a := newRootedTestApp(t, time.Date(2026, 7, 5, 12, 0, 0, 0, time.UTC))
+	a.openColorPickerCallback("", " Pick a color ", func(string) {})
+	if !a.root.HasPage(pageColor) {
+		t.Fatal("precondition: color picker should be open")
+	}
+	p, ok := a.tv.GetFocus().(*colorPicker)
+	if !ok {
+		t.Fatalf("color picker not focused; got %T", a.tv.GetFocus())
+	}
+
+	handle := p.InputHandler()
+	handle(tcell.NewEventKey(tcell.KeyRune, 'q', tcell.ModNone), func(tview.Primitive) {})
+	if a.root.HasPage(pageColor) {
+		t.Error("'q' should close the color picker (the swatch grid is focused)")
+	}
+}
+
 func TestApplyCalendarColor(t *testing.T) {
 	a := newRootedTestApp(t, time.Date(2026, 7, 5, 12, 0, 0, 0, time.UTC))
 	cals := a.store.Calendars()

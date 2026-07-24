@@ -4,6 +4,15 @@
 
 ---
 
+## 2026-07-24 — v1.5.0 phase 2: 'q' closes the account picker and color picker (matrix finding #7)
+
+- `:help`/README promise `q` closes non-form dialogs, and the conflicts list (`internal/ui/conflicts.go`) already honored it. The account picker (`accountPickerList`, `internal/ui/command.go`) and the color/swatch picker (`colorPicker.InputHandler`, `internal/ui/colorpicker.go`) did not: the account picker's `SetInputCapture` only forwarded to `modalMotionKey` (relying on `SetDoneFunc`, which tview fires for Esc only, not 'q'), and the color picker's `InputHandler` switch had an Esc case with no 'q' sibling.
+- Mirrored the conflicts-list pattern: the account picker's `SetInputCapture` now checks `ev.Key() == tcell.KeyEscape || ev.Rune() == 'q'` before falling through to `modalMotionKey`, closing via the same `a.closeModal(pageAccount)` its Esc path already used. The color picker's Escape case gained an `|| ev.Rune() == 'q'` alongside it, calling the same `onCancel`.
+- The color picker's "Custom hex…" entry hands off to a *separate* `promptInput` modal only after `pageColor` has already closed (`openColorPickerCallback`, `internal/ui/calendar.go`) — the swatch grid itself is the only focusable primitive on that page, so there is no in-picker hex text field for 'q' to be swallowed away from; no focus-based guard was needed (noted with a comment at the new case).
+- TDD: `TestAccountPickerQCloses` (`internal/ui/account_test.go`) and `TestColorPickerQCloses` (`internal/ui/colorpicker_test.go`), both RED against the unmodified source (confirmed by stashing `command.go`/`colorpicker.go` and re-running), GREEN after the fix.
+- Files: `internal/ui/command.go`, `internal/ui/colorpicker.go`, `internal/ui/account_test.go`, `internal/ui/colorpicker_test.go`.
+- Full gate green (`go test ./...`, `go vet ./...`, `staticcheck ./...`, `go build ./...`); `gofmt` clean.
+
 ## 2026-07-24 — v1.5.0 phase 2: undo (u) keeps the calendar drill state (matrix finding #5)
 
 - `undoLast` (`internal/ui/edit.go`) called plain `a.refresh(step.selUID)` to rebuild the views after reversing a mutation. Every sibling direct-mutation path (Space-complete's `refreshKeepingDrill(t.uid)`, bulk grab/bulk ops/recurrence-scope mutations) preserves the calendar grid's drill-in (event-cycling) state across the rebuild; `refresh` itself only auto-preserves drill when its `selUID` argument is `""` (the background-sync case) — a non-empty `selUID` (which most undo steps carry, e.g. `"toggle done"`'s `t.uid`) skipped that branch, so undoing while drilled into a calendar day silently kicked the user back out to day navigation.

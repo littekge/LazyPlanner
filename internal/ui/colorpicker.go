@@ -134,7 +134,11 @@ func (p *colorPicker) InputHandler() func(*tcell.EventKey, func(tview.Primitive)
 		n := len(calendarPalette)
 		cols := colorPickerCols
 		switch {
-		case ev.Key() == tcell.KeyEscape:
+		case ev.Key() == tcell.KeyEscape || ev.Rune() == 'q':
+			// The grid has no focusable text field of its own (the "Custom hex…"
+			// entry hands off to a separate promptInput modal only after this
+			// picker closes — see openColorPickerCallback), so 'q' can never land
+			// on an in-progress hex edit; it always means close, like Esc.
 			if p.onCancel != nil {
 				p.onCancel()
 			}
