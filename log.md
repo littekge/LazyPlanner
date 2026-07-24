@@ -4,6 +4,14 @@
 
 ---
 
+## 2026-07-24 — v1.5.0 phase 2: pin h/l inertness on the conflicts/account modal lists (deferred test hardening)
+
+- A prior refactor made `modalMotionKey` (`internal/ui/keys.go`) translate `h`/`l` to Left/Right for every modal list, including the conflicts list and the `:account` picker — both single-column `tview.List`s, where Left/Right are no-ops. That inertness was never asserted, only implied.
+- Extended the existing `TestConflictsListVimKeys` and `TestAccountPickerVimKeys` (`internal/ui/vimkeys_modal_test.go`) to press `h` then `l` after the existing j/k assertions and assert `GetCurrentItem()` is unchanged, mirroring the j/k assertion pattern already there.
+- Coverage add, not a behavior change: both extended tests passed immediately, confirming h/l are in fact inert on these lists (no bug found).
+- Files: `internal/ui/vimkeys_modal_test.go`.
+- Full gate green (`go test ./...`, `go vet ./...`, `staticcheck ./...`, `go build ./...`); `gofmt` clean.
+
 ## 2026-07-24 — v1.5.0 phase 2: 'q' closes the account picker and color picker (matrix finding #7)
 
 - `:help`/README promise `q` closes non-form dialogs, and the conflicts list (`internal/ui/conflicts.go`) already honored it. The account picker (`accountPickerList`, `internal/ui/command.go`) and the color/swatch picker (`colorPicker.InputHandler`, `internal/ui/colorpicker.go`) did not: the account picker's `SetInputCapture` only forwarded to `modalMotionKey` (relying on `SetDoneFunc`, which tview fires for Esc only, not 'q'), and the color picker's `InputHandler` switch had an Esc case with no 'q' sibling.

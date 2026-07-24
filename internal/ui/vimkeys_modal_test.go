@@ -72,6 +72,18 @@ func TestConflictsListVimKeys(t *testing.T) {
 	if got := list.GetCurrentItem(); got != 0 {
 		t.Errorf("k: selection = %d, want 0", got)
 	}
+	// h/l map to Left/Right via modalMotionKey (the same table used everywhere
+	// else), but this is a single-column list — Left/Right are inert on it, so
+	// h/l must leave the selection unchanged. Pinning current behavior; a future
+	// refactor that makes h/l move the selection here would be a real bug.
+	handle(tcell.NewEventKey(tcell.KeyRune, 'h', tcell.ModNone), func(tview.Primitive) {})
+	if got := list.GetCurrentItem(); got != 0 {
+		t.Errorf("h: selection = %d, want 0 (inert on a single-column list)", got)
+	}
+	handle(tcell.NewEventKey(tcell.KeyRune, 'l', tcell.ModNone), func(tview.Primitive) {})
+	if got := list.GetCurrentItem(); got != 0 {
+		t.Errorf("l: selection = %d, want 0 (inert on a single-column list)", got)
+	}
 }
 
 // TestAccountPickerVimKeys: same vim-motion promise for the :account picker's
@@ -91,6 +103,16 @@ func TestAccountPickerVimKeys(t *testing.T) {
 	handle(tcell.NewEventKey(tcell.KeyRune, 'k', tcell.ModNone), func(tview.Primitive) {})
 	if got := list.GetCurrentItem(); got != 0 {
 		t.Errorf("k: selection = %d, want 0", got)
+	}
+	// h/l map to Left/Right via modalMotionKey; inert on this single-column list.
+	// Pinning current behavior — see the matching comment on the conflicts test.
+	handle(tcell.NewEventKey(tcell.KeyRune, 'h', tcell.ModNone), func(tview.Primitive) {})
+	if got := list.GetCurrentItem(); got != 0 {
+		t.Errorf("h: selection = %d, want 0 (inert on a single-column list)", got)
+	}
+	handle(tcell.NewEventKey(tcell.KeyRune, 'l', tcell.ModNone), func(tview.Primitive) {})
+	if got := list.GetCurrentItem(); got != 0 {
+		t.Errorf("l: selection = %d, want 0 (inert on a single-column list)", got)
 	}
 }
 
