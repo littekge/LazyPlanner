@@ -4,6 +4,14 @@
 
 ---
 
+## 2026-07-24 — v1.3.0 released; post-release verification + doc currency
+
+- **v1.3.0 released** (owner merged `ai-workspace` → `main` and tagged `v1.3.0` at `1f8da57`). Verified it landed cleanly: the origin tag points at `1f8da57` (includes the grab-reanchor fix); CI green on the tag and `main`; the Release workflow completed and attached all **8** assets (darwin amd64/arm64, linux amd64/arm64/armv6/armv7, windows amd64, `sha256sums.txt`); `linux_amd64` checksum verified against `sha256sums.txt` and the binary smoke-tested reporting `LazyPlanner v1.3.0`.
+- Doc currency (this cleanup): `main.md` Current State flipped to "v1.0.0–v1.3.0 released; next feature is v1.4.0 SELECT mode (not started)"; the v1.3.0 Build Plan header/Status flipped from "implemented" to "released 2026-07-24" with the asset/checksum verification note. `docs/audit/COVERAGE.md` grab-mode row records the post-v1.3.0 reanchor fix + guardrail.
+- **Note for a future maintenance pass** (v1.5.0): the Release workflow logs a Node.js 20 deprecation warning — `actions/checkout@v4`, `actions/setup-go@v5`, `softprops/action-gh-release@v2` are force-run on Node 24; non-blocking, bump the action versions eventually.
+- No code change.
+- Files: `main.md`, `docs/audit/COVERAGE.md`, `log.md`.
+
 ## 2026-07-23 — Bugfix: grab-all day-move made recurring events with a day-pinning rule disappear
 
 - **Bug** (owner-reported): grabbing a recurring event at scope *all* and moving the day (`h`/`l`) made it vanish from the calendar. **Root cause** (systematic-debugging, verified with a UI repro): the day-move shifts `DTSTART` but `EditEvent` preserves the RRULE, so a day-pinning `BY*` (weekly `BYDAY`, monthly nth-weekday — every v1.3.0 preset carries one) kept firing on the *old* day; the moved `DTSTART` fell outside its own set (anchor occurrence dropped) and the UI then navigated to the moved day, which had no occurrence → "disappeared". Plain `FREQ=WEEKLY` (no `BY*`) already worked, which is why it was intermittent.

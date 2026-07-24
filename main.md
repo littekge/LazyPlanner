@@ -44,9 +44,7 @@ LazyPlanner is a terminal-based todo-list and calendar management program. It is
 
 ## Current State
 
-**v1.0.0 through v1.2.0 are released** (see the Build Plan subsections for each). Current work is **v1.3.0 (recurrence-rule UI)**: its core — all six build steps — is implemented, and the post-build dialog polish plus both pre-release UI items (a rigorous confirm for irreversible calendar/list deletes and the Custom recurrence sub-form redesign) have now shipped, so v1.3.0 is **feature-complete and awaiting release**.
-
-The roadmap past v1.3.0 is two more feature/maintenance versions: **v1.4.0 is SELECT mode** (a vim-style multi-select layer) and **v1.5.0 is final polishing & auditing**.
+**v1.0.0 through v1.3.0 are released** (see the Build Plan subsections for each; v1.3.0 released 2026-07-24). The next feature is **v1.4.0 — SELECT mode** (a vim-style multi-select layer), planned but not yet started; after it, **v1.5.0 is final polishing & auditing**.
 
 Running alongside every version is a continuous **hardening & audit phase** (patch-level v1.0.x bug-hunting, resilience, and consistency work); coverage and residual risk are tracked in `docs/audit/COVERAGE.md`, and the Build Plan below carries a one-line summary of every hardening pass and a subsection per feature version. Sync findings are verified headlessly; the opt-in live CalDAV suite (run against a throwaway test account) is available on demand.
 
@@ -401,9 +399,9 @@ Extend the quick-add smart parser with four grammar additions — time ranges, s
 5. **Warnings + re-prompt UX** — `Warnings`, all trigger classes, the adversarial table, the keep-open submit flow, the fuzz invariant.
 6. **Docs ripple** — `:help`, README quick-add documentation, and the main.md `Creation: quick-add` section rewritten in place.
 
-### v1.3.0 — recurrence-rule UI (implemented 2026-07-23)
+### v1.3.0 — recurrence-rule UI (released 2026-07-24)
 
-**Status**: the recurrence-rule UI — all six build steps — is implemented repro-first with green full gates (2026-07-23), followed by post-build dialog polish (see Post-Build Incremental Changes) — every UI item scoped before release has now shipped. Verified headlessly — the model spec↔RRULE round-trip + unrepresentable catalogue, the rewrite primitives (orphan pruning, EXDATE keep, all-day date-only UNTIL, split-with-new-rule), the extended `FuzzRecurrenceMutations`, and the UI seeding/read/sub-form + display-stress + focus-stack tests.
+**Status**: the recurrence-rule UI — all six build steps — is implemented repro-first with green full gates (2026-07-23), followed by post-build dialog polish (see Post-Build Incremental Changes) — every UI item scoped before release shipped. Verified headlessly — the model spec↔RRULE round-trip + unrepresentable catalogue, the rewrite primitives (orphan pruning, EXDATE keep, all-day date-only UNTIL, split-with-new-rule), the extended `FuzzRecurrenceMutations`, and the UI seeding/read/sub-form + display-stress + focus-stack tests. **Released 2026-07-24**: owner merged to `main` and tagged `v1.3.0`; the GitHub release carries the CI-built binaries (all 8 assets present, `linux_amd64` checksum verified against `sha256sums.txt` and smoke-tested reporting v1.3.0).
 
 Close the recurrence-creation gap in the full forms (acknowledged 2026-07-22: quick-add v1.2.0 is otherwise the only in-app way to create a recurring item, and an existing rule can't be rewritten in-app at all). A **Repeat field** in both full forms plus a **Custom… sub-form**, with Google-Calendar-style expressiveness — the owner's benchmark use case is "every week on Tuesday and Thursday until an end date". All decisions owner-settled 2026-07-23.
 
