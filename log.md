@@ -4,6 +4,13 @@
 
 ---
 
+## 2026-07-24 — Whole-branch review of the v1.5.0 step-0/gap-closer arc; COVERAGE.md phase-3 note widened
+
+- **Final whole-branch review** (base `82e68d8` → `046443c`, all five plan tasks): verdict **ready to merge**, no Critical or Important findings. The race-test invariant, the accordion's interaction with every adjacent mode/resize path, and both `moveSubtreeOps` callers' rollback behavior were traced explicitly and held.
+- **One Minor taken now**: the COVERAGE.md phase-3 deferral in the SELECT-mode row named only the `!remaining` `Delete` branch; the same-class unconditional rollback-`Restore` path (shared ops/rollback in `yankpaste.go`, also `reparentOps`) is now named alongside it so the reconcile-matrix audit sweeps both.
+- **Deferred Minors, recorded for the v1.5.0 phase-2 sweep**: (1) the agenda double-click path with a stale board rect outside Agenda mode is untested pre-existing behavior (a key×context matrix cell); (2) `setMode`'s accordion restore does a redundant Detail resize on the Agenda transition; (3) the `detailOn`-restore snippet appears 3× — candidate `restoreDetailWidth()` helper; (4) note-only: `itemAtY` uses the last draw's scroll (benign one-event window).
+- Files: `docs/audit/COVERAGE.md`, `log.md`.
+
 ## 2026-07-24 — Detail-pane accordion (gap-closer B)
 
 - `+`/`-` (outside the week/day hour-zoom) now collapses/restores the Detail pane together with the overview column — making main.md's Pane-sizing wording true and resolving the v1.5.0 design's seed finding (the Future-versions bullet contradicting it is removed). Restore honors `detailOn`, so Agenda mode's independent Detail-hiding is unaffected; `setMode`'s accordion auto-restore brings Detail back too.
