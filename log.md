@@ -4,6 +4,14 @@
 
 ---
 
+## 2026-07-24 — v1.5.0 phase 2: SELECT hint bar no longer claims gg/G "ends" the range (matrix finding #1)
+
+- The SELECT-mode help bar (`internal/ui/render.go`, the `a.selecting` branch of `updateStatus`) literally read `"gg/G ends"`, but `gg`/`G` in SELECT extend the range to the top/bottom (`gotoTop`/`gotoBottom` stay in effect while selecting) — they never end or exit the mode. This contradicted both the real behavior and `:help`'s own `"extend the range"` wording for the same chord, misleading anyone who read the hint bar.
+- Reworded to `"gg/G extend to top/bottom"`, matching the surrounding `"hjkl extend"` phrasing and `:help`'s wording style.
+- TDD: `TestSelectHintBarDoesNotClaimGGEnds` (`internal/ui/hints_test.go`) RED against the unmodified string (asserted no `"gg/G ends"` substring and presence of `"gg/G extend"`), GREEN after the wording fix.
+- Files: `internal/ui/render.go`, `internal/ui/hints_test.go`.
+- Full gate green (`go test ./...`, `go vet ./...`, `staticcheck ./...`, `go build ./...`); `gofmt` clean.
+
 ## 2026-07-24 — v1.5.0 phase 2: DRY refactor — share motionArrow's j/k translation via modalMotionKey
 
 - The Conflicts list (`internal/ui/conflicts.go`) and account picker (`internal/ui/command.go`) both manually duplicated motionArrow's j/k→Down/Up translation inline in their `SetInputCapture` handlers because modals short-circuit `globalKeys` (where motionArrow normally translates). Created a shared `modalMotionKey` helper that reuses motionArrow's translation table, eliminating the duplication.

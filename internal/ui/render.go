@@ -719,7 +719,7 @@ func (a *app) updateStatus() {
 	}
 
 	if a.selecting {
-		a.hints.SetText("SELECT · hjkl extend · gg/G ends · Space done · d delete · y/Y yank · m grab · Esc/V cancel")
+		a.hints.SetText("SELECT · hjkl extend · gg/G extend to top/bottom · Space done · d delete · y/Y yank · m grab · Esc/V cancel")
 		return
 	}
 
