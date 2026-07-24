@@ -4,6 +4,23 @@
 
 ---
 
+## 2026-07-24 — v1.5.0 phase 2 doc fixes (Batch C/D): README keybindings table & prose (matrix findings #8–#12, #14–#17)
+
+- Doc-only pass over `README.md`'s keybindings table and Usage prose landing the owner-approved Batch C/D matrix findings, paired with the `help.go` fix in the entry above; same code verified, no source behavior changed.
+- **#8** — `y`/`p` table row split into dedicated `y`/`Y` (cut/copy), `>`/`<` (zoom subtree), and `p`/`P` (paste, now flagged Tasks-mode-only) rows; added a dedicated `i` `!` … row for force-create on an unconfirmed `[?]` calendar (previously prose-only).
+- **#9** — added a `J` / `K` (task tree) row (jump to first child / parent), distinct from grab's `J`/`K` resize and `H`/`L` re-parent — see the code citations in the paired help.go entry above.
+- **#10** — SELECT's table row now reads "`Esc` or `V` cancels".
+- **#11** — the new `p`/`P` row and the "Moving & grabbing" prose paragraph both now say paste is Tasks-mode only, blocked with a hint from a calendar/agenda view.
+- **#12** — SELECT's table row now reads "`Space` complete all tasks (events in range are skipped, counted)".
+- **#14** — the stale `Enter` row ("dive into the center; cycle a day's events...") corrected to "drill into the center... — drills in only; a drilled day's items are then cycled with j/k/arrows, not Enter" plus a no-op-on-the-Agenda-board clarification (help.go:27 and the hint bar were already correct from phase 1; only README:120 was stale).
+- **#15** — the grab (`m`) row and the "Moving & grabbing" prose both now note hour-move/resize need week/day view (month has no time axis).
+- **#16** — split the over-broad `↑↓←→ / jkhl → "move the highlight"` row into a `j`/`k`/arrows row (genuinely moves the highlight) and a separate `h`/`l`/arrows row (moves between columns where that applies; inert on the single-column overview lists).
+- **#17** — the forms NORMAL/DRILL prose paragraph gained a sentence noting `Tab`/`Shift-Tab` are synonyms for `j`/`k` in NORMAL and for `Enter`/its reverse once drilled into a field.
+- Left `main.md` untouched: none of the nine findings named it, and its own keybindings table/prose already read accurately for these cases (verified during triage) — flagging in case a later pass wants it double-checked for full three-doc consistency.
+- Files: `README.md`.
+- Tests: none — doc-only change; full gate re-run anyway per the task's instructions (README doesn't affect Go compilation, but ran alongside the help.go commit's gate for the same session): `go build ./...`, `go test ./...`, `go vet ./...`, `staticcheck ./...` all clean.
+- No issues: all nine findings verified true-as-described against current code; nothing needed walking back.
+
 ## 2026-07-24 — v1.5.0 phase 2: mode-adaptive bottom hint bar (matrix findings #3+#13)
 
 - The resting bottom hint bar (`updateStatus`, `internal/ui/render.go`) was one fixed NORMAL string in every mode: it always advertised `f/b prev/next` and `v view` even in Tasks/Agenda mode, where both are silent no-ops (`f`/`b`/`v` are gated `a.mode == modeCalendar` in `app.go`'s key switch) — finding #3. It also had no branch for the Ctrl-W `RESIZE` sub-mode or an open form/modal, both of which fell through to the same misleading NORMAL line — finding #13.

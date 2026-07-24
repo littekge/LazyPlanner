@@ -70,11 +70,11 @@ Run `lazyplanner` with no arguments to open the TUI (seed the cache with `import
   - An obvious typo (`!hgh`, `next tuedsay`, `25:00`) keeps the input open with a warning — submit the same text again to keep it as-is.
 - Creation is **locked to the calendar's type** (events only on `[events]`/`[both]`, tasks only on `[tasks]`/`[both]`); an unconfirmed `[?]` calendar blocks creation until a sync settles it, unless you force it with **`i!`** (e.g. `i!e`) — read-only and known-wrong-type are never forced.
 - `e` edits the selected item (or, with the Calendars/Tasks panel focused, that calendar/list's name + color); `s` quick-sets one field (`sp` priority, `sd` due); `d` deletes (an item after a confirm — a folder removes its whole subtree; a calendar/list, when its panel is focused, requires typing its name to confirm because it can't be undone).
-- The full forms use the same **NORMAL/DRILL** model as the rest of the app: a form opens in NORMAL, where `j`/`k`/arrows (or `h`/`l`/`←`/`→` between the buttons) step between fields and the Save/Cancel buttons and `Enter` acts on the highlighted one — drilling a text field to type, opening a dropdown, toggling a checkbox, or drilling into the weekday strip (same as a text field). In DRILL the keys reach the field; on the weekday strip, `Space` toggles the highlighted day. `Enter` moves on to the next field and `Esc` steps back out to NORMAL (a second `Esc` cancels the form).
+- The full forms use the same **NORMAL/DRILL** model as the rest of the app: a form opens in NORMAL, where `j`/`k`/arrows (or `h`/`l`/`←`/`→` between the buttons) step between fields and the Save/Cancel buttons and `Enter` acts on the highlighted one — drilling a text field to type, opening a dropdown, toggling a checkbox, or drilling into the weekday strip (same as a text field). `Tab`/`Shift-Tab` are synonyms throughout — for `j`/`k` in NORMAL, and for `Enter`/its reverse once drilled into a field. In DRILL the keys reach the field; on the weekday strip, `Space` toggles the highlighted day. `Enter` moves on to the next field and `Esc` steps back out to NORMAL (a second `Esc` cancels the form).
 
 **Folders.** A task with unfinished subtasks is a **folder** — drawn with a `▸` caret instead of a checkbox in every view — and can't be completed until they are. It keeps its own due date, so it still appears on the calendar (adding a subtask to a dated task just swaps `[ ]` for `▸`). `Space` toggles a task done in **any** view; in a calendar with no task drilled, `Space` instead hides/shows the highlighted calendar.
 
-**Moving & grabbing.** `H`/`L` outdent/indent (re-parent); `y`/`Y` cut/copy a task with its subtree and `p`/`P` paste (the clipboard persists for repeat pastes). `m` enters **grab mode** to move an item in time — an event by hour/day (`J`/`K` resize its end), a task's due date by day/week — with `Enter` to keep and `Esc` to revert. `u` undoes the last change this session.
+**Moving & grabbing.** `H`/`L` outdent/indent (re-parent); `y`/`Y` cut/copy a task with its subtree and `p`/`P` paste (Tasks mode only — pasting from a calendar/agenda view is blocked with a hint to switch; the clipboard persists for repeat pastes). `m` enters **grab mode** to move an item in time — an event by hour/day (`J`/`K` resize its end; hour-move and resize need week/day view, since month has no time axis), a task's due date by day/week — with `Enter` to keep and `Esc` to revert. `u` undoes the last change this session.
 
 **Selecting multiple items.** `V` enters **SELECT** mode — a badge-shown mode like GRAB, where movement extends a contiguous range (tree rows, calendar days, or a drilled day's items) instead of just moving the cursor. One bulk action then applies to everything selected as one compound `u` undo step (yank/copy is undone at paste time; a bulk grab interrupted by a stale item keeps the nudges already landed).
 
@@ -115,21 +115,26 @@ After creating a calendar, run `lazyplanner import` to pull it into the local ca
 |---|---|
 | `c` `t` `a` | Focus the Calendars / Tasks / Agenda overview panel |
 | `Tab` / `Shift-Tab` | Cycle those three |
-| `↑` `↓` `←` `→` / `j` `k` `h` `l` | Move the highlight in the focused pane |
+| `↑` `↓` / `j` `k` | Move the highlight in the focused pane |
+| `←` `→` / `h` `l` | Move between columns where that applies — a drilled day's concurrent events, or grid columns; inert on the single-column overview lists (Calendars/Tasks/Agenda) |
 | `<count>` + motion | Repeat a motion — `3j`, `5k` |
 | `gg` / `G` | Go to top / bottom of the list, tree, or calendar grid (`<count>G` → nth item of a list, the tree, or a drilled day) |
-| `Enter` | Dive into the center; cycle a day's events; open a list / expand a task |
+| `Enter` | Drill into the center / open a list / expand a task (drills in only — a drilled day's items are then cycled with `j`/`k`/arrows, not `Enter`; a no-op on the Agenda board, which has no keyboard drill-in) |
 | `Esc` | Back out to the overview · cancel a form/dialog/chord |
 | `i` … | Create prefix — `t`/`T` task, `e`/`E` event, `s`/`S` subtask, `c` calendar, `l` list (Shift = full form) |
+| `i` `!` … | Force-create on an unconfirmed-type (`[?]`) calendar, e.g. `i!e` — read-only and known-wrong-type are never forced |
 | `e` | Edit selected (full form) |
 | `s` … | Quick-set a task field — `p` priority, `d` due date (blank clears) |
 | `d` | Delete selected item — or the calendar/list when its panel is focused (typing its name to confirm, since a collection delete can't be undone) |
 | `Space` | Toggle the selected/drilled task done — or hide/show the highlighted calendar (Calendar view, no task drilled) |
 | `/` · `n` / `N` | Search the current view · next / prev match |
 | `H` / `L` | Outdent / indent task (re-parent) |
-| `y` / `p` | Yank / paste a task — move it (and its subtree) to another parent or list |
-| `m` | Grab mode: move an event in time (`j`/`k` hour, `h`/`l` day, `J`/`K` resize) or nudge a task's due date (`j`/`k` day, `h`/`l` week) — `Enter` keeps, `Esc` reverts |
-| `V` | SELECT mode: extend a contiguous selection with the movement keys (task tree, calendar days, or a drilled day's items), then `Space` complete all, `d` delete all, `y`/`Y` cut/copy all (tree), `m` grab all (±day/±week). `Esc` cancels |
+| `J` / `K` (task tree) | Jump to the node's first child / its parent — distinct from grab's `J`/`K` resize and from `H`/`L` re-parent |
+| `y` / `Y` | Cut / copy a task (with its subtree) to the clipboard |
+| `>` / `<` | Zoom into / out of the selected task's subtree (breadcrumb shown) |
+| `p` / `P` | Paste under the selected task / at the list top level — Tasks mode only, blocked with a hint from a calendar/agenda view (clipboard persists → paste repeatedly) |
+| `m` | Grab mode: move an event in time (`j`/`k` hour, `h`/`l` day, `J`/`K` resize — hour-move and resize need week/day view, not month) or nudge a task's due date (`j`/`k` day, `h`/`l` week) — `Enter` keeps, `Esc` reverts |
+| `V` | SELECT mode: extend a contiguous selection with the movement keys (task tree, calendar days, or a drilled day's items), then `Space` complete all tasks (events in range are skipped, counted), `d` delete all, `y`/`Y` cut/copy all (tree), `m` grab all (±day/±week). `Esc` or `V` cancels |
 | `z` … | Fold the tree — `zR` expand-all, `zM` collapse-all, `za` toggle |
 | `u` | Undo last local change (this session) |
 | `v` | Cycle calendar view: month → week → day |
