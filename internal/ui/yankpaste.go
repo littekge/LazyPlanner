@@ -339,6 +339,8 @@ func (a *app) moveSubtreeOps(uid, targetParent, srcCal, dstCal string, ops *[]un
 			return err
 		}
 		name := store.ResourceName(u)
+		// create: a fresh (dstCal, name) pair — u is moving into dstCal for the first
+		// time, so no resource can exist there yet to clobber.
 		if _, err := a.store.Put(ctx, dstCal, name, single); err != nil {
 			return err
 		}
@@ -444,7 +446,7 @@ func (a *app) copySubtreeOps(rootUID, targetParent, dstCal string, ops *[]undoOp
 			return err
 		}
 		name := store.ResourceName(newUID[u])
-		if _, err := a.store.Put(ctx, dstCal, name, obj); err != nil {
+		if _, err := a.store.Put(ctx, dstCal, name, obj); err != nil { // create: fresh UID, no existing resource to clobber
 			return err
 		}
 		*rollback = append(*rollback, func() { _ = a.store.Forget(ctx, dstCal, name) })

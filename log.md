@@ -4,6 +4,22 @@
 
 ---
 
+## 2026-07-24 — Bare-Put sweep (yankpaste.go): the last two sites are fresh creates, annotated
+
+- Pass 19's bare-Put sweep, concluded: `internal/ui/yankpaste.go`'s two remaining bare-Put sites
+  (the `reparentTo` site was already fixed earlier this pass) were audited and are both genuine
+  creates. `moveSubtreeOps`'s destination-side write names the resource from the moved item's
+  existing UID, but at a `(dstCal, name)` pair the item is entering for the first time — no
+  resource can exist there yet to clobber. `copySubtreeOps`'s write names the resource from a
+  freshly minted UID (`model.NewUID()`), the standard fresh-create case. Both annotated
+  (`// create: ...`) so the sweep is self-documenting; no behavior change.
+- This closes the sweep of all 12 bare-Put sites the Pass 19 audit found in `internal/ui`: 4
+  converted to `PutIfUnchanged` (`reparentTo`, `beginGrabFuture`'s master cap, `commitDetach`'s
+  advance, `commitSplit`'s cap), 8 confirmed-safe creates now annotated.
+- Full gate passes (`go test ./...` except the pre-existing, out-of-scope
+  `TestSelectBulkOpDoesNotLeakCount` countleak repro; `go vet ./...`; `staticcheck ./...`;
+  `go build ./...`; `gofmt -l internal/ui` clean).
+
 ## 2026-07-24 — Bare-Put sweep (edit.go): the three remaining sites are fresh creates, annotated
 
 - Pass 19's bare-Put sweep, continued: `internal/ui/edit.go`'s three bare-Put sites —
