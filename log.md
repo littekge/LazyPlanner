@@ -4,6 +4,37 @@
 
 ---
 
+## 2026-07-24 — Fix HIGH data-loss: bulk/single delete dragged co-resident bystander components
+
+- Hardening Pass 19 HIGH finding: `bulkDelete` and `deleteWholeObject` (`internal/ui/bulkops.go`,
+  `internal/ui/edit.go`) deleted the ENTIRE `.ics` resource for a selected item, even when that
+  resource bundled other, never-selected VEVENT/VTODO components (a foreign or hand-edited `.ics`
+  can co-reside several items in one file). A never-selected bystander sharing the resource was
+  silently erased locally and DELETE'd on the server at the next sync — the same "operate on the
+  component, not the whole resource" class as the pass-10 yank/paste fixes.
+- Fix: added `app.removeComponentOrDelete` (`internal/ui/edit.go`), mirroring
+  `moveSubtreeOps`'s existing source-side removal (`internal/ui/yankpaste.go`) — it calls
+  `model.RemoveComponent` and rewrites the resource via the version-checked `store.PutIfUnchanged`
+  when other items remain co-resident, deleting the whole file only when the target was its last
+  item. Both `deleteWholeObject` (single-item delete) and `bulkDelete`'s confirm callback now route
+  through this helper instead of a bare `store.Delete`; both re-`Locate` immediately before each
+  write so a resource rewritten earlier in the same multi-uid loop is never clobbered by a stale
+  `Prev`. All-or-nothing rollback behavior is unchanged (`store.Restore` reverts a rewrite or a
+  delete identically).
+- Regression test: `internal/ui/coresident_delete_test.go` (`TestBulkDeleteDragsCoResidentBystander`)
+  — writes a resource bundling a "Mover" and "Bystander" VTODO, bulk-deletes only the Mover, asserts
+  the Bystander survives. Repro was RED before the fix (whole-resource `store.Delete` erased both),
+  GREEN after (Mover gone, Bystander intact). Kept in-tree as the regression guard.
+- Files modified: `internal/ui/edit.go`, `internal/ui/bulkops.go`. File added:
+  `internal/ui/coresident_delete_test.go`.
+- Gate: `go build ./...`, `go vet ./...`, `staticcheck ./...`, `gofmt -l internal/ui` all clean.
+  `go test ./...` green for the target test; four other pre-existing failing repro tests
+  (`TestReanchoredRecurrenceLastWeekdayBackwardMoveRepro`, `TestTombstone412ResurrectDoesNotClobberConcurrentUndo`,
+  `TestSelectBulkOpDoesNotLeakCount`, `TestReparentToDoesNotClobberConcurrentPull`,
+  `TestReproUndoMultiRootMoveLosesRoot`) are separate, untracked Pass 19 findings being fixed under
+  the same v1.5.0 phase-2 matrix — confirmed unaffected by this change (same failures reproduce with
+  this fix's diff stashed out).
+
 ## 2026-07-24 — v1.5.0 phase-2 close-out: axis-extension resolution recorded
 
 - Docs-only bookkeeping entry recording that all v1.5.0 phase-2 axis-extension findings have been

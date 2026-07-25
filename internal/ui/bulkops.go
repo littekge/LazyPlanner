@@ -260,11 +260,12 @@ func (a *app) bulkYank(cut bool) {
 
 // bulkDelete (d in SELECT) deletes every selected item — tasks with their whole
 // subtrees — after one confirm naming the full count. Mirrors deleteWholeObject's
-// semantics exactly: whole-resource delete per uid, no scope picker (a recurring
-// todo's resource is its series — the spec's settled "natural meaning"; a
-// recurring event has no such single-resource meaning in bulk, so it's filtered
-// out by bulkDeleteRoots instead). All-or-nothing with rollback; one undo step
-// restores everything.
+// semantics exactly: component-aware delete per uid via removeComponentOrDelete
+// (a bundled resource loses only its selected items, never an unselected
+// co-resident bystander), no scope picker (a recurring todo's resource is its
+// series — the spec's settled "natural meaning"; a recurring event has no such
+// single-resource meaning in bulk, so it's filtered out by bulkDeleteRoots
+// instead). All-or-nothing with rollback; one undo step restores everything.
 func (a *app) bulkDelete() {
 	targets := a.selRange()
 	if targets == nil {
@@ -298,11 +299,16 @@ func (a *app) bulkDelete() {
 		var rollback []func()
 		deleted := 0
 		for _, u := range uids {
+			// Re-Locate right before each write (never reuse a snapshot from
+			// materialization or an earlier loop iteration): a prior uid in this
+			// same loop may have already rewritten a resource this uid co-resides
+			// in, and a stale loc.Prev would fail PutIfUnchanged's version check.
 			loc, ok := a.store.Locate(u)
 			if !ok {
 				continue
 			}
-			if err := a.store.Delete(ctx, loc.CalID, loc.Name); err != nil {
+			undo, err := a.removeComponentOrDelete(ctx, loc, u)
+			if err != nil {
 				for i := len(rollback) - 1; i >= 0; i-- {
 					rollback[i]()
 				}
@@ -311,9 +317,8 @@ func (a *app) bulkDelete() {
 				a.flash("Delete failed: " + err.Error())
 				return
 			}
-			calID, name, prev := loc.CalID, loc.Name, loc.Prev
-			rollback = append(rollback, func() { _, _ = a.store.Restore(ctx, calID, name, prev) })
-			ops = append(ops, undoOp{calID: calID, name: name, prev: prev})
+			rollback = append(rollback, undo)
+			ops = append(ops, undoOp{calID: loc.CalID, name: loc.Name, prev: loc.Prev})
 			deleted++
 		}
 		if deleted == 0 {

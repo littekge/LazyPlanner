@@ -3,6 +3,7 @@ package ui
 import (
 	"context"
 	"errors"
+	"fmt"
 	"strconv"
 	"strings"
 	"time"
@@ -443,7 +444,10 @@ func (a *app) deleteSelected() {
 
 // deleteWholeObject removes the item's resource (and, for a task, its whole
 // subtree) after a confirm — the "delete all occurrences" path for a series and
-// the only path for a non-recurring item.
+// the only path for a non-recurring item. Each item is removed component-aware
+// (removeComponentOrDelete): a resource that bundles other, unselected items
+// (a foreign or hand-edited .ics can co-reside several VEVENT/VTODOs in one
+// file) is rewritten with only the target removed, never dropped whole.
 func (a *app) deleteWholeObject(loc store.Located, uid string) {
 	what := summaryOf(loc.Object, uid)
 
@@ -459,22 +463,61 @@ func (a *app) deleteWholeObject(loc store.Located, uid string) {
 		title = " Delete task "
 	}
 	a.confirm(title, prompt, func() {
+		ctx := context.Background()
 		var ops []undoOp
+		var rollback []func()
 		for _, u := range append([]string{uid}, kids...) {
+			// Re-Locate right before each write: an earlier uid in this same loop
+			// may have rewritten a resource this uid co-resides in.
 			l, ok := a.store.Locate(u)
 			if !ok {
 				continue
 			}
-			if err := a.store.Delete(context.Background(), l.CalID, l.Name); err != nil {
+			undo, err := a.removeComponentOrDelete(ctx, l, u)
+			if err != nil {
+				for i := len(rollback) - 1; i >= 0; i-- {
+					rollback[i]()
+				}
 				a.flash("Delete failed: " + err.Error())
 				return
 			}
+			rollback = append(rollback, undo)
 			ops = append(ops, undoOp{calID: l.CalID, name: l.Name, prev: l.Prev})
 		}
 		a.pushUndo("delete", "", ops...)
 		a.refresh("")
 		a.flash("Deleted (u to undo)")
 	})
+}
+
+// removeComponentOrDelete removes uid's component from loc's resource: when
+// other items still share the resource (a co-resident bystander), it is
+// rewritten without uid via the version-checked PutIfUnchanged; only when uid
+// was the resource's last item is the whole file deleted. Mirrors
+// moveSubtreeOps's source-side removal (yankpaste.go) — the same "never drag a
+// bystander" rule applies to delete as it does to move. Returns a rollback
+// closure that restores the resource to its pre-call snapshot.
+func (a *app) removeComponentOrDelete(ctx context.Context, loc store.Located, uid string) (func(), error) {
+	reduced, remaining, err := model.RemoveComponent(loc.Object, uid, a.loc)
+	if err != nil {
+		return nil, err
+	}
+	if remaining {
+		// Version-checked, never a bare Put: a sync pull updating a co-resident
+		// bystander between this call's Locate and the rewrite must fail the
+		// delete (caller rolls back) rather than silently overwrite it.
+		applied, err := a.store.PutIfUnchanged(ctx, loc.CalID, loc.Name, reduced, loc.Prev)
+		if err != nil {
+			return nil, err
+		}
+		if !applied {
+			return nil, fmt.Errorf("an item changed on the server — retry")
+		}
+	} else if err := a.store.Delete(ctx, loc.CalID, loc.Name); err != nil {
+		return nil, err
+	}
+	calID, name, prev := loc.CalID, loc.Name, loc.Prev
+	return func() { _, _ = a.store.Restore(ctx, calID, name, prev) }, nil
 }
 
 // --- re-parent (H / L) ---
