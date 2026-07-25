@@ -276,10 +276,21 @@ func (a *app) daysRange() []editTarget {
 	if to.Sub(from) > maxSelectDays*24*time.Hour {
 		to = from.AddDate(0, 0, maxSelectDays)
 	}
+	// One expansion for the whole interval, not one per day: a store query mints
+	// its own aggregate model.StepBudget, so a per-day loop over a range this long
+	// (up to maxSelectDays) multiplies that ceiling by the day count and stalls the
+	// UI thread. This materialization is its own operation, so it gets its own
+	// single budget rather than sharing the calendar redraw's.
+	days := make([]time.Time, 0, int(to.Sub(from)/(24*time.Hour))+1)
+	for d := from; !d.After(to); d = d.AddDate(0, 0, 1) {
+		days = append(days, d)
+	}
+	byDay := a.dayItemsForDays(days)
+
 	out := []editTarget{}
 	seen := map[string]bool{}
-	for d := from; !d.After(to); d = d.AddDate(0, 0, 1) {
-		for _, it := range a.dayItems(d) {
+	for _, d := range days {
+		for _, it := range byDay[dayKey(d)] {
 			t := targetFromItem(it)
 			if seen[t.uid] {
 				continue

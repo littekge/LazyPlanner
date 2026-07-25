@@ -124,10 +124,17 @@ func (a *app) buildCenterCalendar() {
 		days = []time.Time{model.DayStart(a.anchor)}
 		title = " " + a.anchor.Format("Monday, Jan 2 2006") + " "
 	}
-	timed, allday := a.splitOccs(days)
+	// One range query for the whole redraw, feeding both the drawn buckets and the
+	// drill list. Each store query mints its own aggregate model.StepBudget, so
+	// querying per day would multiply that ceiling by the day count (the pass-23
+	// freeze); querying once also guarantees the drawn set and the selectable set
+	// are derived from the same expansion, which map-ordered budget exhaustion
+	// would otherwise let diverge.
+	occs := a.occurrencesOnDays(days)
+	timed, allday := splitOccurrences(days, occs)
 	a.timegrid.setData(days, timed, allday, a.anchor, a.now)
 	a.timegrid.dueTasks = a.dueTasksByDay(days)
-	a.timegrid.items = a.dayItemsForDays(days)
+	a.timegrid.items = a.agendaByDay(days, occs)
 	a.timegrid.Box.SetTitle(title)
 	a.center.SwitchToPage("time")
 	a.setDayDetail(a.anchor)
@@ -164,20 +171,47 @@ func (a *app) dayInGrid(day time.Time) bool {
 
 // calItems builds each visible day's agenda for the month grid, from one query.
 func (a *app) calItems(weeks [][]time.Time) map[string][]model.AgendaItem {
-	m := map[string][]model.AgendaItem{}
 	if len(weeks) == 0 {
-		return m
+		return map[string][]model.AgendaItem{}
 	}
-	start := weeks[0][0]
-	end := weeks[len(weeks)-1][6].AddDate(0, 0, 1)
-	occs, _ := a.store.EventOccurrencesVisible(start, end, a.hidden)
-	todos := a.visibleTodos(a.store.TodosVisible(a.hidden))
+	days := make([]time.Time, 0, len(weeks)*7)
 	for _, week := range weeks {
-		for _, day := range week {
-			ds := model.DayStart(day)
-			if items := model.DayAgenda(model.OccurrencesOn(occs, day), todos, ds, ds.AddDate(0, 0, 1)); len(items) > 0 {
-				m[dayKey(day)] = items
-			}
+		days = append(days, week...)
+	}
+	return a.dayItemsForDays(days)
+}
+
+// occurrencesOnDays expands every visible calendar over the span the given days
+// cover, in a single store query.
+//
+// Scale invariant: a store query mints one aggregate model.StepBudget, so the
+// span must be queried ONCE per redraw and bucketed here — never re-queried per
+// day, which multiplies the ceiling by the day count and restores the freeze the
+// budget exists to prevent. Batching also keeps a legitimate calendar whole: an
+// event anchored years before the window pays its catch-up iteration once for the
+// span instead of once per day, so the shared budget is never spent on repeated
+// identical work.
+func (a *app) occurrencesOnDays(days []time.Time) []model.Occurrence {
+	if len(days) == 0 {
+		return nil
+	}
+	start := model.DayStart(days[0])
+	end := model.DayStart(days[len(days)-1]).AddDate(0, 0, 1)
+	occs, _ := a.store.EventOccurrencesVisible(start, end, a.hidden)
+	return occs
+}
+
+// agendaByDay buckets an already-expanded occurrence set into each day's agenda
+// (all-day first, then by time), merging in the tasks due that day. It is the
+// batched form of dayItems: same per-day predicate (model.OccurrencesOn) and
+// same merge (model.DayAgenda), from one expansion instead of one per day.
+func (a *app) agendaByDay(days []time.Time, occs []model.Occurrence) map[string][]model.AgendaItem {
+	m := map[string][]model.AgendaItem{}
+	todos := a.visibleTodos(a.store.TodosVisible(a.hidden))
+	for _, day := range days {
+		ds := model.DayStart(day)
+		if items := model.DayAgenda(model.OccurrencesOn(occs, day), todos, ds, ds.AddDate(0, 0, 1)); len(items) > 0 {
+			m[dayKey(day)] = items
 		}
 	}
 	return m
@@ -185,15 +219,10 @@ func (a *app) calItems(weeks [][]time.Time) map[string][]model.AgendaItem {
 
 // dayItemsForDays builds the per-day drill list for the week/day time-grid: each
 // day's events and due tasks in agenda order (all-day first, then by time), so
-// the grid's drill can select tasks as well as events.
+// the grid's drill can select tasks as well as events. One store query for the
+// whole span — see occurrencesOnDays.
 func (a *app) dayItemsForDays(days []time.Time) map[string][]model.AgendaItem {
-	m := map[string][]model.AgendaItem{}
-	for _, day := range days {
-		if items := a.dayItems(day); len(items) > 0 {
-			m[dayKey(day)] = items
-		}
-	}
-	return m
+	return a.agendaByDay(days, a.occurrencesOnDays(days))
 }
 
 // dueTasksByDay buckets tasks with a due date onto the day they're due, for the
@@ -233,14 +262,15 @@ func (a *app) dueTasksByDay(days []time.Time) map[string][]*model.Todo {
 // events (DTSTART == DTEND, which foreign exporters emit) onto no day at all,
 // while the drill list still listed them: a phantom, invisible cursor slot.
 func (a *app) splitOccs(days []time.Time) (timed, allday map[string][]model.Occurrence) {
+	return splitOccurrences(days, a.occurrencesOnDays(days))
+}
+
+// splitOccurrences is splitOccs over an already-expanded occurrence set, so a
+// redraw can share one expansion (and therefore one StepBudget) with the drill
+// list instead of querying the store again.
+func splitOccurrences(days []time.Time, occs []model.Occurrence) (timed, allday map[string][]model.Occurrence) {
 	timed = map[string][]model.Occurrence{}
 	allday = map[string][]model.Occurrence{}
-	if len(days) == 0 {
-		return
-	}
-	start := days[0]
-	end := days[len(days)-1].AddDate(0, 0, 1)
-	occs, _ := a.store.EventOccurrencesVisible(start, end, a.hidden)
 	for _, o := range occs {
 		bucket := timed
 		if o.Event.AllDay {

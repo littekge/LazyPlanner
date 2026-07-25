@@ -4,6 +4,42 @@
 
 ---
 
+## 2026-07-25 — Fix Pass-23 MED: one recurrence budget per redraw (the pass-21 fix now holds in production)
+
+- **Finding (Pass 23 MED):** the pass-21 aggregate `model.StepBudget` is minted **per store call**, and
+  the two UI paths called the store **once per day** — so a month view multiplied the ceiling back by
+  ~30–42 and the freeze returned. Measured RED: a single budgeted 7-day query 242 ms vs a week-view
+  rebuild 1.742 s (7.2×), a 30-day SELECT materialization 7.681 s, and a 366-day range extrapolating to
+  **1 m 33 s** of UI-thread stall. Same class as the pass-22 UNTIL finding — the fix was real, the
+  production wiring never delivered it, and its test exercised one store call rather than a redraw.
+- **Fix — batch the query rather than thread the budget.** Both paths are now single-range queries, so
+  one redraw = one store call = one budget: `occurrencesOnDays(days)` does one
+  `EventOccurrencesVisible` over the whole span, `agendaByDay` buckets the already-expanded set using
+  the *same* predicate/merge `dayItems` used, `dayItemsForDays` composes them, and `calItems` /
+  `daysRange` delegate instead of looping per day. `internal/store` and `internal/model` untouched.
+- **Why not the obvious fix:** threading one budget through a 366-iteration per-day loop would have
+  satisfied the finding and **broken a legitimate calendar**. Each per-day query re-pays an event's
+  catch-up iteration (a daily series anchored 5 years back costs ~1830 steps *per day queried*), so ~50
+  ordinary events × 366 days ≈ 33M steps against a 2M ceiling — silent truncation of real data.
+  Batching gives the same single ceiling *and* removes the redundant work.
+- Inside `buildCenterCalendar` the **expansion** is shared, not merely the budget: a partially-spent
+  budget across two queries would truncate different events each time (the store iterates a Go map),
+  letting the drawn set and the selectable set disagree — which `splitOccs`'s own comment forbids.
+- **GREEN, ratio-asserted** (no wall-clock thresholds): week view 0.99×, month grid 0.96×, 366-day range
+  1.00×, `daysRange` over 366 days 0.97× — against measured bug ratios of 7.2×/42×/366×.
+- **Proof a legitimate calendar isn't starved** (the failure mode that matters more than the freeze):
+  `TestLegitimateCalendarNotStarvedByRedrawBudget` runs 25 daily + 25 weekly series anchored **5 years**
+  before the window and asserts the **exact** per-day occurrence count — 1200/1200 over the month grid,
+  10475/10475 over 366 days — plus item-for-item equivalence with the per-day `dayItems` it replaces.
+- **Carried residuals (agent-disclosed):** a full refresh still issues ~4 store queries each minting its
+  own budget (`buildCenterCalendar`, `setDayDetail`, the agenda pane, and `render.go:76`) — a bounded ~4×
+  constant, no longer day-count-scaled, so "one budget per redraw" is literally ~4. The **write-side**
+  expansion is unswept for this class: `safeAfter` is bounded per call with no aggregate budget, so a
+  bulk grab over N recurring items is N × 1M steps — the same shape on the write path. And the pass-21
+  ceiling itself (2M aggregate vs 1M per-event) means **two** pathological events exhaust a redraw and
+  starve every event expanded after them; this change makes that deterministic within a redraw rather
+  than varying per day, but does not change its magnitude.
+
 ## 2026-07-25 — Close the Pass-23 canary escape + two coverage holes, and add a table-drift tripwire
 
 Test-only increment (no product code changed). Every item ships **mutation-kill evidence** — RED under
