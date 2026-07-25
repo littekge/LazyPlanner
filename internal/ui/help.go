@@ -102,7 +102,7 @@ var helpSections = []struct {
 		{": ", "cmd — :sync :view :goto :search :config :calendar :account :conflicts :q"},
 		{"aliases", ":q/:quit, :search/:find, :account/:acct, :calendar/:cal, :conflicts/:conflict, :help/:h"},
 		{":config", "edit config in $EDITOR, reload on exit"},
-		{":calendar", "new / rename / color / hide / show (`new` opens the create form; `color` with no hex opens the swatch picker)"},
+		{":calendar", "new / rename / color / hide / show (`new` opens the create form; `color` with no hex opens the swatch picker); from the Tasks pane, targets the focused task list"},
 		{":account", "switch account — `:account <name>`, or bare to pick from a list (multi-account)"},
 		{":conflicts", "resolve items that changed on both sides — Enter resolves, j/k/h/l move, Esc/q closes"},
 		{"?", "this help — scroll with j/k/g/G/h/l/arrows/PgUp/PgDn, close with Esc/q/?"},

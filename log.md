@@ -4,6 +4,27 @@
 
 ---
 
+## 2026-07-24 — v1.5.0 phase-2 axis-extension triage: doc gaps #3/#4 (`:calendar` task-list targeting, agenda board wheel)
+
+- Doc-only fixes from the v1.5.0 phase-2 axis-extension triage (findings #3 and #4). No source
+  behavior changed; both behaviors were verified against code before documenting.
+- Fix #3: `:calendar new|rename|color|hide|show` was undocumented as also targeting the focused
+  *task list* when issued from the Tasks pane. Verified in `internal/ui/command.go`'s
+  `currentCalendarID` (~line 348): it returns `a.selectedTasklistID()` when `a.mode == modeTasks`,
+  else `a.selectedCalendarID()` — the same dual-target pattern `e`/`d` already document. Added a
+  concise clause to main.md's `:` commands list, README's Managing Calendars section, and
+  `internal/ui/help.go`'s `:calendar` cheat-sheet entry.
+- Fix #4: the center Agenda board takes no scroll wheel, same as the calendar grid — it's a custom
+  `tview.Box` with no `MouseHandler` (confirmed: `internal/ui/agendaboard.go` defines no
+  `MouseHandler`, and `internal/ui/mouse.go` wires wheel handling only for the overview
+  lists/tree). main.md's Mouse section named only the calendar grid in its no-wheel carve-out;
+  README's Usage said "Wheel scrolls" as a blanket statement. Extended main.md's carve-out to name
+  both custom-drawn center views (calendar grid + agenda board), and scoped README's Mouse bullet
+  to say the wheel scrolls the overview lists/panes, not the keyboard-navigated center views.
+- Files modified: `main.md`, `README.md`, `internal/ui/help.go`.
+- Gate: `go build ./...`, `go vet ./...`, `go test ./...` all pass (help.go counts as code since it
+  carried the relevant `:calendar` help text).
+
 ## 2026-07-24 — `:` command handlers no longer echo before they've actually run
 
 - Fix 2 of the v1.5.0 phase-2 axis-extension triage (`:` command surface, finding #2): several `:`

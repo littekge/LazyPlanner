@@ -285,13 +285,13 @@ The keyboard interface feels like **vim, not lazygit**: single keys for panel fo
 
 ### `:` commands
 
-`:sync` · `:config` (open in `$EDITOR`, reload on exit) · `:view month|week|day` · `:goto <date>` (smart-parsed) · `:search <text>` · `:account` (switch the active account, when more than one is configured) · `:calendar new|rename|color|hide|show` (server-side via sync where applicable; `color` with no hex opens the swatch picker) · `:conflicts` (list/resolve conflicted items) · `:help` · `:q`
+`:sync` · `:config` (open in `$EDITOR`, reload on exit) · `:view month|week|day` · `:goto <date>` (smart-parsed) · `:search <text>` · `:account` (switch the active account, when more than one is configured) · `:calendar new|rename|color|hide|show` (server-side via sync where applicable; `color` with no hex opens the swatch picker; targets the focused task list when issued from the Tasks pane, symmetric with `e`/`d`) · `:conflicts` (list/resolve conflicted items) · `:help` · `:q`
 
 Several commands accept a shorter alias: `:q`/`:quit`, `:search`/`:find`, `:account`/`:acct`, `:calendar`/`:cal`, `:conflicts`/`:conflict`, `:help`/`:h`.
 
 ### Mouse
 
-Click focuses panes and selects items, including the row under the cursor on the center agenda board; clicking a folder in the task tree expands/collapses it; double-click opens the edit form for the item under the cursor (tree or agenda board); the scroll wheel scrolls panes/lists. (Wheel-paging the calendar month/week/day grid was considered and dropped — the keyboard `f`/`b` pages them; the custom grids take no wheel handler.)
+Click focuses panes and selects items, including the row under the cursor on the center agenda board; clicking a folder in the task tree expands/collapses it; double-click opens the edit form for the item under the cursor (tree or agenda board); the scroll wheel scrolls panes/lists. (Wheel-paging the calendar month/week/day grid was considered and dropped — the keyboard `f`/`b` pages them; the custom-drawn center views, the calendar grid and the agenda board, take no wheel handler.)
 
 The mouse is **fully inert** during **SELECT**, **GRAB**, and the **Ctrl-W resize sub-mode** — every mouse action is swallowed, wheel included, so a stray click or scroll can't desync the modal state.
 
