@@ -248,7 +248,15 @@ func (a *app) readCustomRecur(cf *customRecurFields, anchor time.Time) (model.Re
 		if err != nil || !has {
 			return model.RecurSpec{}, errFieldMsg("Ends on date: enter a valid YYYY-MM-DD")
 		}
-		spec.Until = &d
+		// "Ends on date D" means through all of D. parseDateField returns midnight,
+		// which is inclusive of the day only for an all-day series (the model's
+		// dateOnlyUntil truncates UNTIL to a VALUE=DATE). A timed series' occurrence
+		// on D falls at the anchor's time-of-day, so a midnight UNTIL drops it —
+		// anchor UNTIL at D + the anchor's wall-clock time instead, which includes
+		// D's occurrence for timed items and stays midnight (unchanged) for all-day
+		// anchors. Building it in a.loc keeps it correct across DST/offset.
+		until := time.Date(d.Year(), d.Month(), d.Day(), anchor.Hour(), anchor.Minute(), anchor.Second(), 0, a.loc)
+		spec.Until = &until
 	case 2: // After N times
 		c, err := strconv.Atoi(strings.TrimSpace(cf.count.GetText()))
 		if err != nil || c < 1 {
