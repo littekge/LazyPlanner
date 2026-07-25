@@ -4,6 +4,33 @@
 
 ---
 
+## 2026-07-25 — Fix Pass-20 LOW #4: grab of a recurring todo shifted DUE without re-anchoring a day-pinning rule
+
+- **Finding (Pass 20 #4, LOW, `internal/ui/bulkgrab.go` + `internal/ui/grab.go`):** grab's todo
+  branch shifted `d.Due` and called `model.EditTodo` with no `ReanchoredRecurrence`, unlike the event
+  day-move branch. A native recurring todo carries only `DUE` (its rule anchor), so shifting the due
+  of a `FREQ=WEEKLY;BYDAY=MO` todo left `BYDAY=MO` contradicting a Tuesday due — the next
+  `AdvanceRecurringTodo` snapped back to Monday. Present in BOTH bulk grab (`bulkgrab.go:182`) and
+  single-item grab (`grab.go:248`, the audit's noted twin).
+- **Fix:** added `model.ReanchoredRecurrenceTodo(td, oldDue, newDue)` — the todo-facing twin of
+  `ReanchoredRecurrence`; both now delegate to a shared component-level core
+  `reanchoredRecurrence(raw *ical.Component, anchor, newAnchor)` (refactor, no behavior change to the
+  event path). Both grab todo branches now re-anchor when `td.Recurring`: a `(nil,false)` result
+  leaves the rule untouched (daily/plain-weekly/monthly-by-day/yearly — the due move carries the
+  day), a non-nil spec rewrites the day-pinning `BY*`, and `(nil,true)` blocks the nudge (single grab
+  flashes and cancels; bulk grab reverts the whole nudge and flashes) rather than corrupt a *Custom
+  rule (kept)*.
+- **Repros → regression guards:** `internal/ui/bulkgrab_recur_reanchor_test.go` (promoted from the
+  audit repro) and new `internal/ui/grab_todo_reanchor_test.go` for the single-item twin — both
+  verified RED before their respective fix (next due snaps to Monday), GREEN after. Extended the
+  reanchor guardrail in `CLAUDE.md` to state the anchor is `DUE` for a recurring VTODO and cite all
+  four reanchor tests.
+- Files: `internal/model/recur_edit.go` (core refactor + `ReanchoredRecurrenceTodo`),
+  `internal/ui/grab.go`, `internal/ui/bulkgrab.go`, two test files, `CLAUDE.md`.
+- Gate: `go test ./...`, `go vet`, `staticcheck`, `go build` all clean; `gofmt -l internal/` empty.
+  No `main.md` change: main.md already documents grab re-anchoring the rule on a day-move (the
+  invariant), it just wasn't enforced for the todo axis; README unaffected.
+
 ## 2026-07-25 — Fix Pass-20 MED #3: bare-frequency recurring task had no DUE and could never be completed
 
 - **Finding (Pass 20 #3, MED, `internal/ui/edit.go`):** main.md:395 promises quick-add recurrence

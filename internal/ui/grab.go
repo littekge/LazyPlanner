@@ -245,7 +245,21 @@ func (a *app) grabNudge(r rune) {
 			return
 		}
 		d := draftFromTodo(td)
+		oldDue := d.Due
 		d.Due = d.Due.AddDate(0, 0, days)
+		// Shifting a recurring todo's due moves the whole series anchor (single-live-
+		// instance model), so a day-pinning rule (weekly BYDAY, monthly nth-weekday)
+		// must re-anchor with it — otherwise the next advance snaps back to the old
+		// day, the same invariant the event day-move enforces. Block a rule we can't
+		// reason about rather than corrupt it.
+		if td.Recurring {
+			recur, blocked := model.ReanchoredRecurrenceTodo(td, oldDue, d.Due)
+			if blocked {
+				a.flash("Can't shift the day of this custom repeat rule — edit the rule instead")
+				return
+			}
+			d.Recur = recur
+		}
 		newObj, err = model.EditTodo(loc.Object, a.grabUID, d, a.now, a.loc)
 		label = "due " + a.fmtDate(d.Due, d.DueAllDay)
 	} else {

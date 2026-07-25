@@ -33,28 +33,44 @@ import (
 //
 // A non-recurring event (no RRULE) returns (nil, false).
 func ReanchoredRecurrence(master *Event, newStart time.Time) (recur *RecurSpec, blocked bool) {
-	if master.Raw.Props.Get(ical.PropRecurrenceRule) == nil {
-		return nil, false // non-recurring or RDATE-only — the DTSTART move suffices
+	return reanchoredRecurrence(master.Raw, master.Start, newStart)
+}
+
+// ReanchoredRecurrenceTodo is the recurring-VTODO counterpart of
+// ReanchoredRecurrence: a due-date move re-anchors a day-pinning rule exactly as a
+// VEVENT's DTSTART move does, so shifting the due of a weekly-BYDAY / monthly
+// nth-weekday todo keeps the rule consistent with the moved anchor instead of the
+// series snapping back to the old day on the next advance. oldDue is the todo's
+// current DUE (the rule's anchor); newDue is where the grab is moving it.
+func ReanchoredRecurrenceTodo(td *Todo, oldDue, newDue time.Time) (recur *RecurSpec, blocked bool) {
+	return reanchoredRecurrence(td.Raw, oldDue, newDue)
+}
+
+// reanchoredRecurrence is the component-level core shared by the event (anchor =
+// DTSTART) and todo (anchor = DUE) re-anchoring entry points.
+func reanchoredRecurrence(raw *ical.Component, anchor, newAnchor time.Time) (recur *RecurSpec, blocked bool) {
+	if raw.Props.Get(ical.PropRecurrenceRule) == nil {
+		return nil, false // non-recurring or RDATE-only — the anchor move suffices
 	}
-	option, err := master.Raw.Props.RecurrenceRule()
+	option, err := raw.Props.RecurrenceRule()
 	if err != nil || option == nil {
 		return nil, true // unparseable rule — can't safely re-anchor
 	}
-	spec, ok := RecurSpecFromRule(option, master.Start)
+	spec, ok := RecurSpecFromRule(option, anchor)
 	if !ok {
 		return nil, true // "kept" custom rule outside the editable vocabulary
 	}
 	switch {
 	case spec.Freq == FreqWeekly && len(spec.Weekdays) > 0:
-		shift := ((int(newStart.Weekday())-int(master.Start.Weekday()))%7 + 7) % 7
+		shift := ((int(newAnchor.Weekday())-int(anchor.Weekday()))%7 + 7) % 7
 		for i, wd := range spec.Weekdays {
 			spec.Weekdays[i] = time.Weekday((int(wd) + shift) % 7)
 		}
 		return &spec, false
 	case spec.Freq == FreqMonthly && spec.MonthlyNth != 0:
-		spec.MonthlyWeekday = newStart.Weekday()
-		// Re-derive the nth-weekday position from newStart's own month — never
-		// carry the old rule's nth forward blindly. newStart may now be the last
+		spec.MonthlyWeekday = newAnchor.Weekday()
+		// Re-derive the nth-weekday position from newAnchor's own month — never
+		// carry the old rule's nth forward blindly. newAnchor may now be the last
 		// occurrence of its weekday (regardless of whether the original rule was
 		// "last" or a positive nth), which BYDAY=-1<wd> represents; a positive
 		// 1st-4th position is representable as-is; a positive occurrence that
@@ -62,8 +78,8 @@ func ReanchoredRecurrence(master *Event, newStart time.Time) (recur *RecurSpec, 
 		// n=5) has no representation in the editable vocabulary — it would mean
 		// literally "the 5th <weekday>", a rule that only fires in months with
 		// five, thinning the series — so that case blocks the move instead.
-		weekOfMonth := (newStart.Day()-1)/7 + 1
-		isLastOfMonth := newStart.Day()+7 > daysInMonth(newStart.Year(), newStart.Month())
+		weekOfMonth := (newAnchor.Day()-1)/7 + 1
+		isLastOfMonth := newAnchor.Day()+7 > daysInMonth(newAnchor.Year(), newAnchor.Month())
 		switch {
 		case isLastOfMonth:
 			spec.MonthlyNth = -1
@@ -74,7 +90,7 @@ func ReanchoredRecurrence(master *Event, newStart time.Time) (recur *RecurSpec, 
 		}
 		return &spec, false
 	default:
-		return nil, false // no day-pinning BY* — DTSTART carries the day
+		return nil, false // no day-pinning BY* — the anchor move carries the day
 	}
 }
 

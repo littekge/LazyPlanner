@@ -179,7 +179,22 @@ func (a *app) bulkGrabShift(r rune) {
 				return
 			}
 			d := draftFromTodo(td)
+			oldDue := d.Due
 			d.Due = d.Due.AddDate(0, 0, todoDays)
+			// A recurring todo's due-shift moves the series anchor, so re-anchor a
+			// day-pinning rule with it (as single-item grab and the event day-move do)
+			// — else the next advance snaps back to the old day. A rule we can't
+			// reason about (a "kept" custom RRULE) blocks: revert the whole nudge and
+			// flash, mirroring the write-error path.
+			if td.Recurring {
+				recur, blocked := model.ReanchoredRecurrenceTodo(td, oldDue, d.Due)
+				if blocked {
+					revertNudge()
+					a.flash("A selected recurring task has a custom repeat rule whose day can't be shifted — edit the rule instead")
+					return
+				}
+				d.Recur = recur
+			}
 			newObj, err = model.EditTodo(loc.Object, it.uid, d, a.now, a.loc)
 		} else {
 			ev := findEvent(loc.Object, it.uid)
