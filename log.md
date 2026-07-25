@@ -4,6 +4,36 @@
 
 ---
 
+## 2026-07-25 — Fix Pass-23 MED: the pass-22 timed-UNTIL fix now actually reaches production (+ new guardrail)
+
+- **Finding (Pass 23 MED, `internal/ui/itemforms.go`):** pass 22's "Ends on date D includes the end day
+  for timed items" fix was correct *in `readCustomRecur`* but **never fired on the real UI path**. Both
+  `wireRepeatCustom` anchorFns (event `:241`, todo `:51`) read only the date field via `parseDateField`,
+  which returns midnight — so `anchor.Hour()` was always 0 and the fix recomputed the pre-fix value.
+  The pass-22 regression test passed because it called `readCustomRecur` directly, bypassing the broken
+  wiring. Verified the cause at source before dispatching the fix.
+- **Fix:** a new `recurAnchor(date, timeText, loc)` helper combines the parsed date with the live-read
+  time field, degrading to midnight when the field is blank *or* unparseable (it is read mid-keystroke,
+  so it must not error). Wired into both anchorFns; the event site is gated on `allDay.IsChecked()` so a
+  stale value left in the Start-time field can't leak into an all-day anchor. `recurcustom.go` untouched.
+- **Guards:** `internal/ui/endsondate_uipath_test.go`, 5 tests, all driving the real path (form → Repeat
+  → Custom… → Ends on date → OK → `readEventDraft`/`readTodoDraft` → the stored object): timed event,
+  all-day event, timed todo, untimed todo, and a partial `"15:"` mid-keystroke fallback. Pass-22's two
+  helper-level tests still pass. Confirmed there is no third anchorFn in `internal/ui`.
+- **New Hard-won guardrail codified** (PROTOCOL rule 9 — this class hit **two consecutive passes**: the
+  pass-21 StepBudget and this): *a regression test for a UI-reachable bug must drive the real entry point
+  — the form, key handler, or command — not the helper in isolation.* A test that hand-builds a helper's
+  inputs proves the helper's arithmetic and nothing about whether production ever supplies them, so a fix
+  can land, go green, and never reach a user. Names both instances and cites this pass's test as the
+  pattern to copy.
+- **NEW DEFECT FOUND WHILE TESTING — all-day "Ends on date D" is ALSO off-by-one**, at the model
+  expansion layer, and it is *not* one of the audit's 15 findings. An all-day daily series encoding
+  correctly as `DTSTART;VALUE=DATE:20260720` + `RRULE:FREQ=DAILY;UNTIL=20260725` expands to
+  **07-20 … 07-24 — the selected end day is dropped**. I reproduced this myself from a hand-built
+  `RecurSpec` with no form involved, so it is independent of this fix. **This falsifies the pass-22
+  close-out**, which recorded all-day as already correct ("stays midnight → `dateOnlyUntil` truncates
+  unchanged"); in fact neither item type honoured the selected end day. Fixed in the next entry.
+
 ## 2026-07-25 — Fix Pass-23 HIGH + MED: failed conflict resolve rolls back; conflict stash is byte-lossless
 
 - **HIGH — a FAILED `ResolveKeepLocal` still resolved the conflict** (`internal/store/conflict.go:124`).

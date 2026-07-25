@@ -11,6 +11,20 @@ import (
 	"github.com/littekge/LazyPlanner/internal/store"
 )
 
+// recurAnchor combines a parsed date field with a still-being-typed time field
+// into the anchor a recurrence rule hangs off. The Custom sub-form's "Ends on
+// date D" derives UNTIL as "D + the anchor's wall-clock time-of-day", so a
+// timed item that hands over a midnight anchor loses its occurrence on D. A
+// blank or half-typed time falls back to midnight rather than erroring — the
+// field is read live while the user is still editing it.
+func recurAnchor(date time.Time, timeText string, loc *time.Location) time.Time {
+	h, m, ok, err := parseTimeField(timeText)
+	if err != nil || !ok {
+		return date
+	}
+	return time.Date(date.Year(), date.Month(), date.Day(), h, m, 0, 0, loc)
+}
+
 // newTodoForm builds the task field set, pre-filled from td (nil = a blank
 // create form). Buttons and border are added by the caller.
 // todoFields holds references to a task form's inputs so values are read
@@ -49,8 +63,10 @@ func (a *app) newTodoForm(td *model.Todo, choices *model.RepeatChoices) (*caretF
 		fields.repeat = f.addDropDown("Repeat", choices.Labels(), choices.Selected())
 		fields.repeatChoices = choices
 		a.wireRepeatCustom(fields.repeat, choices, func() time.Time {
+			// A task has no all-day checkbox: an empty due time IS all-day, and
+			// recurAnchor already leaves that anchor at midnight.
 			if d, has, err := parseDateField(fields.dueDate.GetText(), a.loc); err == nil && has {
-				return d
+				return recurAnchor(d, fields.dueTime.GetText(), a.loc)
 			}
 			return a.now
 		})
@@ -239,10 +255,14 @@ func (a *app) newEventForm(ev *model.Event, defaultDay time.Time, choices *model
 		fields.repeat = f.addDropDown("Repeat", choices.Labels(), choices.Selected())
 		fields.repeatChoices = choices
 		a.wireRepeatCustom(fields.repeat, choices, func() time.Time {
-			if d, has, err := parseDateField(fields.startDate.GetText(), a.loc); err == nil && has {
-				return d
+			d, has, err := parseDateField(fields.startDate.GetText(), a.loc)
+			if err != nil || !has {
+				return defaultDay
 			}
-			return defaultDay
+			if fields.allDay.IsChecked() {
+				return d // an all-day series anchors at midnight, giving a date-only UNTIL
+			}
+			return recurAnchor(d, fields.startTime.GetText(), a.loc)
 		})
 	}
 	f.stylePopup()
