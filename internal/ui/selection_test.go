@@ -510,6 +510,77 @@ func TestDaysRangeEmptyDayStaysSelected(t *testing.T) {
 	a.exitSelect()
 }
 
+// TestDayInRange pins dayInRange's boundary semantics directly (it backs the
+// SELECT day-range VISUAL highlight in calendarview.go/timegridview.go, which
+// carried zero direct test coverage before this — the range materialization
+// via selRange is well covered above, but the highlight predicate that drives
+// what actually paints reverse-video is a different code path). Pass 19's
+// mutation canary flipped the upper bound from inclusive to exclusive
+// (`!d.After(to)` -> `d.Before(to)`) and nothing caught it; this test asserts
+// the `to` day itself is in range, which the mutation would break.
+func TestDayInRange(t *testing.T) {
+	anchor := time.Date(2026, 7, 10, 0, 0, 0, 0, time.UTC)
+	cursor := time.Date(2026, 7, 13, 0, 0, 0, 0, time.UTC)
+
+	tests := []struct {
+		name string
+		day  time.Time
+		want bool
+	}{
+		{"anchor day itself is in range", anchor, true},
+		{"cursor day itself is in range (inclusive upper bound)", cursor, true},
+		{"a day between anchor and cursor is in range", anchor.AddDate(0, 0, 1), true},
+		{"a day just before the anchor is out of range", anchor.AddDate(0, 0, -1), false},
+		{"a day just after the cursor is out of range", cursor.AddDate(0, 0, 1), false},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			if got := dayInRange(anchor, cursor, tt.day); got != tt.want {
+				t.Errorf("dayInRange(%s, %s, %s) = %v, want %v",
+					anchor, cursor, tt.day, got, tt.want)
+			}
+		})
+	}
+}
+
+// TestDayInRangeReversedCursor mirrors TestDayInRange with the anchor/cursor
+// swapped (dragging the range backward, e.g. selecting up/left from the
+// anchor) — dayInRange normalizes from/to internally, so both ends must still
+// be inclusive regardless of which argument is chronologically later.
+func TestDayInRangeReversedCursor(t *testing.T) {
+	anchor := time.Date(2026, 7, 13, 0, 0, 0, 0, time.UTC)
+	cursor := time.Date(2026, 7, 10, 0, 0, 0, 0, time.UTC) // before the anchor
+
+	tests := []struct {
+		name string
+		day  time.Time
+		want bool
+	}{
+		{"anchor day itself is in range", anchor, true},
+		{"cursor day itself is in range (inclusive upper bound)", cursor, true},
+		{"a day between the two is in range", cursor.AddDate(0, 0, 1), true},
+		{"a day just before the cursor is out of range", cursor.AddDate(0, 0, -1), false},
+		{"a day just after the anchor is out of range", anchor.AddDate(0, 0, 1), false},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			if got := dayInRange(anchor, cursor, tt.day); got != tt.want {
+				t.Errorf("dayInRange(%s, %s, %s) = %v, want %v",
+					anchor, cursor, tt.day, got, tt.want)
+			}
+		})
+	}
+}
+
+// TestDayInRangeZeroAnchor: a zero anchor means no active day-range, regardless
+// of cursor/day — the guard dayInRange's doc comment calls out explicitly.
+func TestDayInRangeZeroAnchor(t *testing.T) {
+	cursor := time.Date(2026, 7, 13, 0, 0, 0, 0, time.UTC)
+	if dayInRange(time.Time{}, cursor, cursor) {
+		t.Fatal("dayInRange with a zero anchor must always report false")
+	}
+}
+
 // TestSelectRangeSyncRace: derive the range continuously while a background
 // goroutine mutates the store (the sync scenario) — run under -race. The store
 // is internally locked; this asserts derivation never panics or returns

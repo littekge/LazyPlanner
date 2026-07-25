@@ -4,6 +4,23 @@
 
 ---
 
+## 2026-07-24 — Close pass-19 canary escape: SELECT day-range highlight boundary (`dayInRange`) was untested
+
+- `dayInRange` (`internal/ui/selection.go`) is correct — it backs the SELECT day-range VISUAL
+  highlight the calendar draw path uses (`calendarview.go`/`timegridview.go`) — but pass 19's
+  mutation canary flipped its upper bound from inclusive to exclusive (`!d.After(DayStart(to))` ->
+  `d.Before(DayStart(to))`) and nothing caught it: the range *materialization* (`selRange`/
+  `daysRange`) is well covered, but the highlight predicate driving what actually paints
+  reverse-video had zero direct test coverage.
+- Added `TestDayInRange`, `TestDayInRangeReversedCursor`, and `TestDayInRangeZeroAnchor`
+  (`internal/ui/selection_test.go`), table-driven unit tests calling `dayInRange` directly. They
+  pin both boundaries (anchor day and cursor/`to` day are each inclusive), a day in between, days
+  just outside each end, the anchor/cursor-reversed case, and the zero-anchor no-range guard.
+- Verified both ways: passes on current code, and (checked by temporarily applying the
+  inclusive->exclusive mutation locally, re-running, then reverting before committing) the cursor-
+  day-itself case in both `TestDayInRange` and `TestDayInRangeReversedCursor` fails under it.
+- Test-only change; no behavior, `main.md`, or README update needed.
+
 ## 2026-07-24 — Fix pass-19 finding #7: vim count leaked past a swallowed SELECT bulk-op key
 
 - In SELECT mode, `globalKeys` (`internal/ui/app.go`) returned immediately when `handleSelectKey`
