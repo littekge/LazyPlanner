@@ -4,6 +4,29 @@
 
 ---
 
+## 2026-07-25 — Fix Pass-23 HIGH: tombstone sidecar keys can no longer escape the cache root
+
+- **Finding (Pass 23 HIGH, `internal/store/sidecar.go`):** tombstone map keys are read straight out of
+  the sidecar's JSON and later joined onto the cache root — the 412 delete-vs-server-change resurrect
+  writes through `filepath.Join(root, calID, name)`. A corrupt or hostile sidecar carrying a key like
+  `../../../../../victim.txt` therefore made **sync write outside the data dir**, and the in-memory
+  index gained a traversal-named resource. Same class as the pass-9 path-traversal calendar id.
+- **Fix:** mirrored the pass-9 guard rather than inventing a second rule — its rule is extracted into a
+  shared `validPathElement` helper (`mutate.go`), with `validCalendarID` now delegating to it so the two
+  checks can't drift. `readSidecar` drops unsafe tombstone keys at the single load choke point (one
+  caller, `loadCalendar`), so no downstream consumer — `Tombstones()`, `ResurrectTombstone`,
+  `ClearTombstone`, the sync 412 path — can ever observe one. A bad entry is dropped individually rather
+  than failing the load: the sidecar is derived data and its remaining entries still push real deletions.
+- **Repro → regression guards:** `internal/sync/tombstone_traversal_test.go` —
+  `TestTombstoneNameCannotEscapeCacheRoot` (RED before: sentinel file outside the data dir overwritten;
+  GREEN after) plus the boundary sibling `TestOrdinaryTombstoneFromSidecarStillPushes`, so the validation
+  can't silently break ordinary deletes. Gate: store+sync green incl. `-race`, vet/staticcheck/gofmt clean.
+- **Carried residual:** the fix guards the untrusted *source*, not the sinks — `filepath.Join(s.root,
+  calID, name)` at `mutate.go:153/319/361` still trusts its `name` argument, so a future path feeding an
+  externally-derived name into `PutRemote`/`Delete` without `SafeName` would reopen the class. Other
+  sidecar-sourced strings (`Href`, `Components`, `DisplayName`, `Color`) remain unvalidated; `Href`
+  reaches network requests rather than `filepath.Join` and was not audited here.
+
 ## 2026-07-25 — Close out Pass-22 FIX ARC: ledger + pass report resolved, docs current
 
 - Recorded the Pass-22 resolution. `docs/audit/COVERAGE.md`: the v1.3.0-Custom-form MED row carries a

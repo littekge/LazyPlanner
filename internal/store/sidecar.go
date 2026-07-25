@@ -104,7 +104,25 @@ func readSidecar(dir string) (*sidecar, error) {
 	if err := json.Unmarshal(data, &sc); err != nil {
 		return nil, fmt.Errorf("parsing sidecar: %w", err)
 	}
+	sc.Tombstones = dropUnsafeTombstoneNames(sc.Tombstones)
 	return &sc, nil
+}
+
+// dropUnsafeTombstoneNames removes tombstone entries whose key is not a single
+// safe path element. Unlike the resource map — whose keys are real directory
+// entries read back off disk — tombstone keys come straight out of the sidecar's
+// JSON and are later joined onto the cache root (the 412 delete-vs-server-change
+// resurrect writes through filepath.Join(root, calID, name)), so a corrupt or
+// hostile sidecar could otherwise make sync write outside the data dir. The bad
+// entry is dropped rather than the whole load failing: the sidecar is derived
+// data, and its remaining entries are still needed to push real deletions.
+func dropUnsafeTombstoneNames(in map[string]tombstoneMeta) map[string]tombstoneMeta {
+	for name := range in {
+		if !validPathElement(name) {
+			delete(in, name)
+		}
+	}
+	return in
 }
 
 // writeSidecar persists a calendar's current state to its sidecar file,

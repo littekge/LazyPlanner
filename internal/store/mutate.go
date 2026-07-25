@@ -441,17 +441,23 @@ func SafeName(s string) string {
 // a later ".ics" it stays well under the common 255-byte filesystem NAME_MAX.
 const maxSafeNameLen = 200
 
-// validCalendarID reports whether id is safe to join onto the cache root as a
-// calendar directory: non-empty, not a dot-traversal segment, and free of any
-// path separator or NUL. SafeName already produces such ids; this is a
-// defense-in-depth guard on the mutation paths (above all the RemoveAll one), so
-// a raw id can never escape the calendars root regardless of how it was derived.
-func validCalendarID(id string) bool {
-	if id == "" || id == "." || id == ".." {
+// validPathElement reports whether s is safe to join onto a directory as a
+// single path element: non-empty, not a dot-traversal segment, and free of any
+// path separator or NUL. It is the shared rule behind every "this string came
+// from outside and is about to become part of a filesystem path" guard, so the
+// calendar-id and resource-name checks can't drift apart.
+func validPathElement(s string) bool {
+	if s == "" || s == "." || s == ".." {
 		return false
 	}
-	return !strings.ContainsAny(id, "/\\\x00")
+	return !strings.ContainsAny(s, "/\\\x00")
 }
+
+// validCalendarID reports whether id is safe to join onto the cache root as a
+// calendar directory. SafeName already produces such ids; this is a
+// defense-in-depth guard on the mutation paths (above all the RemoveAll one), so
+// a raw id can never escape the calendars root regardless of how it was derived.
+func validCalendarID(id string) bool { return validPathElement(id) }
 
 // contentHash is a fast non-cryptographic fingerprint of a resource's on-disk
 // bytes, recorded in the sidecar so a reload can detect an .ics rewritten after
