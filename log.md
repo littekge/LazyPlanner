@@ -4,6 +4,25 @@
 
 ---
 
+## 2026-07-24 — Re-add MED regression: positive-nth reanchor landing on a month's 5th weekday must resolve to "last", not MonthlyNth=5
+
+- Hardening Pass 19 MED finding (companion to the HIGH fixed in the previous entry, same
+  `ReanchoredRecurrence` re-derivation): the audit's original repro for this finding had been
+  removed from the tree, so it needed re-adding as an in-tree regression test. A positive-nth
+  monthly rule (e.g. "2nd Wednesday") re-anchored onto a date that is its new weekday's 5th
+  occurrence in the month used to carry the old positive-nth derivation forward into a literal
+  `MonthlyNth=5` — which escapes the editable 1st-4th/last vocabulary and means something
+  different (and thinner) than "last": `BYDAY=5<wd>` only fires in months that happen to have
+  five of that weekday, silently dropping the series' occurrences in every other month.
+- Confirmed the unified fix from the previous entry already covers this: re-derived against the
+  pre-fix `recur_edit.go` (commit 40b0803), the new test failed with the exact `MonthlyNth=5`
+  symptom; against the fixed code it passes with `MonthlyNth=-1` (April 30, 2024 is April's last
+  Tuesday, not just its 5th). No additional code change was needed — this commit only adds the
+  regression test.
+- Files: `internal/model/reanchor_fifthweekday_repro_test.go` (new, MED repro, now green).
+- Full gate green in `internal/model`: `go test ./...`, `go vet ./...`, `staticcheck ./...`,
+  `go build ./...`, `gofmt -l internal/model` clean.
+
 ## 2026-07-24 — Fix HIGH recurrence bug: backward day-move on a "last weekday" monthly rule vanished the moved instance
 
 - Hardening Pass 19 HIGH finding: `ReanchoredRecurrence` (`internal/model/recur_edit.go`), which
