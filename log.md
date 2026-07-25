@@ -4,6 +4,25 @@
 
 ---
 
+## 2026-07-24 — Fix quick-add "every <month> <day>" accepting impossible dates (pass 19, finding #8)
+
+- `parseEveryRecur` (`internal/model/quickadd.go`) accepted any day 1–31 for the yearly
+  `every <month> <day>` form without checking it against the month, so `every feb 30` / `every apr
+  31` produced a `RecurSpec` carrying the impossible day; `applyRecurAnchor`'s `rollForwardMonthDay`
+  then correctly refused to anchor it, but by then the recurrence was already attached with
+  `HasDate` left false — a misanchored yearly rule instead of the date staying in the title like
+  every other impossible-date form.
+- Added `monthDayExists` (backed by `validYMD` against a fixed reference leap year, 2000, so Feb 29
+  is still accepted) and gated the month/day branch of `parseEveryRecur` on it — an impossible
+  month-day now fails the recur match entirely, leaving the whole phrase in the title, consistent
+  with the bare `feb 30` date form's existing silent (non-warning) behavior.
+- Repro re-added (the audit's original repro had been removed): `TestParseQuickAddRecurrence` in
+  `internal/model/quickadd_recur_test.go` gained `every feb 30 is impossible` / `every apr 31 is
+  impossible` cases — confirmed RED against the pre-fix code (`Recur present = true, want false`),
+  GREEN after.
+- No doc update needed: `main.md`/README/`:help` describe the `every <month> <day>` form's shape
+  but never claimed it accepted invalid days, so nothing there was contradicted.
+
 ## 2026-07-24 — Codify the bare-Put clobber guardrail after its third reopening
 
 - The bare-Put sweep this pass fixed the third reopening of the "existing-resource write must be

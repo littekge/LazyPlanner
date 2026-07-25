@@ -65,6 +65,10 @@ func TestParseQuickAddRecurrence(t *testing.T) {
 		{name: "everyone is not every", input: "everyone is here", title: "everyone is here"},
 		{name: "trailing every with no follower", input: "clean every", title: "clean every"},
 		{name: "every with unknown follower", input: "every so often", title: "every so often"},
+		// Impossible month-days: Feb never has 30 days, Apr never has 31 —
+		// these must not silently misanchor a yearly recurrence (guards finding #8).
+		{name: "every feb 30 is impossible", input: "party every feb 30", title: "party every feb 30"},
+		{name: "every apr 31 is impossible", input: "party every apr 31", title: "party every apr 31"},
 	}
 
 	for _, tc := range tests {

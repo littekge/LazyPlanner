@@ -639,11 +639,28 @@ func parseEveryRecur(tokens []string, i int) (*RecurSpec, int, bool) {
 		return &RecurSpec{Freq: FreqWeekly, Weekdays: []time.Weekday{wd}}, 2, true
 	}
 	if mon, ok := monthName(next); ok && i+2 < len(tokens) {
-		if day, err := strconv.Atoi(tokens[i+2]); err == nil && day >= 1 && day <= 31 {
+		if day, err := strconv.Atoi(tokens[i+2]); err == nil && day >= 1 && day <= 31 && monthDayExists(mon, day) {
 			return &RecurSpec{Freq: FreqYearly, Month: mon, Day: day, HasMonthDay: true}, 3, true
 		}
 	}
 	return nil, 0, false
+}
+
+// referenceLeapYear validates a month/day pair against the longest possible
+// length of that month (Feb 29) without tying the check to any one calendar
+// year; 2000 is divisible by 400, so it is a leap year under the Gregorian
+// rule.
+const referenceLeapYear = 2000
+
+// monthDayExists reports whether day is ever a real day-of-month for mon (Feb
+// 29 counts — it recurs every leap year). It rejects only permanently
+// impossible month-days like Feb 30 or Apr 31: "every <month> <day>" fed such
+// a day used to accept it, dropping the typed date and silently misanchoring
+// the yearly recurrence to whatever day happened to be current (finding #8).
+// Rejecting it here instead leaves the impossible date in the title, the same
+// as every other impossible-date form (see validYMD).
+func monthDayExists(mon time.Month, day int) bool {
+	return validYMD(referenceLeapYear, mon, day)
 }
 
 func weekday(s string) (time.Weekday, bool) {
