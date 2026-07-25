@@ -266,12 +266,45 @@ func levelLess(a, b navCell) bool {
 	return a.rank() < b.rank()
 }
 
+// placementKey identifies an occurrence the way a drill item is matched to its
+// placement: same event, same start instant. time.Time can't be a map key on its
+// own — == also compares the monotonic reading and the location pointer, while
+// the match is time.Equal — so the instant is keyed by its seconds/nanoseconds
+// since the epoch, which is exactly the pair Equal compares.
+type placementKey struct {
+	event *model.Event
+	sec   int64
+	nsec  int
+}
+
+func newPlacementKey(ev *model.Event, start time.Time) placementKey {
+	return placementKey{event: ev, sec: start.Unix(), nsec: start.Nanosecond()}
+}
+
+// placedAt is the part of a model.Placement navigation needs.
+type placedAt struct {
+	lane int
+	end  time.Time
+}
+
 // navCells maps each item of the drilled day (daySelectables order) to its
 // on-screen position.
 func (tg *timeGridView) navCells() []navCell {
 	items := tg.daySelectables()
 	cells := make([]navCell, len(items))
 	placements := model.LayoutDay(tg.timed[dayKey(tg.selected)])
+	// Index the layout once instead of scanning it per item: the scan this
+	// replaces was O(items x placements), so a day of many overlapping
+	// occurrences froze the UI on every navigation keypress — LayoutDay itself
+	// being linearithmic bounds only what the layout stage produces, not what
+	// this stage does with it.
+	placed := make(map[placementKey]placedAt, len(placements))
+	for _, p := range placements {
+		k := newPlacementKey(p.Occ.Event, p.Occ.Start)
+		if _, seen := placed[k]; !seen {
+			placed[k] = placedAt{lane: p.Lane, end: p.Occ.End} // first match wins, as the scan's break did
+		}
+	}
 	band := 0
 	for i, it := range items {
 		switch {
@@ -282,11 +315,8 @@ func (tg *timeGridView) navCells() []navCell {
 			cells[i] = navCell{kind: cellTask, start: it.Start, end: it.Start, lane: 0}
 		default: // timed event — lane + end from the overlap layout
 			lane, end := 0, it.Start
-			for _, p := range placements {
-				if p.Occ.Event == it.Event && p.Occ.Start.Equal(it.Start) {
-					lane, end = p.Lane, p.Occ.End
-					break
-				}
+			if p, ok := placed[newPlacementKey(it.Event, it.Start)]; ok {
+				lane, end = p.lane, p.end
 			}
 			cells[i] = navCell{kind: cellEvent, start: it.Start, end: end, lane: lane}
 		}

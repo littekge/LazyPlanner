@@ -4,6 +4,41 @@
 
 ---
 
+## 2026-07-25 — Fix Pass-23 HIGH (second half): navCells' per-keypress quadratic scan
+
+- **Context:** the Pass-23 HIGH "LayoutDay is O(n²) — freezes the UI on every draw **and keypress**" was
+  only half-closed by `1ec474d` (the model-side sweep line). The keypress half lived in
+  `internal/ui/timegridview.go` `navCells()`, which after calling `LayoutDay` linear-scanned the whole
+  `placements` slice **per drill item** — O(items × placements), run from `spatialTarget` on every
+  `hjkl` press. Found and reported by the agent that fixed the model half.
+- **Fix:** an index built once per `navCells` call. The map key had to reproduce the old predicate
+  *exactly*, and the subtle part is the timestamp: the scan used `Start.Equal`, but Go map keys use `==`,
+  which also compares the monotonic reading and the **location pointer** — so a `time.Time` key would not
+  match `Equal` semantics for the same instant carried in a different location. The key stores
+  `(start.Unix(), start.Nanosecond())`, exactly the pair `Equal` compares. Nil-`Event` items and the
+  first-match-wins `break` (duplicate occurrences at the same key) are both preserved, as is the miss
+  fallback.
+- **Timings:** `spatialTarget(navDown)` at n=40000 overlapping items: **1.008 s → 21–27 ms** (~40×).
+  Growth for 4× input: **16.8× → 5.5–7.3×**.
+- **Proof of behavioural identity** (this drives the user's cursor): 20 pre-existing tests pass
+  UNMODIFIED. Plus `TestNavCellsMatchesLinearScanReference` keeps a copy of the old linear-scan
+  implementation and diffs every cell *and* every `spatialTarget` answer from every cursor index in all
+  four directions, over randomized days covering band events, all-day and timed due tasks, shared start
+  instants, one Event pointer at two starts, duplicate occurrences at the same key, and items with no
+  placement at all.
+- Verified in an isolated copy of HEAD, because a concurrent agent had `internal/ui` uncompilable at the
+  time. No benchmark added: `internal/ui` has no benchmark convention to follow (the only ones in the
+  repo are `internal/model/scale_test.go` and `internal/sync/scale_bench_test.go`).
+- **NEW DEFECT FOUND AND MEASURED, not fixed here** — `Draw`'s `inSelRange` closure is the *same class* on
+  the draw path: it calls `itemIndex(tg.daySelectables(), …)`, a linear scan, once per placement and once
+  per timed due task. It early-returns unless a drilled SELECT range is active, so it is invisible until
+  a user opens a range — then Draw is O(placements × items). Measured: no range 5.9 ms → 16.2 ms (2.8×,
+  linear); range active **42 ms → 615 ms (14.6×, quadratic)**. Filed as its own item; the fix needs
+  `selection.go`, which a concurrent agent held.
+- **Carried residual:** no caching — `navCells` still re-runs `LayoutDay` and rebuilds the index on every
+  keypress (~20 ms/press at n=40000; responsive, not free). `itemIndex` remains a linear scan used from
+  `selection.go`. Other per-keypress paths outside this file were not audited.
+
 ## 2026-07-25 — Fix Pass-23 MED: the pass-22 timed-UNTIL fix now actually reaches production (+ new guardrail)
 
 - **Finding (Pass 23 MED, `internal/ui/itemforms.go`):** pass 22's "Ends on date D includes the end day
