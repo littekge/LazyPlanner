@@ -4,6 +4,8 @@ import (
 	"fmt"
 	"time"
 
+	"github.com/rivo/tview"
+
 	"github.com/littekge/LazyPlanner/internal/sync"
 )
 
@@ -13,7 +15,13 @@ import (
 // sync-status indicator on the event-loop goroutine.
 func (a *app) triggerSync() {
 	if a.syncFn == nil {
-		a.flash("Sync not configured — set [server] in config.toml")
+		// The single [server] section was replaced by named [[account]] blocks in
+		// v1.2.0, and config.Load hard-rejects a config containing [server]
+		// (internal/config's removed-[server] check) — so this hint must point at
+		// the format the loader actually accepts. tview.Escape keeps the literal
+		// brackets from being parsed as (and swallowed as) color/region tags in the
+		// dynamic-color status bar.
+		a.flash(tview.Escape("Sync not configured — add an [[account]] block to config.toml"))
 		return
 	}
 	if a.syncing {

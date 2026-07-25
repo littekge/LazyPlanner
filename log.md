@@ -4,6 +4,24 @@
 
 ---
 
+## 2026-07-24 — `:sync` no-account hint references the removed `[server]` section
+
+- Fix 1 of the v1.5.0 phase-2 axis-extension triage (`:` command surface, finding #1): `triggerSync`'s
+  no-account flash read `"Sync not configured — set [server] in config.toml"`, but the single
+  `[server]` section was replaced by named `[[account]]` blocks in v1.2.0 and `config.Load` now
+  hard-rejects a config containing `[server]` — the hint told the user to do something the loader
+  refuses. Reworded to `"Sync not configured — add an [[account]] block to config.toml"`.
+- The literal string must go through `tview.Escape` before reaching the dynamic-color status bar:
+  confirmed by hand (a throwaway `TextView` with `SetDynamicColors(true)`) that unescaped
+  `[[account]]` gets parsed as tag syntax and swallowed to `"[]"` — the word "account" would have
+  silently vanished from the rendered flash without the escape.
+- Repro-first: `TestTriggerSyncNoAccountHintMatchesConfigFormat` (`internal/ui/sync_test.go`) asserts
+  the flash does not contain `"[server]"` and does reference "account" — red against the old string,
+  green after.
+- Files: `internal/ui/sync.go`, `internal/ui/sync_test.go`.
+- Full gate green: `go test ./...`, `go vet ./...`, `staticcheck ./...`, `go build ./...`,
+  `gofmt -l internal/ui` clean.
+
 ## 2026-07-24 — v1.5.0 phase 2 close-out bookkeeping
 
 - Phase 2 (the key×context consistency matrix) is complete — 529 verified cells, 20 owner-triaged

@@ -87,6 +87,25 @@ func TestTriggerSyncNotConfigured(t *testing.T) {
 	}
 }
 
+// TestTriggerSyncNoAccountHintMatchesConfigFormat: the no-account hint must
+// point at the config format the loader actually accepts. The single
+// [server] section was replaced by named [[account]] blocks in v1.2.0, and
+// config.Load hard-rejects a config containing [server] (internal/config's
+// removed-[server] check) — so a hint telling the user to "set [server]"
+// sends them to do something the app refuses to load.
+func TestTriggerSyncNoAccountHintMatchesConfigFormat(t *testing.T) {
+	a := newTestApp(t, time.Date(2026, 7, 5, 12, 0, 0, 0, time.UTC))
+	a.syncFn = nil
+	a.triggerSync()
+	got := a.statusLeft.GetText(true)
+	if strings.Contains(got, "[server]") {
+		t.Errorf("flash = %q, still references the removed [server] section", got)
+	}
+	if !strings.Contains(strings.ToLower(got), "account") {
+		t.Errorf("flash = %q, want it to reference an [[account]] block", got)
+	}
+}
+
 // TestSyncUsesCancellableContext: triggerSync passes the app's cancellable
 // context, and cancelling the app cancels the in-flight sync's context.
 func TestSyncUsesCancellableContext(t *testing.T) {
