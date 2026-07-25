@@ -684,8 +684,24 @@ func pushDelete(ctx context.Context, client Syncer, st *store.Store, calID, calP
 			recordSkip(res, calID, t.Name, fmt.Errorf("delete-vs-server-change for %q: parsing server version: %w", t.Name, perr))
 			return
 		}
-		if _, werr := st.PutRemote(ctx, calID, t.Name, parsed, serverObj.ETag, t.Href); werr != nil {
+		// The resurrect write is conditional on the tombstone being unchanged
+		// since we read it: between the DELETE's round-trip and this write, an
+		// undo (or any other local write) may have re-created the resource,
+		// which clears the tombstone as part of its own write. Applying the
+		// resurrect unconditionally would then silently clobber that re-create.
+		applied, werr := st.ResurrectTombstone(ctx, calID, t.Name, parsed, serverObj.ETag, t.Href, t)
+		if werr != nil {
 			recordSkip(res, calID, t.Name, fmt.Errorf("resurrecting %q on delete conflict: %w", t.Name, werr))
+			return
+		}
+		if !applied {
+			// A concurrent local change won the race — most notably an undo that
+			// re-created the resource. Keep it and flag the server's version as a
+			// conflict against it instead: markConflict (via stashServerConflict)
+			// marks the *existing* local resource conflicted without touching its
+			// content, so the undone content survives alongside the flagged
+			// server change.
+			stashServerConflict(ctx, st, calID, t.Name, serverObj, res)
 			return
 		}
 		stashServerConflict(ctx, st, calID, t.Name, serverObj, res)

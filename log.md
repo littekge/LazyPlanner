@@ -4,6 +4,40 @@
 
 ---
 
+## 2026-07-24 — Fix HIGH sync data-loss race: tombstone-412 resurrect clobbered a concurrent undo
+
+- Hardening Pass 19 HIGH finding, the DELETE-conflict twin of the pass-18 CommitPush
+  resource-gone race: `pushDelete`'s 412 handler (`internal/sync/sync.go`) resurrects the
+  server's version of a resource whose local delete lost a delete-vs-server-change race, but
+  did it with an **unconditional** `store.PutRemote`. If the user pressed undo during the
+  DELETE's network round-trip — `RestoreDirty` re-creating the resource locally and clearing
+  its tombstone — the unconditional resurrect write landed after and silently clobbered the
+  undone content, with no conflict or skip surfaced.
+- Fix: added `store.ResurrectTombstone` (`internal/store/tombstone.go`), mirroring the existing
+  `PullRemote`/`PutIfUnchanged` version-checked reconcile pattern — it takes the `Tombstone` the
+  sync read before issuing the DELETE and writes only if the cached tombstone still matches
+  (same Href/ETag); if a concurrent local write already cleared or replaced it, the write is
+  skipped (`applied=false`) rather than clobbering. `pushDelete` now calls this instead of
+  `PutRemote`; on `applied=false` it keeps the surviving local resource and still calls
+  `stashServerConflict` to flag the server's version as a conflict against it (`markConflict`
+  marks the *existing* resource conflicted without touching its content) — preserving
+  never-silently-overwrite instead of inventing a new mechanism.
+- Repro-first: `internal/sync/tombstone412_undo_race_test.go` —
+  `TestTombstone412ResurrectDoesNotClobberConcurrentUndo` — a real goroutine race (undo fires
+  from inside the fake server's `DeleteObject` hook, mid the conditional DELETE) confirmed RED
+  against the unconditional `PutRemote` and GREEN after the fix, under `-race`.
+- Verified the normal (non-racing) delete-conflict path is unchanged:
+  `TestSyncTombstoneVsServerEditIsConflict` and `TestTombstone412DegradedDownloadKeepsConflict`
+  still pass — a genuine no-concurrent-change 412 still resurrects the server version, flags it
+  conflicted, and clears the tombstone exactly as before.
+- Files: `internal/store/tombstone.go` (new `ResurrectTombstone`), `internal/sync/sync.go`
+  (`pushDelete`'s 412 branch), `internal/sync/tombstone412_undo_race_test.go` (new regression
+  test).
+- Full gate green: `go test ./...` (internal/sync, internal/store clean; three pre-existing RED
+  repros for other, unrelated Pass 19 findings remain in `internal/ui` — out of this fix's
+  scope), `go test -race ./internal/sync/...`, `go vet ./...`, `staticcheck ./...`,
+  `go build ./...`, `gofmt -l internal/sync internal/store` clean.
+
 ## 2026-07-24 — Re-add MED regression: positive-nth reanchor landing on a month's 5th weekday must resolve to "last", not MonthlyNth=5
 
 - Hardening Pass 19 MED finding (companion to the HIGH fixed in the previous entry, same

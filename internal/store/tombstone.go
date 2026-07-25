@@ -2,8 +2,11 @@ package store
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"sort"
+
+	"github.com/littekge/LazyPlanner/internal/model"
 )
 
 // Tombstone is a resource deleted locally that still needs to be deleted on the
@@ -34,6 +37,51 @@ func (s *Store) Tombstones() []Tombstone {
 		return out[i].Name < out[j].Name
 	})
 	return out
+}
+
+// ResurrectTombstone writes the server's version of a resource whose local
+// delete lost a delete-vs-server-change race (a conditional DELETE returned
+// 412), but only if the tombstone is still exactly what the sync read as
+// expected — i.e. nothing local touched this name since. Sync runs on a
+// background goroutine while the UI keeps editing on the event loop, so
+// between reading the tombstone and this write a concurrent local change
+// (most notably an undo re-creating the resource via RestoreDirty, which
+// clears the tombstone as part of its write) may have landed. Since the
+// write is otherwise unconditional, applying it unguarded would silently
+// clobber that re-create — the DELETE-conflict twin of the CommitPush
+// resource-gone race PullRemote/PutIfUnchanged already guard for edits and
+// pulls. When the tombstone changed underneath (cleared or now pointing at a
+// different Href/ETag), the write is skipped (applied=false) so the caller
+// can flag the server version as a conflict against the surviving local
+// resource instead of overwriting it.
+func (s *Store) ResurrectTombstone(ctx context.Context, calID, name string, obj *model.Parsed, etag, href string, expected Tombstone) (applied bool, err error) {
+	if err := ctx.Err(); err != nil {
+		return false, err
+	}
+	if calID == "" || name == "" {
+		return false, errors.New("store: ResurrectTombstone requires a calendar id and resource name")
+	}
+	if obj == nil || obj.Calendar == nil {
+		return false, errors.New("store: ResurrectTombstone requires a decoded object")
+	}
+	s.mu.Lock()
+	defer s.mu.Unlock()
+
+	var cur tombstoneMeta
+	var ok bool
+	if cs := s.cals[calID]; cs != nil {
+		cur, ok = cs.tombstones[name]
+	}
+	if !ok || cur.Href != expected.Href || cur.ETag != expected.ETag {
+		return false, nil // a concurrent local change (e.g. an undo) landed; don't overwrite it
+	}
+
+	if _, err := s.writeResourceLocked(calID, name, func(*Resource) *Resource {
+		return &Resource{Name: name, Object: obj, ETag: etag, Href: href, Dirty: false}
+	}); err != nil {
+		return false, err
+	}
+	return true, nil
 }
 
 // ClearTombstone drops a pending deletion after sync has pushed it to the
