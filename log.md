@@ -4,6 +4,97 @@
 
 ---
 
+## 2026-07-25 — Close out Pass-21 FIX ARC: ledger + pass report resolved, docs current
+
+- Recorded the Pass-21 resolution across the audit record. `docs/audit/COVERAGE.md`: the three finding
+  rows (recurrence-read, caldav-request-construction, go-ical-encoder) and their three blind-spot
+  entries now carry FIXED clauses with fix commits (aggregate cap 571b7ec; nested heal c8eae4f;
+  PROPPATCH ba4428a), and the pass-21 canary section marks the `PutObject` 200-OK escape CLOSED
+  (e8ec765). `docs/audit/passes/PASS-21.md` gained a "## Resolution (2026-07-25)" section: the fix
+  table, the two divergences from the audit's stated direction (#1 fixed via the *strip* half —
+  completing `allowedChildren` fully subsumes the recursive-heal half; #3 fails only on a
+  positively-identified non-2xx propstat so a real success is never a false failure), the codified
+  guardrail, and the carried-forward cross-package resource-is-gone residual.
+- `main.md` Build Plan (v1.5.0 phase-3 narrative) gained the Pass 21 one-liner after Pass 20:
+  3 findings (1 HIGH, 2 MED) all fixed repro-first + 1 canary closed; the HIGH was the third reopening
+  of the heal-set-mirrors-`validateComponent` class (now at recursion depth), `more_passes_recommended`
+  stands, cross-package sweep remains the residual. No README change (no user-visible behavior change
+  this arc).
+- Recommendation from the pass stands: `more_passes_recommended` — findings resolved, but a HIGH
+  data-brick was confirmed and the heal class reopened a third time. Gate green
+  (`go test ./...`, `go vet`, `staticcheck`, `gofmt -l internal/`); the left-in-tree repro is gone.
+
+## 2026-07-25 — Close Pass-21 canary escape: guard PutObject's 200-OK success path
+
+- Pass 21's mutation-canary phase had 1 genuine escape (the workflow reported 2, but its own synthesis
+  re-verified the `parseTimeHalf` one is caught by the pass-20 guard — a stale-worktree false positive).
+- **`PutObject` 200-OK** (`internal/caldav/object.go:87`): the accepted-success set is 201/204/200, but
+  the suite exercised only 201 and 204, so dropping `http.StatusOK` survived — an RFC-legal 200-answered
+  PUT would become a spurious write failure. Added `TestPutObjectAccepts200OK`
+  (`internal/caldav/object_test.go`); verified it kills the mutation (RED with `StatusOK` removed, GREEN
+  on correct code, file confirmed reverted). Test-only; no behavior change. Commit e8ec765.
+
+## 2026-07-25 — Fix Pass-21 MED: PROPPATCH inspects per-property 207 status
+
+- **Finding (Pass 21 #3, MED, `internal/caldav/proppatch.go`):** `SetCalendarProps` returned `nil` for
+  ANY 207 Multi-Status without inspecting the per-property `<status>`. A server that answers 207 while
+  rejecting the displayname/color property (403/409/424 propstat) was treated as success — the offline
+  rename/recolor got marked pushed and silently dropped (lost update).
+- **Fix:** read the 207 body and scan its propstats via `proppatchRejection`; fail on the first
+  positively-identified non-2xx status (naming the property + status). A plain 200, or a 207 whose body
+  has no parseable status (a quirky but non-rejecting server), stays lenient so a genuine success is
+  never turned into a false failure. Parsing reuses the package's multistatus idiom.
+- **Repro → regression guards:** `TestSetCalendarPropsRejected207` (RED before / GREEN after) and
+  `TestSetCalendarPropsAccepted207` (all-2xx 207 stays a success — guards against over-correction), both
+  in `internal/caldav/proppatch_test.go`. Files: `proppatch.go`, `proppatch_test.go`. Commit ba4428a.
+
+## 2026-07-25 — Fix Pass-21 HIGH: strip components nested under VALARM/STANDARD/DAYLIGHT
+
+- **Finding (Pass 21 #1, HIGH, `internal/model/decode.go`):** THIRD reopening of "the heal set must
+  mirror go-ical's full `validateComponent`" (pass 10 top-level, pass 16 VJOURNAL/VFREEBUSY, now
+  recursion depth). go-ical's `encodeComponent` validates every component at every depth, but the
+  required-prop/mutual-exclusion heals ran top-level-only AND `allowedChildren` lacked VALARM/STANDARD/
+  DAYLIGHT — so a phantom VEVENT/VTODO nested under a VALARM (missing DTSTAMP, or with DTEND+DURATION)
+  decoded and surfaced its real sibling, then bricked the WHOLE resource on the first edit's `Encode()`.
+- **Fix (strip, not recursive-heal):** completed `model.allowedChildren` with the three childless
+  container types (empty allow-set), so `stripForbiddenNesting` (already recursive) removes any
+  illegally-nested component before go-ical's recursive `checkComponent` sees it. With every container
+  covered, no VEVENT/VTODO/VJOURNAL/VFREEBUSY survives below top level, so the top-level heals suffice.
+  A legit VALARM's own props are untouched (only nested *components* are stripped).
+- **Repro → regression guard:** `internal/model/nested_heal_test.go` (three brick variants +
+  legit-alarm-survives), RED before / GREEN after. Guardrail extended in `CLAUDE.md`: the heal set must
+  mirror `checkComponent` at its recursion depth, and `allowedChildren` must cover every container
+  go-ical recurses into. Files: `decode.go`, `nested_heal_test.go`, `CLAUDE.md`. Commit c8eae4f.
+
+## 2026-07-25 — Fix Pass-21 MED: bound aggregate recurrence expansion (un-break the gate)
+
+- **Finding (Pass 21 #2, MED, `internal/model/recurrence.go`):** the per-event step cap held, but
+  `Event.Occurrences` was looped per-event by `EventOccurrences` and per-resource by
+  `store.EventOccurrencesVisible` with no ceiling on the SUM. N far-anchored `FREQ=SECONDLY` events each
+  burned the full per-event budget, so a redraw scaled as N × per-event and froze (measured: 50 such
+  events ≈ 5s, returning 0 occurrences). The audit left the RED repro in the tree, breaking `make check`.
+- **Fix:** added `model.StepBudget` — a shared raw-step ceiling (`maxAggregateOccurrenceSteps`, 2<<20)
+  drawn down across a batch. `safeBetween` now takes an explicit `maxSteps` and reports steps used; each
+  event steps at most `min(remaining, per-event cap)`, and once the shared budget is spent remaining
+  events degrade to their base instance. `EventOccurrences` uses a fresh budget per call;
+  `EventOccurrencesBudgeted` shares one across a whole redraw via the store. The ceiling sits above the
+  per-event cap so a lone pathological event never starves legit siblings.
+- **Repro → regression guard:** promoted the left-in-tree repro to `internal/model/aggregate_cap_test.go`
+  (bound is by budget not N — 50 vs 250 events ~constant ~210ms — plus a legit-weekly-event-not-starved
+  case), RED before (5s) / GREEN after (~210ms); `make check` green again. Files: `recurrence.go`,
+  `recur_edit.go`, `store/store.go`, `aggregate_cap_test.go`. Commit 571b7ec.
+
+## 2026-07-25 — Record hardening Pass 21 (coverage-first: recurrence read / heal-set / caldav-request)
+
+- Ran the `hardening-audit` workflow (Pass 21, 39 agents). It targeted the least-audited ledger surfaces:
+  the recurrence read-path re-fuzz, the go-ical heal-set spec-diff vs vendored `validateComponent`,
+  CalDAV request-construction fault-injection, and the pass-20 reconcile/store classes' read-only + peer
+  twins. Result: 3 confirmed findings (1 HIGH, 2 MED), 1 genuine canary escape, `more_passes_recommended`.
+- Verified the workflow's claims before acting (per PROTOCOL): the RED aggregate-cap repro genuinely
+  broke the gate, the three finding source files existed, and the pass report + ledger were written.
+  Swept 4 leftover canary worktrees. Wrote `docs/audit/passes/PASS-21.md` + updated `docs/audit/COVERAGE.md`
+  (workflow output). The FIX ARC and doc close-out are the entries above.
+
 ## 2026-07-25 — Close out Pass-20 FIX ARC: ledger + pass report resolved, docs current
 
 - Recorded the Pass-20 resolution across the audit record: `docs/audit/COVERAGE.md` marks all five

@@ -299,3 +299,44 @@ Full detail (with close-out guidance) is in `COVERAGE.md` → "Escaped mutation 
 - **Permanently accepted / deferred blind spots** (unchanged): Raspberry Pi on real hardware; full
   `sync-collection` incremental (feature deferral); the pass-15 import UID-bearing/UID-less MED
   (owner-accepted residual); center agenda-board click-to-select (low-impact UI follow-up).
+
+---
+
+## Resolution (2026-07-25)
+
+All three confirmed findings were fixed repro-first (one commit each, full gate every commit) and the
+one genuine canary escape was closed, in the same session as the audit. The gate is green and the
+left-in-tree repro is gone.
+
+| # | Sev | Fix commit | Resolution |
+|---|-----|-----------|------------|
+| 1 | HIGH | `c8eae4f` | Nested-component brick — completed `model.allowedChildren` with the three childless containers (VALARM/STANDARD/DAYLIGHT → empty allow-set) so `stripForbiddenNesting` (already recursive) removes any illegally-nested component before go-ical's recursive `checkComponent` sees it. |
+| 2 | MED | `571b7ec` | Aggregate recurrence cap — added `model.StepBudget`, a shared raw-step ceiling (2<<20) drawn down across one `EventOccurrences` call and across a whole redraw via `EventOccurrencesVisible`. |
+| 3 | MED | `ba4428a` | PROPPATCH 207 — `SetCalendarProps` parses the body and fails on a non-2xx propstat status (lenient on a plain 200 / statusless body). |
+| C | canary | `e8ec765` | `PutObject` 200-OK success path now guarded by `TestPutObjectAccepts200OK`, verified to kill the mutation. |
+
+### Divergence from the audit's stated fix direction
+
+- **#1 (nested heal):** the report suggested *either* making the required-prop/mutual-exclusion heals
+  recurse *or* stripping the illegally-nested components. The strip half was chosen because it fully
+  subsumes the other: once `allowedChildren` covers every container `checkComponent` recurses into, no
+  VEVENT/VTODO/VJOURNAL/VFREEBUSY can survive below the top level, so there is nothing nested left for a
+  recursive heal to reach. Minimal, and consistent with the existing VJOURNAL/VFREEBUSY strip treatment.
+- **#3 (PROPPATCH):** fails only on a *positively-identified* non-2xx propstat — a plain 200 or a 207
+  with no parseable status stays lenient, so a genuine success (incl. the existing empty-body-207 test)
+  is never turned into a false failure. Added `TestSetCalendarPropsAccepted207` to guard that boundary.
+
+### Guardrails codified
+
+- The malformed-iCalendar ingest guardrail (CLAUDE.md) now requires the heal set to mirror go-ical's
+  `checkComponent` at its **recursion depth**, not just its per-component cardinality table, and requires
+  `model.allowedChildren` to carry an entry for **every** non-calendar container `checkComponent`
+  recurses into (third reopening of this class → the invariant is now stated as a completeness rule on
+  `allowedChildren`).
+
+### Carried forward (unchanged by this arc)
+
+- The **cross-package resource-is-gone / bare-write** sweep of `internal/model` and `internal/caldav`
+  peer write paths (carried from pass 20) — still un-swept; a named target for a future pass.
+- The recommendation stands: **`more_passes_recommended`** — this pass's findings are resolved, but a
+  HIGH data-brick was confirmed and the heal class reopened a third time, so hardening continues.
