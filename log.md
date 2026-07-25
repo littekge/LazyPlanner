@@ -4,6 +4,22 @@
 
 ---
 
+## 2026-07-24 — Codify the bare-Put clobber guardrail after its third reopening
+
+- The bare-Put sweep this pass fixed the third reopening of the "existing-resource write must be
+  version-checked" class (pass 13 declared it closed after fixing `reparentSelected`; pass 19
+  found the sibling `reparentTo` still bare, plus three more sites in `grab.go`/`recur_edit.go`).
+  A recurring class caused by a coding practice gets codified, not just fixed — per
+  `CLAUDE.md`'s own hardening-audit rule.
+- Strengthened the "Concurrent writes are version-checked" guardrail (`CLAUDE.md`, Hard-won
+  guardrails): states the reopen count explicitly, defines exactly when a bare `store.Put` is
+  legitimate (a fresh create — brand-new resource under a UID/name minted in that same call) and
+  requires the `// create: fresh UID, no existing resource to clobber` self-documenting comment
+  on every such site, and adds a concrete three-step checklist (classify / route or annotate /
+  grep the package for stragglers) for any new or touched write path.
+- No code change; `main.md`/`README.md` unaffected (a workflow-rule change, not a design or
+  user-visible one).
+
 ## 2026-07-24 — Bare-Put sweep (yankpaste.go): the last two sites are fresh creates, annotated
 
 - Pass 19's bare-Put sweep, concluded: `internal/ui/yankpaste.go`'s two remaining bare-Put sites
