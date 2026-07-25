@@ -4,6 +4,32 @@
 
 ---
 
+## 2026-07-25 — Close out Pass-20 FIX ARC: ledger + pass report resolved, docs current
+
+- Recorded the Pass-20 resolution across the audit record: `docs/audit/COVERAGE.md` marks all five
+  confirmed findings FIXED with fix commits (step-(A) Forget 24500e8; moveSubtreeOps cross-collection
+  60f1191; bare recurring task c16ea6c; grab reanchor ab6ed06; day-range highlight cap 5cf043d) and
+  both escaped canaries CLOSED (d81d432, parseTimeHalf + weekdayStrip). `docs/audit/passes/PASS-20.md`
+  gained a "## Resolution (2026-07-25)" section: the fix table, the two divergences from the audit's
+  stated fix direction (#3 fixed in the UI caller not `applyRecurAnchor`, to avoid regressing events'
+  selected-day anchor; #4 also fixing the single-item grab twin), the guardrails codified, and the
+  carried-forward cross-package resource-is-gone residual.
+- Guardrails codified during the arc (recurring-class rule): a new Hard-won guardrail for the
+  sync-reconcile resource-is-gone class (three reopenings — CommitPush `cur==nil` / pushDelete-412 /
+  step-(A) Forget), requiring `ForgetIfUnchanged` in reconcile removals; the reanchor guardrail
+  extended to state a recurring VTODO's anchor is `DUE`; the version-check guardrail's citation list
+  updated.
+- Doc-currency pass (this cleanup): `main.md`'s Grab-mode section now documents that a recurring
+  **todo**'s due-grab re-anchors its day-pinning rule via `model.ReanchoredRecurrenceTodo` (the
+  `DUE`-is-the-anchor behavior added in the LOW #4 fix), symmetric with the already-documented event
+  day-move reanchor. No README change (no user-visible usage/keybinding/build change this session);
+  `main.md`:395's "daily → the base day, tasks and events alike" promise already covered the MED #3
+  fix, which made behavior match it.
+- Recommendation from the pass stands: `more_passes_recommended` — this pass's findings are fully
+  resolved, but convergence trended up (a HIGH data-loss + a third reopening of the reconcile class),
+  so hardening continues in a future pass. Docs/ledger-only aside from `main.md`; `go build ./...` and
+  `go test ./...` remain green.
+
 ## 2026-07-25 — Close both Pass-20 escaped mutation canaries (parseTimeHalf ceiling · weekdayStrip clamp)
 
 - Pass 20's mutation-canary phase flipped two correct boundaries that no test caught — test-coverage
