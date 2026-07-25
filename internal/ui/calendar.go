@@ -232,19 +232,24 @@ func (a *app) openColorPickerCallback(current, title string, onPick func(hex str
 }
 
 // openColorPicker recolors an existing calendar directly (from `:calendar color`
-// with no hex): the swatch grid applied via applyCalendarColor.
-func (a *app) openColorPicker(calID string) {
+// with no hex): the swatch grid applied via applyCalendarColor. It reports
+// whether the picker actually opened, so `:calendar color`'s command-echo (which
+// must only fire once the command has actually proceeded — see main.md's "most
+// recently *executed* action") can skip a rejected call (unknown calendar, or
+// read-only via guardWrite) rather than echo before the fact.
+func (a *app) openColorPicker(calID string) bool {
 	cal, ok := a.store.Calendar(calID)
 	if !ok {
 		a.flash("Calendar not found")
-		return
+		return false
 	}
 	if !a.guardWrite(calID) {
-		return
+		return false
 	}
 	a.openColorPickerCallback(cal.Color, " Color · "+cal.DisplayName+" ", func(hex string) {
 		a.applyCalendarColor(calID, hex)
 	})
+	return true
 }
 
 // applyCalendarColor sets a calendar's color offline-first (pushed as a CalDAV

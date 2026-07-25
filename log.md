@@ -4,6 +4,37 @@
 
 ---
 
+## 2026-07-24 — `:` command handlers no longer echo before they've actually run
+
+- Fix 2 of the v1.5.0 phase-2 axis-extension triage (`:` command surface, finding #2): several `:`
+  handlers called `a.echo(...)` (writing the command-echo slot, `a.statusMid`) *before* validating or
+  executing, so a rejected command still showed as though it had run — contradicting main.md's
+  description of that slot as "the most recently *executed* action". `:calendar rename`/`:view`/
+  `:goto`/`:search` already echoed only on success; `:calendar color`, `:account`, and `:config` did
+  not.
+- `:calendar color <bad-hex>` and `:calendar color <hex>` on a read-only calendar now validate (and
+  `guardWrite`) before echoing. `openColorPicker` (`internal/ui/calendar.go`) now returns a `bool` —
+  whether it actually opened — so the no-hex path (`:calendar color` opening the swatch picker) only
+  echoes when the picker really opens (unknown calendar / read-only both suppress it).
+- `:account` no longer echoes on the "no accounts configured" rejection; the echo moved to fire only
+  when the picker actually opens (bare `:account`) or `switchAccount` actually proceeds to
+  `requestSwitch` (named `:account <name>`, shared with the picker's own switch call) — the "unknown
+  account" / "already on X" rejections inside `switchAccount` no longer echo either.
+- `:config` no longer echoes when `editConfig` is nil (no config file); the echo moved to just before
+  `Suspend` hands the screen to `$EDITOR`.
+- `:calendar new` was flagged in triage but has no rejection path (`showCalendarForm("", 0)` always
+  proceeds when `editID == ""`), so its existing eager echo is already correct — left unchanged.
+- Repro-first, one test per rejected path, plus a still-echoes test per moved success path:
+  `TestCalendarColorInvalidHexDoesNotEcho`, `TestCalendarColorReadOnlyDoesNotEcho`,
+  `TestCalendarColorValidStillEchoes` (`internal/ui/calendarcmd_test.go`);
+  `TestCmdAccountNoAccountsDoesNotEcho`, `TestCmdAccountOpensPickerEchoes`
+  (`internal/ui/account_test.go`); `TestConfigUnavailableDoesNotEcho`
+  (`internal/ui/configreload_test.go`) — all red against the old eager echoes, green after.
+- Files: `internal/ui/command.go`, `internal/ui/calendar.go`, `internal/ui/calendarcmd_test.go`,
+  `internal/ui/account_test.go`, `internal/ui/configreload_test.go`.
+- Full gate green: `go test ./...`, `go vet ./...`, `staticcheck ./...`, `go build ./...`,
+  `gofmt -l internal/ui` clean.
+
 ## 2026-07-24 — `:sync` no-account hint references the removed `[server]` section
 
 - Fix 1 of the v1.5.0 phase-2 axis-extension triage (`:` command surface, finding #1): `triggerSync`'s

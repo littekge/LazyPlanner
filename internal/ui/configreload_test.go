@@ -19,6 +19,18 @@ func TestConfigUnavailableFlashes(t *testing.T) {
 	}
 }
 
+// TestConfigUnavailableDoesNotEcho: ":config" with no editConfig callback is
+// rejected (see TestConfigUnavailableFlashes above) — the command-echo slot
+// (a.statusMid) must not show ":config" as if the editor had actually opened.
+func TestConfigUnavailableDoesNotEcho(t *testing.T) {
+	a := newRootedTestApp(t, time.Date(2026, 7, 5, 12, 0, 0, 0, time.UTC))
+	a.editConfig = nil
+	a.cmdConfig()
+	if got := a.statusMid.GetText(true); strings.Contains(got, ":config") {
+		t.Errorf("echo = %q, a rejected :config must not echo", got)
+	}
+}
+
 func TestApplyConfigReloadSwapsSync(t *testing.T) {
 	a := newRootedTestApp(t, time.Date(2026, 7, 5, 12, 0, 0, 0, time.UTC))
 	a.syncFn = nil

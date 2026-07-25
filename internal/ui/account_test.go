@@ -128,6 +128,29 @@ func TestCmdAccountNoAccountsFlashes(t *testing.T) {
 	}
 }
 
+// TestCmdAccountNoAccountsDoesNotEcho: ":account" with no configured accounts is
+// rejected (see TestCmdAccountNoAccountsFlashes above) — the command-echo slot
+// must not show ":account" as if the picker had actually opened.
+func TestCmdAccountNoAccountsDoesNotEcho(t *testing.T) {
+	a := newTestApp(t, time.Date(2026, 7, 21, 12, 0, 0, 0, time.UTC))
+	a.cmdAccount("")
+	if got := a.statusMid.GetText(true); strings.Contains(got, ":account") {
+		t.Errorf("echo = %q, a rejected :account must not echo", got)
+	}
+}
+
+// TestCmdAccountOpensPickerEchoes: the fix for the rejection case above must not
+// cost the success path (opening the picker) its echo.
+func TestCmdAccountOpensPickerEchoes(t *testing.T) {
+	a := multiAccountApp(t)
+	a.root = tview.NewPages()
+	a.root.AddPage(pageMain, a.layout(), true, true)
+	a.cmdAccount("")
+	if got := a.statusMid.GetText(true); !strings.Contains(got, ":account") {
+		t.Errorf("echo = %q, opening the account picker should echo", got)
+	}
+}
+
 // TestStatusShowsActiveAccountWhenMultiple: the status bar names the active
 // account only when more than one account is configured.
 func TestStatusShowsActiveAccountWhenMultiple(t *testing.T) {

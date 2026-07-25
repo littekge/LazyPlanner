@@ -91,12 +91,12 @@ func (a *app) runCommand(line string) {
 // opens the picker. Switching tears the app down and reopens the named account
 // (main's rebuild loop); the cache is per-account, so this is the only safe way.
 func (a *app) cmdAccount(args string) {
-	a.echo(":account")
 	if len(a.accounts) == 0 {
 		a.flash("no accounts configured")
 		return
 	}
 	if args == "" {
+		a.echo(":account")
 		a.openAccountPicker()
 		return
 	}
@@ -123,6 +123,7 @@ func (a *app) switchAccount(name string) {
 		a.flash("already on " + match)
 		return
 	}
+	a.echo(":account")
 	a.requestSwitch(match)
 }
 
@@ -183,11 +184,11 @@ func (a *app) accountPickerList() *tview.List {
 // cmdConfig opens the config file in $EDITOR (via the callback wired from main),
 // suspending the TUI so the editor owns the terminal, then reloads on exit.
 func (a *app) cmdConfig() {
-	a.echo(":config")
 	if a.editConfig == nil {
 		a.flash(":config unavailable (no config file)")
 		return
 	}
+	a.echo(":config")
 	// Suspend releases the screen for the editor; applyConfigReload runs inside so
 	// the swap + flash happen before the TUI redraws on resume.
 	a.tv.Suspend(func() {
@@ -316,9 +317,10 @@ func (a *app) cmdCalendar(args string) {
 		a.echo(":calendar rename")
 		a.flash("Renamed (pushes on next sync)")
 	case "color":
-		a.echo(":calendar color")
 		if rest == "" {
-			a.openColorPicker(id) // no hex → the swatch picker
+			if a.openColorPicker(id) { // no hex → the swatch picker
+				a.echo(":calendar color")
+			}
 			return
 		}
 		c, ok := normalizeColor(rest)
@@ -326,6 +328,10 @@ func (a *app) cmdCalendar(args string) {
 			a.flash("calendar color <#rrggbb>")
 			return
 		}
+		if !a.guardWrite(id) {
+			return
+		}
+		a.echo(":calendar color")
 		a.applyCalendarColor(id, c)
 	case "hide":
 		a.hidden[id] = true
