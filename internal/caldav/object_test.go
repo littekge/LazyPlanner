@@ -77,6 +77,28 @@ func TestPutObjectUpdateSendsQuotedIfMatch(t *testing.T) {
 	}
 }
 
+// TestPutObjectAccepts200OK closes the Pass-21 canary escape: PutObject accepts
+// 201/204/200 as success, but no test exercised the 200 path, so a regression
+// dropping http.StatusOK from the accepted set (turning an RFC-legal 200-answered
+// PUT into a spurious write failure) shipped silently. Some servers answer a PUT
+// with 200 OK rather than 204; that must remain a success returning the new ETag.
+func TestPutObjectAccepts200OK(t *testing.T) {
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		w.Header().Set("ETag", `"srv-200"`)
+		w.WriteHeader(http.StatusOK)
+	}))
+	defer srv.Close()
+
+	c, _ := caldav.NewClient(caldav.Config{Endpoint: srv.URL})
+	etag, err := c.PutObject(context.Background(), "/dav/cal/e1.ics", sampleICS, "srv-1", false)
+	if err != nil {
+		t.Fatalf("a 200 OK on PUT must be a success, got %v", err)
+	}
+	if etag != "srv-200" {
+		t.Errorf("returned etag = %q, want srv-200", etag)
+	}
+}
+
 func TestPutObjectPreconditionFailed(t *testing.T) {
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
 		w.WriteHeader(http.StatusPreconditionFailed)
