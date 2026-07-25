@@ -4,6 +4,17 @@
 
 ---
 
+## 2026-07-24 — Add #7 SELECT count-leak regression guard (was left untracked in 33d01d3)
+
+- The repro test for pass-19 finding #7 (`internal/ui/countleak_repro_test.go` /
+  `TestSelectBulkOpDoesNotLeakCount`) was written and verified in commit 33d01d3 (which
+  fixed the defect) but was never `git add`ed — the test file sat untracked, so the
+  regression guard was never committed to the tree. The fix shipped without its guard.
+- Added the test file to git; verified it passes with the fix in place and fails without it
+  (temporarily reverted only the count-reset lines in `globalKeys`, re-ran the test, then
+  restored before committing).
+- Test-only change; no behavior, `main.md`, or README update needed.
+
 ## 2026-07-24 — Close pass-19 canary escape: SELECT day-range highlight boundary (`dayInRange`) was untested
 
 - `dayInRange` (`internal/ui/selection.go`) is correct — it backs the SELECT day-range VISUAL
