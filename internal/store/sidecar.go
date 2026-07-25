@@ -46,6 +46,18 @@ type sidecar struct {
 	// on the server, keyed by their (now-gone) .ics file name. They are kept
 	// until sync pushes the deletion, then cleared.
 	Tombstones map[string]tombstoneMeta `json:"tombstones,omitempty"`
+
+	// Salvage bookkeeping for a sidecar that failed a strict decode. Unexported,
+	// so it never round-trips to disk: it describes this load, not the file.
+	//
+	//   salvaged        - the file existed but did not parse cleanly, so every
+	//                     field NOT recovered below is UNKNOWN, not empty.
+	//   unparseable     - not even a JSON object; nothing at all was recovered.
+	//   intactResources - names whose resourceMeta decoded in full; any other
+	//                     resource's sync state is unknown and loads dirty.
+	salvaged        bool
+	unparseable     bool
+	intactResources map[string]bool
 }
 
 type resourceMeta struct {
@@ -102,10 +114,162 @@ func readSidecar(dir string) (*sidecar, error) {
 	}
 	var sc sidecar
 	if err := json.Unmarshal(data, &sc); err != nil {
-		return nil, fmt.Errorf("parsing sidecar: %w", err)
+		// A sidecar that fails to parse must never be read as "this calendar has no
+		// sync state": empty state means every unsynced local edit looks clean (the
+		// next pull silently overwrites it) and every pending deletion vanishes (the
+		// item resurrects on the server). So: salvage every field still intact, keep
+		// the original bytes for recovery, and report the failure so the UI shows it.
+		// What could not be salvaged is UNKNOWN — the caller resolves unknown in the
+		// data-preserving direction (assume unsynced), never as empty.
+		salvaged := salvageSidecar(data)
+		salvaged.Tombstones = dropUnsafeTombstoneNames(salvaged.Tombstones)
+		err = fmt.Errorf("parsing sidecar: %w", err)
+		if qerr := quarantineSidecar(dir, data); qerr != nil {
+			return salvaged, fmt.Errorf("%w (original bytes NOT preserved: %v)", err, qerr)
+		}
+		return salvaged, fmt.Errorf("%w (original bytes kept as %s)", err, sidecarName+corruptSuffix)
 	}
 	sc.Tombstones = dropUnsafeTombstoneNames(sc.Tombstones)
 	return &sc, nil
+}
+
+// corruptSuffix names the quarantine copy of a sidecar that failed to parse.
+// The salvaged state is written back over the sidecar itself on the next store
+// write, so without this copy the unrecovered metadata would be gone for good;
+// with it, the exact original bytes stay on disk for hand-recovery.
+const corruptSuffix = ".corrupt"
+
+// quarantineSidecar preserves the raw bytes of a sidecar that failed to parse
+// next to it, so nothing the salvage pass could not recover is destroyed by the
+// rewrite that follows.
+func quarantineSidecar(dir string, data []byte) error {
+	return writeFileAtomic(filepath.Join(dir, sidecarName+corruptSuffix), data, filePerm)
+}
+
+// salvageSidecar rebuilds as much of a sidecar as is still readable after a
+// strict decode failed, field by field: one bad value (a wrong JSON type, a
+// truncated entry) then costs only that field instead of the calendar's entire
+// sync state. The returned sidecar is always marked salvaged, so the caller can
+// tell recovered state from state that is genuinely absent.
+func salvageSidecar(data []byte) *sidecar {
+	sc := &sidecar{salvaged: true}
+	var fields map[string]json.RawMessage
+	if err := json.Unmarshal(data, &fields); err != nil {
+		sc.unparseable = true
+		return sc
+	}
+	// A field that won't decode keeps its zero value; "salvaged" tells the caller
+	// that a zero value here may mean unknown rather than absent.
+	get := func(key string, dst any) {
+		if raw, ok := fields[key]; ok {
+			_ = json.Unmarshal(raw, dst)
+		}
+	}
+	get("display_name", &sc.DisplayName)
+	get("color", &sc.Color)
+	get("sync_token", &sc.SyncToken)
+	get("ctag", &sc.CTag)
+	get("href", &sc.Href)
+	get("pending_create", &sc.PendingCreate)
+	get("pending_delete", &sc.PendingDelete)
+	get("pending_name", &sc.PendingName)
+	get("pending_color", &sc.PendingColor)
+	get("pending_props", &sc.PendingProps)
+	get("components", &sc.Components)
+	get("read_only", &sc.ReadOnly)
+	sc.Resources, sc.intactResources = salvageResources(fields["resources"])
+	sc.Tombstones = salvageTombstones(fields["tombstones"])
+	return sc
+}
+
+// salvageResources decodes the resource map entry by entry, returning the
+// recovered metadata plus the set of entries that decoded in full. An entry
+// missing from that set has unknown sync state and must load dirty.
+func salvageResources(raw json.RawMessage) (map[string]resourceMeta, map[string]bool) {
+	entries, ok := jsonObject(raw)
+	if !ok {
+		return nil, nil
+	}
+	out := make(map[string]resourceMeta, len(entries))
+	intact := make(map[string]bool, len(entries))
+	for name, rawMeta := range entries {
+		var m resourceMeta
+		if err := json.Unmarshal(rawMeta, &m); err == nil {
+			out[name] = m
+			intact[name] = true
+			continue
+		}
+		out[name] = salvageResourceMeta(rawMeta)
+	}
+	return out, intact
+}
+
+// salvageResourceMeta recovers the readable fields of one resource entry. ETag
+// and Href matter most: with them a later push is a conditional PUT that the
+// server can reject, instead of a blind create that duplicates the resource.
+func salvageResourceMeta(raw json.RawMessage) resourceMeta {
+	var m resourceMeta
+	fields, ok := jsonObject(raw)
+	if !ok {
+		return m
+	}
+	get := func(key string, dst any) {
+		if f, ok := fields[key]; ok {
+			_ = json.Unmarshal(f, dst)
+		}
+	}
+	get("etag", &m.ETag)
+	get("href", &m.Href)
+	get("dirty", &m.Dirty)
+	get("hash", &m.Hash)
+	var c conflictMeta
+	if f, ok := fields["conflict"]; ok && json.Unmarshal(f, &c) == nil {
+		m.Conflict = &c
+	}
+	return m
+}
+
+// salvageTombstones decodes pending deletions entry by entry: losing one must
+// not lose the rest, since a dropped tombstone resurrects a deleted item.
+func salvageTombstones(raw json.RawMessage) map[string]tombstoneMeta {
+	entries, ok := jsonObject(raw)
+	if !ok {
+		return nil
+	}
+	out := make(map[string]tombstoneMeta, len(entries))
+	for name, rawMeta := range entries {
+		var tm tombstoneMeta
+		if err := json.Unmarshal(rawMeta, &tm); err == nil {
+			out[name] = tm
+			continue
+		}
+		fields, ok := jsonObject(rawMeta)
+		if !ok {
+			continue
+		}
+		if f, ok := fields["href"]; ok {
+			_ = json.Unmarshal(f, &tm.Href)
+		}
+		if f, ok := fields["etag"]; ok {
+			_ = json.Unmarshal(f, &tm.ETag)
+		}
+		// Kept even if the href did not survive: such a tombstone can't be pushed
+		// and sync reports it as a skip, which is a visible failure — dropping it
+		// instead silently undoes the user's deletion.
+		out[name] = tm
+	}
+	return out
+}
+
+func jsonObject(raw json.RawMessage) (map[string]json.RawMessage, bool) {
+	if len(raw) == 0 {
+		return nil, false
+	}
+	var out map[string]json.RawMessage
+	if err := json.Unmarshal(raw, &out); err != nil {
+		return nil, false
+	}
+	return out, true
 }
 
 // dropUnsafeTombstoneNames removes tombstone entries whose key is not a single

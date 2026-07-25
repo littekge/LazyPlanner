@@ -157,8 +157,13 @@ func (s *Store) loadCalendar(ctx context.Context, id string) (*calState, []LoadE
 
 	sc, err := readSidecar(dir)
 	if err != nil {
+		// readSidecar still returns what it could salvage; keep it. Falling back to
+		// an empty sidecar here would read "unparseable" as "never synced", which
+		// clobbers unsynced local edits and resurrects deleted items on the next sync.
 		errs = append(errs, LoadError{Calendar: id, Name: sidecarName, Err: err})
-		sc = &sidecar{}
+		if sc == nil {
+			sc = &sidecar{unparseable: true, salvaged: true}
+		}
 	}
 	cs.displayName = sc.DisplayName
 	cs.color = sc.Color
@@ -173,7 +178,13 @@ func (s *Store) loadCalendar(ctx context.Context, id string) (*calState, []LoadE
 	cs.pendingName = sc.PendingName || sc.PendingProps
 	cs.pendingColor = sc.PendingColor || sc.PendingProps
 	cs.components = sc.Components
-	cs.readOnly = sc.ReadOnly
+	// A sidecar that yielded nothing leaves the write privilege unknown, and the
+	// hard invariant is that a read-only calendar is never written to — so treat
+	// unknown as read-only until the next sync re-reads the server's privileges
+	// (SetCalendarReadOnly). This gates UI writes only; the reconcile path reads
+	// the server's live flag, so it cannot turn into a one-way mirror that
+	// discards local changes.
+	cs.readOnly = sc.ReadOnly || sc.unparseable
 
 	entries, err := os.ReadDir(dir)
 	if err != nil {
@@ -262,6 +273,14 @@ func loadResource(dir, name string, sc *sidecar) (*Resource, error) {
 		// it as the unsynced local edit it is, so sync pushes it instead of leaving
 		// it stranded as clean-but-diverged. (Empty meta.Hash = legacy/untracked;
 		// not enforced.)
+		dirty = true
+	}
+	if sc.salvaged && !sc.intactResources[name] {
+		// The sidecar didn't parse and this resource's entry wasn't fully recovered,
+		// so its sync state is unknown. Resolve unknown the only non-destructive way:
+		// assume the .ics is an unsynced local edit. A wrongly-dirty resource costs
+		// one redundant conditional PUT; a wrongly-clean one is silently overwritten
+		// by the next pull.
 		dirty = true
 	}
 	return &Resource{

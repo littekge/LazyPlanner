@@ -4,6 +4,68 @@
 
 ---
 
+## 2026-07-25 — Fix Pass-23 HIGH: a corrupt sidecar salvages its sync state instead of discarding it
+
+- **Finding (Pass 23 HIGH, `internal/store/sidecar.go` / `store.go`):** a sidecar that failed to parse
+  discarded ALL of that calendar's sync metadata (ETags, hrefs, dirty flags, tombstones, conflict
+  stashes) and then overwrote the corrupt file with the empty state. Next sync clobbered unsynced local
+  edits and **resurrected deleted items** (their tombstones were gone).
+- **Fix — three mechanisms, because each alone leaves a hole:**
+  - *Field-by-field salvage* (`salvageSidecar`/`salvageResources`/`salvageResourceMeta`/
+    `salvageTombstones`): one bad value now costs one field, not the calendar's whole sync state.
+  - *Unknown ≠ empty*: a resource whose entry wasn't recovered in full loads **Dirty**; a fully-recovered
+    entry keeps its exact recorded state, so a healthy cache is never force-re-pushed.
+  - *Quarantine*: the original bytes are copied to `.lazyplanner.json.corrupt` before anything overwrites
+    them. Refusing to write the sidecar was rejected — the salvaged state must persist or every later
+    Open re-salvages and new sync progress is lost, and an unwritable sidecar breaks rollback paths.
+- Reused the existing surfacing channel rather than new plumbing: `readSidecar` returns the salvaged
+  sidecar *plus* the error, and `loadCalendar` records it as a `LoadError` (already wired to the red
+  `!N load error(s)` badge) while now KEEPING the salvaged sidecar instead of substituting an empty one.
+- **Repro → regression guards:** `internal/store/sidecar_corrupt_test.go`, 6 class-level tests — corrupt
+  keeps state, quarantine is byte-identical, **a valid sidecar loads full state and is not quarantined**,
+  **a valid sidecar keeps synced resources clean** (guards the fix degenerating into "mark everything
+  dirty"), unsalvageable ⇒ unknown, partial ⇒ per-entry rule. Gate green incl. `-race`.
+- **Verified the one risky line independently** (the agent flagged it as read-only-reasoned): setting
+  `readOnly = true` on a fully unparseable sidecar cannot reach `reconcileReadOnly`'s dirty-discard —
+  that branch is gated on `sc.ReadOnly`, the *server's* live flag from discovery (`sync.go:346`), and
+  `sync.go:140` overwrites the cached flag from the server before reconcile runs.
+- **Owner call outstanding (user-visible):** that same line makes a calendar with an unparseable sidecar
+  temporarily **read-only in the UI until the next successful sync**. It protects against editing a
+  genuinely read-only calendar offline and having the edits discarded at sync — but it also blocks
+  offline edits in an offline-first app. Self-healing and non-destructive; one line to revert if unwanted.
+- **Carried residuals:** the pre-existing visibility is a red count with no detail — the `.corrupt`
+  filename is in the error text but that text is **nowhere rendered**, so a follow-up should expose
+  `LoadError` detail in `internal/ui`. If the sidecar isn't even a JSON object, nothing is recoverable
+  and **server-side deletions still resurrect** (local `.ics` content is never lost). Dirty-without-ETag
+  resources push as *creates*, so a duplicate on the server is possible — chosen deliberately over an
+  overwrite. Untested: read-only cache dir, concurrent Opens racing the quarantine write, stale
+  `.corrupt` accumulation (overwritten each time, never removed).
+
+## 2026-07-25 — Fix Pass-23 MED: zero-length all-day event renders in the week/day band (render-vs-drill drift)
+
+- **Finding (Pass 23 MED, `internal/ui/render.go`):** a zero-length all-day event was dropped from the
+  week/day all-day band but still occupied a slot in the drill list — the cursor could land on an item
+  rendered nowhere. The render path and the navigation path disagreed about which items exist.
+- **The predicate that drifted:** `splitOccs`'s all-day branch hand-rolled a half-open day walk
+  (`for d := DayStart(o.Start); d.Before(o.End); …`), which yields **zero iterations** when `End == Start`.
+  Every other consumer — the month grid's `OccurrencesOn`, the timed branch's `Occurrence.OverlapsDay`,
+  the store range query behind `dayItems` — goes through `model.overlaps`, which *deliberately* treats a
+  non-positive span as an instant. So the drill list listed the event and the band drew nothing.
+- **Fix:** the all-day branch now uses the same `o.OverlapsDay(d)` predicate the timed branch already
+  used, making `OverlapsDay` the single source for both buckets instead of a second hand-rolled copy of
+  the rule. Rendering (not excluding) was chosen: the model's canonical predicate already places a
+  zero-length occurrence on its day, the month grid and agenda already show it, and excluding would have
+  *removed* real foreign-written data from two working views.
+- **Repro → regression guards:** `internal/ui/zerolen_allday_test.go` —
+  `TestZeroLengthAllDayEventVisibleInWeekAndDay` (RED before / GREEN after, month assertion promoted from
+  a log line to a real check) plus the class-closer `TestSplitOccsRenderSetMatchesDrillSet`, which pins
+  drill order/indices on a mixed day and asserts render-set count == drill-set count. Display-stress green.
+- **Carried residual:** the predicate is now identical but the time grid still derives its rendered set
+  and its selectable set from two different call chains — this class can re-open on a future edit to
+  either. A structural fix would build the band's buckets *from* `dayItemsForDays`. A second parallel
+  pair (`tg.dueTasks` drawn vs the todos inside `tg.items` drilled) was read and currently agrees, but is
+  the same shape of risk. `splitOccs` now assumes `days` is contiguous — true of all current callers.
+
 ## 2026-07-25 — Fix Pass-23 HIGH: heal-set strip becomes deny-by-default (4th reopening of the class)
 
 - **Finding (Pass 23 HIGH, `internal/model/decode.go`):** `allowedChildren` was **allow-by-default** —
