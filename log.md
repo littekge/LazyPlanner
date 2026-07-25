@@ -4,6 +4,26 @@
 
 ---
 
+## 2026-07-24 — Fix pass-19 finding #7: vim count leaked past a swallowed SELECT bulk-op key
+
+- In SELECT mode, `globalKeys` (`internal/ui/app.go`) returned immediately when `handleSelectKey`
+  swallowed a key (a bulk-op like Space/d/y/Y/m, Esc, `V`, a modified arrow, or a bare `0`) —
+  before reaching the fall-through `a.pendingCount = 0` reset further down. A pending count typed
+  just before the bulk-op key (e.g. `3` then Space to bulk-complete) survived the bulk op and then
+  multiplied the *next* motion (`j` moved 3 rows instead of 1) instead of being consumed with the
+  key that ended it.
+- Fixed by resetting `a.pendingCount` at the early-return site in `globalKeys` when
+  `handleSelectKey` reports the key as swallowed, mirroring the same "a non-motion key drops any
+  pending count" rule the normal fall-through path already applies.
+- Repro: `internal/ui/countleak_repro_test.go` (`TestSelectBulkOpDoesNotLeakCount`), already in
+  tree and RED before this fix — confirmed GREEN after. Existing count tests
+  (`TestZeroStillExtendsCount`, `TestCountPrefixRepeatsMotion`, `TestCountAppliesToLetterMotion`,
+  `TestCountGSelectsNthTreeNode`) still pass, confirming a legitimate carrying count (e.g. `10j`)
+  is untouched — the reset only fires when SELECT swallows the key, never when it falls through as
+  motion.
+- `go test ./...`, `go vet ./...`, `staticcheck ./...`, `go build ./...` all clean; `gofmt -l
+  internal/ui` empty.
+
 ## 2026-07-24 — Close pass-19 canary escape: parsePriority's !9 upper edge was untested
 
 - `parsePriority` (`internal/model/quickadd.go`) is correct — numeric priorities are 1-9 inclusive

@@ -778,6 +778,11 @@ func (a *app) globalKeys(ev *tcell.EventKey) *tcell.EventKey {
 	// range); the bulk-op keys and Esc are handled; the rest is swallowed.
 	if a.selecting {
 		if a.handleSelectKey(ev) == nil {
+			// A swallowed SELECT key (bulk-op, Esc, V, ...) never becomes a
+			// motion, so the count it interrupted must not survive it — the
+			// same non-digit-resets-count rule the fall-through path applies
+			// below, just reached via an early return.
+			a.pendingCount = 0
 			return nil
 		}
 		// fall through: a motion key extends the range via the normal handlers
