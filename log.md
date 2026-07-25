@@ -4,6 +4,49 @@
 
 ---
 
+## 2026-07-25 — Close the Pass-23 canary escape + two coverage holes, and add a table-drift tripwire
+
+Test-only increment (no product code changed). Every item ships **mutation-kill evidence** — RED under
+the injected mutation, GREEN reverted — and I re-verified the two most important ones myself in an
+isolated copy of HEAD rather than accepting the agent's report.
+
+- **The escaped canary — `NewSeriesFrom`'s carry-forward boundary** (`internal/model/recur_edit.go`).
+  Pass 23 weakened `t.Unix() <= occ.Unix()` to `<` and the ENTIRE REPO stayed green. Real defect: on
+  "this & future" over an occurrence that already had an override, the stale override at the split
+  instant is carried into the new series and outranks the user's fresh edit — the edit vanishes and the
+  pre-split customization resurrects. `TestSplitPartitionsAcrossTheSplitInstant` now pins all three
+  positions (before / **at** / after) and asserts the split-point occurrence expands with the *draft's*
+  summary. Verified RED under the mutation.
+- **`internal/store` could not catch a `CommitPush` lost update.** Replacing the pointer-identity check
+  `cur == pushed` with `cur.Name == pushed.Name` — always true at that call site, making the
+  concurrent-edit branch dead code — left `go test ./internal/store/` fully green; only one test, one
+  package away in `internal/sync`, caught it. The store-side half of the "concurrent writes are
+  version-checked" hard invariant is now asserted *in* the store package:
+  `commitpush_editmidpush_test.go` (deterministic + a 200-iteration race sibling). I confirmed the
+  mutation kill myself.
+- **Table-drift tripwire — `internal/model/encoderdrift_test.go`.** The heal-set class has reopened four
+  times, and the step that failed in three of them is a *manual* re-diff of hand-mirrored tables against
+  go-ical. That step is now enforced by the gate. The test parses `vendor/.../encoder.go` with **go/ast**
+  (justified in-file: the switch bodies interleave case clauses, `if` guards and two composite literals
+  per case, so a regex would under-match on reformatting — failing open, exactly what a tripwire must not
+  do) and checks three things: `checkComponent`'s cases ↔ `encoderValidatedComponents` (set equality both
+  ways, and it also fails if the switch grows a `default:`, which would invalidate the membership
+  premise); its `exactlyOne ∪ atMostOne` lists ↔ `singleValuedProps`; and the DTSTAMP heal set, which it
+  **derives** by round-tripping each component with DTSTAMP omitted rather than restating the list.
+  Verified: dropping `CompJournal` turns it RED with an actionable three-step fix message.
+- **Named soft spot (the agent's own disclosure):** the `CommitPush` *race* test only killed its mutation
+  after the launch order was alternated — with a fixed order the edit lost 200/200 and the test was
+  vacuously green. It logs its applied-count so a future vacuous run is visible, but does not *fail* on
+  0/200, to avoid flaking on a single-CPU runner. The deterministic test is what actually kills it.
+- **Tripwire scope limits:** it does not diff `allowedChildren` (go-ical's nesting rules live in ad-hoc
+  `if child.Name != …` guards, not an extractable table, and our map is deliberately deny-by-default), so
+  a go-ical bump that *widens* legal nesting would silently make us over-strip. It reads only
+  `checkComponent`; `encodeProp`'s CR/LF and double-quote rejections remain guarded by hand-written tests.
+  The recursion-depth argument in the CLAUDE.md guardrail is still hand-reasoned.
+- **Incidental, not fixed:** `model.Decode` rejects a VEVENT with UID+DTSTAMP but no DTSTART. RFC 5545
+  permits that when the VCALENDAR carries METHOD (go-ical has a `// TODO` for it). Possible
+  ingest-robustness gap for a future pass.
+
 ## 2026-07-25 — Fix Pass-23 HIGH (second half): navCells' per-keypress quadratic scan
 
 - **Context:** the Pass-23 HIGH "LayoutDay is O(n²) — freezes the UI on every draw **and keypress**" was
