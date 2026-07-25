@@ -4,6 +4,27 @@
 
 ---
 
+## 2026-07-24 — Fix MED data-loss: reparentTo's bare Put clobbered a concurrent pull (bare-Put class, 3rd reopen)
+
+- Hardening Pass 19 MED finding #6: `reparentTo` (`internal/ui/yankpaste.go`), the single-item
+  same-list re-parent behind `p`/`P` paste, committed with a bare `store.Put` instead of the
+  version-checked `store.PutIfUnchanged`. A background sync pull landing between paste()'s
+  `Locate` and that `Put` was silently overwritten — the write persisted content derived from
+  the stale snapshot while adopting the freshly-pulled ETag, so the next push's CAS matched the
+  server and the remote edit was lost with no conflict surfaced.
+- This is the "bare Put clobber" class's **third** reopening (pass 13 fixed `reparentSelected`
+  and declared the class closed; this pass found the sibling `reparentTo` still bare) — see the
+  sweep and guardrail strengthening below.
+- Fix: `reparentTo` now commits via `a.store.PutIfUnchanged(ctx, src.CalID, src.Name, obj,
+  src.Prev)`, skipping the write and flashing "changed on the server — retry" on a version
+  mismatch, mirroring `reparentOps` (the multi-root path's already-correct equivalent).
+- Repro-first: `internal/ui/reparent_clobber_test.go` —
+  `TestReparentToDoesNotClobberConcurrentPull` — confirmed RED against the bare `Put`, GREEN
+  after the fix.
+- Full gate passes (`go test ./...` except the pre-existing, out-of-scope
+  `TestSelectBulkOpDoesNotLeakCount` countleak repro; `go test -race ./internal/ui/...`;
+  `go vet ./...`; `staticcheck ./...`; `go build ./...`; `gofmt -l internal/ui` clean).
+
 ## 2026-07-24 — Fix HIGH data-loss: undo of a co-resident multi-root move lost a root
 
 - Hardening Pass 19 HIGH finding: a multi-root move/paste where several selected roots

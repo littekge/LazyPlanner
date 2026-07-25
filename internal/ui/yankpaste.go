@@ -139,8 +139,19 @@ func (a *app) reparentTo(src store.Located, targetParent string) {
 		a.flashErr("Move", err)
 		return
 	}
-	if _, err := a.store.Put(context.Background(), src.CalID, src.Name, obj); err != nil {
+	// Version-checked against src.Prev — never a bare Put: a background sync pull
+	// landing between paste()'s Locate and this write must not be clobbered (the
+	// write would otherwise adopt the pulled ETag while persisting content derived
+	// from the now-stale snapshot, and the next push's CAS would overwrite the
+	// remote edit). Mirrors reparentOps, the multi-root path's equivalent write.
+	applied, err := a.store.PutIfUnchanged(context.Background(), src.CalID, src.Name, obj, src.Prev)
+	if err != nil {
 		a.flash("Move failed: " + err.Error())
+		return
+	}
+	if !applied {
+		a.refresh(uid)
+		a.flash("Task changed on the server — move not applied; retry")
 		return
 	}
 	a.pushUndo("move task", uid, undoOp{calID: src.CalID, name: src.Name, prev: src.Prev})
