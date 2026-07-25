@@ -190,6 +190,21 @@ func dedupeProps(props ical.Props, names []string) {
 // under each parent (encoder.go): a VEVENT or VTODO admits only VALARM, a
 // VTIMEZONE only STANDARD/DAYLIGHT. Any other nesting is malformed and, left in
 // place, blocks encoding the entire resource.
+//
+// It must have an entry for EVERY non-calendar container type go-ical's encoder
+// recurses into — that recursion is what makes a phantom component nested at ANY
+// depth brick the whole resource: encodeComponent validates every child at every
+// depth, so a VEVENT/VTODO missing DTSTAMP (or with DTEND+DURATION) nested under a
+// VALARM/STANDARD/DAYLIGHT fails checkComponent and takes its valid top-level
+// siblings down with it. VALARM, STANDARD, and DAYLIGHT admit NO nested components
+// at all per RFC 5545 (go-ical's VALARM case is an empty TODO that rejects
+// nothing, so it silently recurses into junk), so an empty allow-set strips
+// whatever a foreign object nested there — the same treatment as VJOURNAL/VFREEBUSY.
+// With every container covered, no VEVENT/VTODO/VJOURNAL/VFREEBUSY can survive
+// below the top level, so the top-level-only required-prop/mutual-exclusion heals
+// (ensureDTStamp, healComponentConstraints) suffice: there is nothing left nested
+// for them to miss. If go-ical grows a new container (or its VALARM case gains
+// child rules) on a dependency bump, add its entry here.
 var allowedChildren = map[string]map[string]bool{
 	ical.CompEvent:    {ical.CompAlarm: true},
 	ical.CompToDo:     {ical.CompAlarm: true},
@@ -198,6 +213,11 @@ var allowedChildren = map[string]map[string]bool{
 	// so an empty allow-set strips whatever a foreign object nested there.
 	ical.CompJournal:  {},
 	ical.CompFreeBusy: {},
+	// RFC 5545 gives these no sub-components; strip anything nested inside them so
+	// a phantom component can't reach (and fail) go-ical's recursive validation.
+	ical.CompAlarm:            {},
+	ical.CompTimezoneStandard: {},
+	ical.CompTimezoneDaylight: {},
 }
 
 // stripForbiddenNesting removes illegally-nested child components so the object
