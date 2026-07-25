@@ -581,6 +581,29 @@ func TestDayInRangeZeroAnchor(t *testing.T) {
 	}
 }
 
+// TestDayInRangeCap pins the maxSelectDays cap: dayInRange must clamp exactly like
+// daysRange's materialization, so the highlight never paints a day the bulk op
+// won't act on (Pass-20 LOW). The cursor is dragged far past the cap; the last
+// in-cap day is highlighted, the first beyond-cap day is not.
+func TestDayInRangeCap(t *testing.T) {
+	anchor := time.Date(2026, 7, 6, 0, 0, 0, 0, time.UTC)
+	cursor := anchor.AddDate(0, 0, maxSelectDays+50) // dragged well past the cap
+	lastInCap := anchor.AddDate(0, 0, maxSelectDays)
+	firstBeyond := anchor.AddDate(0, 0, maxSelectDays+1)
+
+	if !dayInRange(anchor, cursor, lastInCap) {
+		t.Errorf("day at anchor+%d (the cap edge) must be in range", maxSelectDays)
+	}
+	if dayInRange(anchor, cursor, firstBeyond) {
+		t.Errorf("day at anchor+%d (past the cap) must NOT be in range — highlight would exceed the acted-on set", maxSelectDays+1)
+	}
+	// The cap is symmetric on the ordered pair: a reversed anchor/cursor caps the
+	// same way (from the earlier endpoint).
+	if dayInRange(cursor, anchor, firstBeyond) {
+		t.Error("reversed anchor/cursor must cap identically")
+	}
+}
+
 // TestSelectRangeSyncRace: derive the range continuously while a background
 // goroutine mutates the store (the sync scenario) — run under -race. The store
 // is internally locked; this asserts derivation never panics or returns

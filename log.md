@@ -4,6 +4,29 @@
 
 ---
 
+## 2026-07-25 — Fix Pass-20 LOW #5: SELECT day-range highlight exceeded the 366-day acted-on cap
+
+- **Finding (Pass 20 #5, LOW, `internal/ui/selection.go`):** the SELECT day-range materialization
+  (`daysRange`, what bulk delete/complete/grab act on) clamps the span to `maxSelectDays` (366) from
+  the earlier endpoint, but the visual highlight predicate (`dayInRange`, used by the calendar/
+  time-grid draw paths) did not. Dragging the cursor past the cap painted beyond-cap days as selected
+  while their items were silently never acted on — highlight and acted-on set disagreed.
+- **Fix:** `dayInRange` now applies the **identical** clamp as `daysRange`
+  (`if to.Sub(from) > maxSelectDays*24h { to = from.AddDate(0,0,maxSelectDays) }`), after normalizing
+  both endpoints to `DayStart`. Highlight and materialization now use the same bound and can't
+  diverge.
+- **Repro → regression guard:** `internal/ui/daysrange_cap_test.go`
+  (`TestDaysRangeHighlightMatchesMaterialization`, promoted from the audit repro) — a beyond-cap day
+  is no longer highlighted-but-unmaterialized. Added `TestDayInRangeCap`
+  (`internal/ui/selection_test.go`) pinning the exact cap edge (anchor+366 in range, anchor+367 out,
+  symmetric under reversed anchor/cursor). Both RED before, GREEN after. The pass-19 `dayInRange`
+  boundary tests still pass.
+- Files: `internal/ui/selection.go`, `internal/ui/daysrange_cap_test.go` (new),
+  `internal/ui/selection_test.go`.
+- Gate: `go test ./...`, `go vet`, `staticcheck`, `go build` all clean; `gofmt -l internal/` empty.
+  No `main.md`/README change — main.md already documents the 366-day day-range cap; this aligns the
+  highlight with it.
+
 ## 2026-07-25 — Fix Pass-20 LOW #4: grab of a recurring todo shifted DUE without re-anchoring a day-pinning rule
 
 - **Finding (Pass 20 #4, LOW, `internal/ui/bulkgrab.go` + `internal/ui/grab.go`):** grab's todo

@@ -115,12 +115,18 @@ func dayInRange(anchor, cursor, day time.Time) bool {
 	if anchor.IsZero() {
 		return false
 	}
-	from, to := anchor, cursor
+	from, to := model.DayStart(anchor), model.DayStart(cursor)
 	if from.After(to) {
 		from, to = to, from
 	}
+	// Mirror daysRange's materialization cap (identical clamp) so the visual
+	// highlight never paints a day beyond maxSelectDays that the bulk op silently
+	// won't act on — highlight and acted-on set must agree.
+	if to.Sub(from) > maxSelectDays*24*time.Hour {
+		to = from.AddDate(0, 0, maxSelectDays)
+	}
 	d := model.DayStart(day)
-	return !d.Before(model.DayStart(from)) && !d.After(model.DayStart(to))
+	return !d.Before(from) && !d.After(to)
 }
 
 // syncTreeSelection re-styles the visible tree rows to mark the range. In-range
