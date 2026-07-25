@@ -121,7 +121,7 @@ func (a *app) editEventScoped(loc store.Located, t editTarget, scope recurScope)
 				a.flashErr("Edit", errors.New("split produced no event"))
 				return
 			}
-			a.commitSplit(loc, future.Events[0].UID, capped, future, "edit this & future", "Split series (u to undo)")
+			a.commitSplit(loc, t.uid, future.Events[0].UID, capped, future, "edit this & future", "Split series (u to undo)")
 		})
 	}
 }
@@ -159,7 +159,7 @@ func (a *app) editTodoDetachForm(loc store.Located, uid string, td *model.Todo) 
 			a.flashErr("Edit", err)
 			return
 		}
-		a.commitDetach(loc, newUID, advanced, standalone)
+		a.commitDetach(loc, uid, newUID, advanced, standalone)
 	})
 }
 
@@ -167,18 +167,31 @@ func (a *app) editTodoDetachForm(loc store.Located, uid string, td *model.Todo) 
 // standalone one-off (new resource) as one undo step — the store side of a
 // this-occurrence todo detach. If the standalone write fails, the series is
 // rolled back so the detach is atomic: the occurrence is never lost (gone from
-// the series yet never a one-off), mirroring commitSplit/beginGrabFuture.
-func (a *app) commitDetach(loc store.Located, newUID string, advanced, standalone *model.Parsed) {
+// the series yet never a one-off), mirroring commitSplit/beginGrabFuture. uid is
+// the original recurring todo's UID, kept only to reselect it if the version
+// check below skips the write.
+func (a *app) commitDetach(loc store.Located, uid, newUID string, advanced, standalone *model.Parsed) {
 	newName := store.ResourceName(newUID)
-	if _, err := a.store.Put(context.Background(), loc.CalID, loc.Name, advanced); err != nil {
+	ctx := context.Background()
+	// Version-checked against loc.Prev: advanced is derived from loc's snapshot, so
+	// a background sync pull landing since the Locate above must not be clobbered
+	// by advancing the series.
+	applied, err := a.store.PutIfUnchanged(ctx, loc.CalID, loc.Name, advanced, loc.Prev)
+	if err != nil {
 		a.flash("Save failed: " + err.Error())
 		return
 	}
-	if _, err := a.store.Put(context.Background(), loc.CalID, newName, standalone); err != nil {
+	if !applied {
+		a.refresh(uid)
+		a.closeModal(pageForm)
+		a.flash(staleWriteMsg)
+		return
+	}
+	if _, err := a.store.Put(ctx, loc.CalID, newName, standalone); err != nil { // create: fresh UID, no existing resource to clobber
 		// The series was already advanced (this occurrence consumed) above. Roll it
 		// back so a failed standalone write can't lose the occurrence — it would be
 		// gone from the series and never the one-off task the confirm promised.
-		_, _ = a.store.Restore(context.Background(), loc.CalID, loc.Name, loc.Prev)
+		_, _ = a.store.Restore(ctx, loc.CalID, loc.Name, loc.Prev)
 		a.flash("Save failed: " + err.Error())
 		return
 	}
@@ -288,18 +301,31 @@ func (a *app) advanceRecurringTodo(loc store.Located, uid string) {
 
 // commitSplit writes the capped master (same resource) and a new-UID future series
 // (new resource) as one undo step — the store side of a this-and-future split.
-func (a *app) commitSplit(loc store.Located, futureUID string, capped, future *model.Parsed, label, done string) {
+// uid is the original series UID, kept only to reselect it if the version check
+// below skips the write.
+func (a *app) commitSplit(loc store.Located, uid, futureUID string, capped, future *model.Parsed, label, done string) {
 	newName := store.ResourceName(futureUID)
-	if _, err := a.store.Put(context.Background(), loc.CalID, loc.Name, capped); err != nil {
+	ctx := context.Background()
+	// Version-checked against loc.Prev: capped is derived from loc's snapshot, so a
+	// background sync pull landing since the Locate above must not be clobbered by
+	// capping the master.
+	applied, err := a.store.PutIfUnchanged(ctx, loc.CalID, loc.Name, capped, loc.Prev)
+	if err != nil {
 		a.flash("Save failed: " + err.Error())
 		return
 	}
-	if _, err := a.store.Put(context.Background(), loc.CalID, newName, future); err != nil {
+	if !applied {
+		a.refresh(uid)
+		a.closeModal(pageForm)
+		a.flash(staleWriteMsg)
+		return
+	}
+	if _, err := a.store.Put(ctx, loc.CalID, newName, future); err != nil { // create: fresh UID, no existing resource to clobber
 		// The master was already capped (its RRULE truncated) above. Roll it back so
 		// a failed second write can't half-complete the split — permanently dropping
 		// the series' tail occurrences with no undo step to recover from. Mirrors
 		// beginGrabFuture's rollback.
-		_, _ = a.store.Restore(context.Background(), loc.CalID, loc.Name, loc.Prev)
+		_, _ = a.store.Restore(ctx, loc.CalID, loc.Name, loc.Prev)
 		a.flash("Save failed: " + err.Error())
 		return
 	}

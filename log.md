@@ -4,6 +4,31 @@
 
 ---
 
+## 2026-07-24 — Bare-Put sweep (recur_edit.go): commitDetach/commitSplit's first writes clobbered a concurrent pull
+
+- Pass 19's bare-Put sweep, continued: `commitDetach` (this-occurrence todo detach) and
+  `commitSplit` (this-and-future event split), both `internal/ui/recur_edit.go`, each write two
+  resources as one logical operation — an EXISTING resource rewrite (advance the series past the
+  detached occurrence; cap the master before spawning the future tail) followed by a fresh-UID
+  create (the standalone one-off; the new future series). The first write in each pair used a
+  bare `store.Put`, so a background sync pull landing between the operation's `Locate` and that
+  write was silently overwritten — the same shape as the reparentTo/beginGrabFuture findings.
+- Fix: the first write in each pair now commits via `PutIfUnchanged(loc.Prev)`; a version
+  mismatch skips the whole operation (closing the open form and flashing `staleWriteMsg`, same
+  as `commitMutation`'s existing stale handling) before the second write ever runs — no
+  standalone/future-series is created over a stale advance/cap. The second write in each pair
+  stays a bare `store.Put`, annotated `// create: fresh UID, no existing resource to clobber`;
+  the existing rollback-on-second-write-failure logic is unchanged. Both functions gained a `uid`
+  parameter (the original series' UID) purely to reselect it on the new stale-skip path;
+  `internal/ui/detach_rollback_test.go` and `commitsplit_rollback_test.go` (existing direct
+  callers) updated for the new signature.
+- Repro-first: `internal/ui/recur_edit_clobber_test.go` —
+  `TestCommitDetachDoesNotClobberConcurrentPull` and `TestCommitSplitDoesNotClobberConcurrentPull`
+  — each confirmed RED against the bare `Put`, GREEN after the fix.
+- Full gate passes (`go test ./...` except the pre-existing, out-of-scope
+  `TestSelectBulkOpDoesNotLeakCount` countleak repro; `go test -race ./internal/ui/...`;
+  `go vet ./...`; `staticcheck ./...`; `go build ./...`; `gofmt -l internal/ui` clean).
+
 ## 2026-07-24 — Bare-Put sweep (grab.go): beginGrabFuture's master-cap write clobbered a concurrent pull
 
 - Pass 19's bare-Put sweep (see the reparentTo fix above): `beginGrabFuture` (`internal/ui/grab.go`),

@@ -56,7 +56,7 @@ func TestCommitSplitRollsBackMasterOnFutureWriteFailure(t *testing.T) {
 		t.Fatalf("planting blocker dir: %v", err)
 	}
 
-	a.commitSplit(loc, futureUID, capped, future, "edit this & future", "Split series (u to undo)")
+	a.commitSplit(loc, uid, futureUID, capped, future, "edit this & future", "Split series (u to undo)")
 
 	// Correct behavior after the fix: because the second write (the future series)
 	// failed, the whole split must be atomic — the master is rolled back to its

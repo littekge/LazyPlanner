@@ -54,7 +54,7 @@ func TestCommitDetachRollsBackSeriesOnStandaloneWriteFailure(t *testing.T) {
 		t.Fatalf("planting blocker dir: %v", err)
 	}
 
-	a.commitDetach(loc, newUID, advanced, standalone)
+	a.commitDetach(loc, uid, newUID, advanced, standalone)
 
 	// After the fix: the standalone write failed, so the series must be rolled back
 	// to its original occurrence — the DUE is unchanged (not advanced a week) and
