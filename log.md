@@ -4,6 +4,29 @@
 
 ---
 
+## 2026-07-24 — Fix HIGH recurrence bug: backward day-move on a "last weekday" monthly rule vanished the moved instance
+
+- Hardening Pass 19 HIGH finding: `ReanchoredRecurrence` (`internal/model/recur_edit.go`), which
+  re-derives a monthly nth-weekday rule when a grab day-move shifts a recurring master's DTSTART,
+  kept a "last `<weekday>`" rule's nth pinned to `-1` and only swapped in the new weekday — without
+  checking whether the new weekday's position in that month is actually last. Moving the anchor
+  backward across a weekday boundary (e.g. April 2024's last Wednesday, Apr 24, moved back one day
+  to Apr 23, a Tuesday) produced `BYDAY=-1TU`, but April's last Tuesday is Apr 30 — so the moved
+  DTSTART fell outside its own rule and the instance vanished from the series, jumping straight to
+  the wrong day.
+- Fix: the monthly nth-weekday branch now re-derives the position from `newStart`'s own month on
+  every move, regardless of whether the original rule was "last" or a positive nth — computing
+  `weekOfMonth` and whether `newStart` is the month's last such weekday, then: last → `BYDAY=-1<wd>`;
+  1st-4th → `BYDAY=n<wd>`; a 5th-occurrence-but-not-last position (out of the editable vocabulary —
+  it would mean literally "the 5th `<weekday>`", a rule that only fires in months with five, thinning
+  the series) → blocks the move via the same `(nil, true)` signal used for an out-of-vocabulary
+  custom rule, rather than emit an unrepresentable or contradicting `BYDAY`.
+- Files: `internal/model/recur_edit.go` (fix),
+  `internal/model/reanchor_lastweekday_repro_test.go` (HIGH repro, now green).
+- Full gate green in `internal/model`: `go test ./...`, `go vet ./...`, `staticcheck ./...`,
+  `go build ./...`, `gofmt -l internal/model` clean. Pre-existing RED repros in `internal/sync` and
+  `internal/ui` from other, unrelated Pass 19 findings are untouched.
+
 ## 2026-07-24 — Fix HIGH data-loss: bulk/single delete dragged co-resident bystander components
 
 - Hardening Pass 19 HIGH finding: `bulkDelete` and `deleteWholeObject` (`internal/ui/bulkops.go`,

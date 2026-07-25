@@ -18,13 +18,18 @@ import (
 // derives the rule to write instead:
 //   - weekly with an explicit weekday set: shift every weekday by the same delta,
 //     so a multi-day set moves as a whole (Mon,Thu +1 → Tue,Fri);
-//   - monthly by nth-weekday: re-derive the nth/weekday from newStart (a "last"
-//     rule stays "last");
+//   - monthly by nth-weekday: re-derive the nth/weekday from newStart — the new
+//     weekday's actual position in its month, not the old rule's nth carried
+//     forward: newStart may be the last occurrence of its weekday in the month
+//     (BYDAY=-1<wd>) even when the original rule was a positive nth, or vice
+//     versa, and a positive nth that resolves to a 5th occurrence escapes the
+//     editable 1st-4th/last vocabulary and blocks (see below);
 //   - daily, plain weekly, monthly-by-day-of-month, yearly: no day-pinning BY* —
 //     the moved DTSTART re-anchors these on its own, so (nil, false) = no rewrite;
-//   - a rule outside the editable vocabulary (a "kept" custom RRULE) or an
-//     unparseable one: (nil, true) so the caller blocks the day-move rather than
-//     silently corrupting a rule it can't reason about.
+//   - a rule outside the editable vocabulary (a "kept" custom RRULE), one whose
+//     re-derived monthly nth-weekday position escapes 1st-4th/last, or an
+//     unparseable rule: (nil, true) so the caller blocks the day-move rather
+//     than silently corrupting or thinning a rule it can't reason about.
 //
 // A non-recurring event (no RRULE) returns (nil, false).
 func ReanchoredRecurrence(master *Event, newStart time.Time) (recur *RecurSpec, blocked bool) {
@@ -48,8 +53,24 @@ func ReanchoredRecurrence(master *Event, newStart time.Time) (recur *RecurSpec, 
 		return &spec, false
 	case spec.Freq == FreqMonthly && spec.MonthlyNth != 0:
 		spec.MonthlyWeekday = newStart.Weekday()
-		if spec.MonthlyNth != -1 { // a "last <weekday>" rule stays last; a positive nth re-derives
-			spec.MonthlyNth = (newStart.Day()-1)/7 + 1
+		// Re-derive the nth-weekday position from newStart's own month — never
+		// carry the old rule's nth forward blindly. newStart may now be the last
+		// occurrence of its weekday (regardless of whether the original rule was
+		// "last" or a positive nth), which BYDAY=-1<wd> represents; a positive
+		// 1st-4th position is representable as-is; a positive occurrence that
+		// isn't the month's last but still lands on the 5th (BYDAY=n<wd> with
+		// n=5) has no representation in the editable vocabulary — it would mean
+		// literally "the 5th <weekday>", a rule that only fires in months with
+		// five, thinning the series — so that case blocks the move instead.
+		weekOfMonth := (newStart.Day()-1)/7 + 1
+		isLastOfMonth := newStart.Day()+7 > daysInMonth(newStart.Year(), newStart.Month())
+		switch {
+		case isLastOfMonth:
+			spec.MonthlyNth = -1
+		case weekOfMonth >= 1 && weekOfMonth <= 4:
+			spec.MonthlyNth = weekOfMonth
+		default:
+			return nil, true // escapes the editable 1st-4th/last vocabulary
 		}
 		return &spec, false
 	default:
