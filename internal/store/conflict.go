@@ -122,6 +122,14 @@ func (s *Store) ResolveKeepLocal(ctx context.Context, calID, name string) error 
 	cs.resources[name] = &nr
 	delete(cs.conflicts, name)
 	if err := writeSidecar(s.root, cs); err != nil {
+		// The resolution didn't persist, so it must not stand in memory either:
+		// a half-applied keep-local has already adopted the server's ETag and
+		// dropped the stashed server version, so the next sync's conditional PUT
+		// would match and silently overwrite the server copy the user never
+		// discarded. Put the conflict back so the UI still lists it and the user
+		// can retry. Purely in-memory — no .ics was written — so this can't fail.
+		cs.resources[name] = r
+		cs.conflicts[name] = cm
 		return fmt.Errorf("updating sidecar for %q: %w", calID, err)
 	}
 	return nil
