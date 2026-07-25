@@ -230,7 +230,15 @@ func (a *app) createTask(calID, parentUID, text string) {
 		Recur:      qa.Recur,
 		Location:   qa.Location,
 	}
-	if qa.HasDate || qa.HasTime {
+	// A recurring task must carry a DUE even when the quick-add text names no date:
+	// a bare frequency (daily/weekly/monthly/yearly) anchors to the base day per
+	// main.md ("daily → the base day"), exactly as createEvent unconditionally
+	// anchors an event. Without this a recurring VTODO ships with an RRULE but no
+	// DTSTART/DUE, so AdvanceRecurringTodo has nothing to advance and Space can
+	// never complete it (Pass-20 MED). qa.At with no HasDate/HasTime yields the
+	// base day as an all-day DUE — the same anchor the weekday/month-day recurrence
+	// forms already produce via applyRecurAnchor.
+	if qa.HasDate || qa.HasTime || qa.Recur != nil {
 		when, allDay := qa.At(model.DayStart(a.now), a.loc)
 		d.HasDue, d.Due, d.DueAllDay = true, when, allDay
 	}

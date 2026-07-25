@@ -4,6 +4,33 @@
 
 ---
 
+## 2026-07-25 — Fix Pass-20 MED #3: bare-frequency recurring task had no DUE and could never be completed
+
+- **Finding (Pass 20 #3, MED, `internal/ui/edit.go`):** main.md:395 promises quick-add recurrence
+  with no explicit date anchors the start/due itself ("daily → the base day, tasks and events
+  alike"). Events honored it (`createEvent` unconditionally calls `qa.At(base)`); TASKS did not —
+  `createTask` set a DUE only `if qa.HasDate || qa.HasTime`, so a bare `daily`/`weekly`/`monthly`/
+  `yearly` (which `applyRecurAnchor` deliberately leaves date-less, to be anchored via `At`) produced
+  a VTODO with an RRULE but no DTSTART/DUE. `AdvanceRecurringTodo` then errored "has no DTSTART/DUE
+  to advance", so Space (and `bulkComplete`) could never complete the task.
+- **Fix (UI, not model):** `createTask`'s gate now also fires when `qa.Recur != nil`, anchoring a
+  recurring task's DUE to the base day (`qa.At(DayStart(a.now))` → all-day today), symmetric with how
+  `createEvent` unconditionally anchors. Deliberately **not** fixed in `model.applyRecurAnchor` (the
+  audit's suggested direction): forcing `HasDate` there would make `qa.At` ignore an event's *selected
+  day* base and snap bare-frequency events to today, breaking the documented "base day = caller's
+  context day" semantics for events. The base-day anchor belongs in the caller.
+- **Repro relocated to the right layer:** the audit's `internal/model/bare_recur_todo_repro_test.go`
+  mirrored `createTask` with the *old* gate hard-coded, so it validated a model-layer fix that would
+  have regressed events. Removed it; added `internal/ui/bare_recur_todo_test.go`
+  (`TestBareFrequencyRecurringTaskIsCompletable`) driving the real `createTask` → assert DUE anchored
+  to the base day (2026-07-25) + `AdvanceRecurringTodo` and the UI `advanceRecurringTodo` both
+  succeed. Verified RED before the fix (all four frequencies: "recurring task has no DUE"), GREEN
+  after. The pre-existing `TestCreateRecurringFromQuickAdd` (RRULE-only) still passes.
+- Files: `internal/ui/edit.go`, `internal/ui/bare_recur_todo_test.go` (new), removed
+  `internal/model/bare_recur_todo_repro_test.go`.
+- Gate: `go test ./...`, `go vet`, `staticcheck`, `go build` all clean; `gofmt -l internal/` empty.
+  No `main.md`/README change — the fix makes behavior match the already-documented promise.
+
 ## 2026-07-25 — Fix Pass-20 MED #2: moveSubtreeOps lost a cross-collection RELATED-TO child
 
 - **Finding (Pass 20 #2, MED, `internal/ui/yankpaste.go`):** `moveSubtreeOps` located each
