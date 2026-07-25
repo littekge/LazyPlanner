@@ -114,7 +114,12 @@ func TestRecurSpecFromRuleUnrepresentable(t *testing.T) {
 		{"yearly multi bymonth", "FREQ=YEARLY;BYMONTH=1,7"},
 		{"yearly bymonth contradicts anchor", "FREQ=YEARLY;BYMONTH=1"}, // anchor is December
 		{"yearly byday", "FREQ=YEARLY;BYDAY=+1TU"},
+		// No BYMONTH: fires on that day of every month, not once a year.
+		{"yearly bymonthday without bymonth", "FREQ=YEARLY;BYMONTHDAY=22"},
+		{"yearly multi bymonthday", "FREQ=YEARLY;BYMONTH=12;BYMONTHDAY=22,23"},
+		{"yearly bymonthday contradicts anchor", "FREQ=YEARLY;BYMONTH=12;BYMONTHDAY=15"},
 		{"count and until", "FREQ=DAILY;COUNT=3;UNTIL=20261212T000000Z"},
+		{"negative interval", "FREQ=DAILY;INTERVAL=-1"}, // rrule-go can't build it
 		{"daily byday", "FREQ=DAILY;BYDAY=MO"},
 	}
 	for _, tc := range tests {
@@ -138,7 +143,8 @@ func TestRecurSpecFromRuleAnchorConsistent(t *testing.T) {
 		"FREQ=MONTHLY;BYMONTHDAY=22", // matches anchor day
 		"FREQ=MONTHLY;BYDAY=+4TU",    // matches anchor position
 		"FREQ=YEARLY;BYMONTH=12",     // matches anchor month
-		"FREQ=YEARLY;BYMONTHDAY=22",  // matches anchor day
+		// BYMONTHDAY is representable only alongside a BYMONTH; without one the rule
+		// means "that day of every month" (see the unrepresentable table).
 		"FREQ=YEARLY;BYMONTH=12;BYMONTHDAY=22",
 	}
 	for _, r := range rules {

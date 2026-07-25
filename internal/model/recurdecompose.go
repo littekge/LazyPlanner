@@ -46,6 +46,15 @@ func RecurSpecFromRule(option *rrule.ROption, anchor time.Time) (RecurSpec, bool
 	default: // HOURLY / MINUTELY / SECONDLY
 		return RecurSpec{}, false
 	}
+	// A negative INTERVAL is unbuildable — rrule-go's validator rejects it, so the
+	// item really has a single occurrence. Silently dropping it (the spec's zero
+	// value means "every 1") would declare a dead rule representable and let a
+	// day-move rewrite it into a real, unbounded series. INTERVAL=0 needs no such
+	// guard: rrule-go normalizes it to 1, which is exactly what a zero Interval
+	// means here, so it decomposes losslessly.
+	if option.Interval < 0 {
+		return RecurSpec{}, false
+	}
 	if option.Interval > 1 {
 		spec.Interval = option.Interval
 	}
@@ -136,6 +145,13 @@ func decodeYearly(option *rrule.ROption, anchor time.Time, spec RecurSpec) (Recu
 		}
 	}
 	if len(option.Bymonthday) > 0 {
+		// Per RFC 5545 a YEARLY rule with BYMONTHDAY but no BYMONTH expands to that
+		// day of EVERY month (12x/year), which the once-a-year vocabulary cannot
+		// express; treating it as plain yearly would drop 11 occurrences and let a
+		// day-move re-anchor DTSTART away from its own BYMONTHDAY.
+		if len(option.Bymonth) == 0 {
+			return RecurSpec{}, false
+		}
 		if len(option.Bymonthday) != 1 || option.Bymonthday[0] != anchor.Day() {
 			return RecurSpec{}, false
 		}
