@@ -260,6 +260,36 @@ func (s *Store) Forget(ctx context.Context, calID, name string) error {
 	return s.remove(ctx, calID, name, false)
 }
 
+// ForgetIfUnchanged is Forget guarded against clobbering a concurrent local edit
+// — the deletion counterpart of PullRemote's expectedPrev guard. When expectedPrev
+// is non-nil the resource is removed only if it is still that exact snapshot
+// (pointer identity); if a UI edit replaced it while the sync was reconciling a
+// remote deletion, the removal is skipped (applied=false) so the edit survives and
+// the next sync reconciles it as a server-deletion conflict rather than being
+// silently clobbered. A nil expectedPrev is an unconditional Forget.
+func (s *Store) ForgetIfUnchanged(ctx context.Context, calID, name string, expectedPrev *Resource) (applied bool, err error) {
+	if err := ctx.Err(); err != nil {
+		return false, err
+	}
+
+	s.mu.Lock()
+	defer s.mu.Unlock()
+
+	if expectedPrev != nil {
+		var cur *Resource
+		if cs := s.cals[calID]; cs != nil {
+			cur = cs.resources[name]
+		}
+		if cur != expectedPrev {
+			return false, nil // a concurrent local edit landed; don't remove it
+		}
+	}
+	if err := s.removeLocked(calID, name, false); err != nil {
+		return false, err
+	}
+	return true, nil
+}
+
 func (s *Store) remove(ctx context.Context, calID, name string, tombstone bool) error {
 	if err := ctx.Err(); err != nil {
 		return err
@@ -268,6 +298,12 @@ func (s *Store) remove(ctx context.Context, calID, name string, tombstone bool) 
 	s.mu.Lock()
 	defer s.mu.Unlock()
 
+	return s.removeLocked(calID, name, tombstone)
+}
+
+// removeLocked is the shared body of Forget/Delete; the caller must already hold
+// s.mu (so a caller can compare-and-remove atomically — see ForgetIfUnchanged).
+func (s *Store) removeLocked(calID, name string, tombstone bool) error {
 	cs := s.cals[calID]
 	if cs == nil {
 		return fmt.Errorf("store: unknown calendar %q", calID)

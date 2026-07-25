@@ -407,10 +407,21 @@ func reconcileCalendar(ctx context.Context, client Syncer, st *store.Store, calI
 				// genuine server deletion so keep-server accepts the deletion.
 				markConflict(ctx, st, calID, r.Name, nil, "", true, res)
 			case !onServer:
-				// Clean and gone on the server → it was deleted remotely.
-				if err := st.Forget(ctx, calID, r.Name); err != nil {
-					recordSkip(res, calID, r.Name, err)
-				} else {
+				// Clean and gone on the server → it was deleted remotely. Guard the
+				// removal by pointer identity: a UI edit that landed during step (A)'s
+				// network window replaced this snapshot with a new dirty resource, and
+				// a bare Forget would silently clobber it (the FORGET twin of the
+				// CommitPush/pushDelete resource-is-gone clobbers). On a mismatch the
+				// concurrent edit survives; flag it as a server-deletion conflict so
+				// keep-server can accept the deletion — the same outcome as the
+				// !onServer && r.Dirty branch above, just detected late.
+				applied, ferr := st.ForgetIfUnchanged(ctx, calID, r.Name, r)
+				switch {
+				case ferr != nil:
+					recordSkip(res, calID, r.Name, ferr)
+				case !applied:
+					markConflict(ctx, st, calID, r.Name, nil, "", true, res)
+				default:
 					res.PulledDeletes++
 				}
 			case r.Dirty && serverObj.ETag != r.ETag:

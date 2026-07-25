@@ -4,6 +4,35 @@
 
 ---
 
+## 2026-07-25 — Fix Pass-20 HIGH: step-(A) remote-delete Forget clobbered a concurrent local edit
+
+- **Finding (Pass 20 #1, HIGH, `internal/sync/sync.go`):** `reconcileCalendar`'s
+  `case !onServer:` clean branch (a resource deleted on the server) called
+  `st.Forget(calID, r.Name)` — an unconditional remove-by-name — using the stale
+  post-download snapshot pointer `r`. A UI edit landing during the preceding push's
+  network window replaces the map entry with a new dirty `*Resource`, so the loop
+  read `r.Dirty` off the clean snapshot, took the unguarded `!onServer` branch, and
+  Forgot the user's fresh edit with no conflict/skip (silent lost update). Third
+  reopening of the "concurrent-write signal has no resource-is-gone case" class —
+  the FORGET twin of pass-18 CommitPush `cur==nil` and pass-19 pushDelete-412.
+- **Fix:** added `store.ForgetIfUnchanged(ctx, calID, name, expectedPrev)` — the
+  deletion counterpart of `PullRemote`'s expectedPrev pointer-identity guard
+  (refactored `remove` into a lock-held `removeLocked` core so the compare-and-remove
+  is atomic). Step (A) now calls it with the snapshot pointer; on a mismatch (a
+  concurrent edit replaced the snapshot) it skips the removal and raises a
+  `markConflict(serverDeleted=true)` against the surviving edit — the same outcome as
+  the `!onServer && r.Dirty` branch, just detected late.
+- **Repro → regression guard:** `internal/sync/stepa_forget_clobber_test.go`
+  (`TestReproStepAForgetClobbersConcurrentEdit`, promoted from the audit repro) —
+  RED before the fix (b Forgotten, `PulledDeletes=1 Conflicts=0`), GREEN after (b
+  survives with the edited summary, Dirty=true).
+- Files: `internal/store/mutate.go` (new `ForgetIfUnchanged` + `removeLocked`
+  refactor), `internal/sync/sync.go` (step-(A) branch), `internal/sync/stepa_forget_clobber_test.go`.
+- Gate: `go test ./...`, `go test -race ./internal/sync/ ./internal/store/`, `go vet
+  ./...`, `staticcheck ./...`, `go build ./...` all clean; `gofmt -l internal/` empty.
+- No `main.md`/README change: this is a resilience fix inside an existing documented
+  behavior (sync never silently overwrites), not a behavior/spec change.
+
 ## 2026-07-24 — Close-out bookkeeping: Pass-19 FIX ARC resolution, v1.5.0 release gate now all-✓
 
 - Recorded the Pass-19 resolution across the audit ledger: `docs/audit/COVERAGE.md` marks all 8
