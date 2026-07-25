@@ -225,6 +225,13 @@ func (a *app) dueTasksByDay(days []time.Time) map[string][]*model.Todo {
 // splitOccs buckets a range's occurrences into timed and all-day, keyed by day,
 // for the time-grid. Both timed and all-day events land on every day they cover;
 // drawBlock clips a multi-day timed event to each day's column.
+//
+// Both buckets use model.Occurrence.OverlapsDay — the same predicate the drill
+// list (dayItems -> DayAgenda) and the month grid (OccurrencesOn) use — so the
+// rendered set and the selectable set cannot disagree. An earlier hand-rolled
+// day-walk over [Start, End) for the all-day branch dropped zero-length all-day
+// events (DTSTART == DTEND, which foreign exporters emit) onto no day at all,
+// while the drill list still listed them: a phantom, invisible cursor slot.
 func (a *app) splitOccs(days []time.Time) (timed, allday map[string][]model.Occurrence) {
 	timed = map[string][]model.Occurrence{}
 	allday = map[string][]model.Occurrence{}
@@ -235,17 +242,13 @@ func (a *app) splitOccs(days []time.Time) (timed, allday map[string][]model.Occu
 	end := days[len(days)-1].AddDate(0, 0, 1)
 	occs, _ := a.store.EventOccurrencesVisible(start, end, a.hidden)
 	for _, o := range occs {
+		bucket := timed
 		if o.Event.AllDay {
-			for d := model.DayStart(o.Start); d.Before(o.End); d = d.AddDate(0, 0, 1) {
-				if !d.Before(start) && d.Before(end) {
-					allday[dayKey(d)] = append(allday[dayKey(d)], o)
-				}
-			}
-			continue
+			bucket = allday
 		}
 		for _, d := range days {
 			if o.OverlapsDay(d) {
-				timed[dayKey(d)] = append(timed[dayKey(d)], o)
+				bucket[dayKey(d)] = append(bucket[dayKey(d)], o)
 			}
 		}
 	}
