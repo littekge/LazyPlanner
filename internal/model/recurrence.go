@@ -3,11 +3,16 @@ package model
 import (
 	"fmt"
 	"sort"
+	"strings"
 	"time"
 
 	"github.com/emersion/go-ical"
 	"github.com/teambition/rrule-go"
 )
+
+// dateOnlyLayout is the iCalendar DATE value form (RFC 5545 §3.3.4) — the value
+// type UNTIL must use when the recurrence anchor is a VALUE=DATE (all-day).
+const dateOnlyLayout = "20060102"
 
 // Occurrence is a single materialized instance of an event within a queried
 // window. A non-recurring event yields at most one. Start and End are the
@@ -232,6 +237,7 @@ func (e *Event) recurrenceSet(hasRRULE bool) (*rrule.Set, error) {
 		}
 	}
 	if roption != nil {
+		applyDateOnlyUntilBound(e.Raw.Props, roption, loc)
 		roption.Dtstart = e.Start
 		rule, err := rrule.NewRRule(*roption)
 		if err != nil {
@@ -265,6 +271,49 @@ func (e *Event) recurrenceSet(hasRRULE bool) (*rrule.Set, error) {
 		}
 	}
 	return set, nil
+}
+
+// dateOnlyUntilValue returns an RRULE string's UNTIL value when it is a DATE
+// (YYYYMMDD — the form RFC 5545 §3.3.10 requires against a VALUE=DATE anchor),
+// and "" when the rule has no UNTIL or carries a DATE-TIME one.
+func dateOnlyUntilValue(rule string) string {
+	for _, part := range strings.Split(rule, ";") {
+		if !strings.HasPrefix(part, "UNTIL=") {
+			continue
+		}
+		if v := part[len("UNTIL="):]; len(v) == len(dateOnlyLayout) {
+			return v
+		}
+		return ""
+	}
+	return ""
+}
+
+// applyDateOnlyUntilBound re-bounds a DATE-valued UNTIL at the END of that day in
+// loc, in place on a freshly parsed ROption.
+//
+// UNTIL is inclusive (RFC 5545 §3.3.10): "ends on D" must still fire on D. A DATE
+// value carries no zone — it names a calendar day — but rrule-go's StrToROption
+// parses the bare YYYYMMDD as UTC midnight and its iterator compares that instant
+// against occurrences generated at the anchor's own local midnight. In UTC and
+// every zone west of it, D's occurrence therefore lands after the bound and is
+// dropped. Anchoring the bound at the last second of D in the series' own zone
+// restores the inclusive reading everywhere without touching the stored bytes:
+// this is a read-side interpretation, so a server-authored UNTIL is never
+// rewritten (iron rule).
+func applyDateOnlyUntilBound(props ical.Props, roption *rrule.ROption, loc *time.Location) {
+	if roption == nil || roption.Until.IsZero() {
+		return
+	}
+	prop := props.Get(ical.PropRecurrenceRule)
+	if prop == nil || dateOnlyUntilValue(prop.Value) == "" {
+		return
+	}
+	if loc == nil {
+		loc = time.Local
+	}
+	day := roption.Until.UTC() // rrule-go read the bare date as UTC midnight
+	roption.Until = time.Date(day.Year(), day.Month(), day.Day(), 23, 59, 59, 0, loc)
 }
 
 // EventOccurrences expands every event in the parsed object within [from, to),

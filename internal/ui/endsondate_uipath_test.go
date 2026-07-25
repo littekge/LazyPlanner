@@ -165,11 +165,11 @@ func TestEndsOnDateRealUIPathAllDayEvent(t *testing.T) {
 		t.Fatal("no UNTIL resolved from the all-day form")
 	}
 	// Pinned at the UNTIL value, the level the all-day contract is defined at
-	// (encoding it date-only is the model's job via dateOnlyUntil). Deliberately
-	// not asserted on the expanded occurrences: a date-only UNTIL against a
-	// date-only DTSTART currently drops the final day independently of this
-	// wiring — reproducible with a hand-built all-day spec and unchanged by this
-	// fix, so it is a separate defect, not this test's subject.
+	// (encoding it date-only is the model's job via dateOnlyUntil). The expanded
+	// occurrences are a separate defect's subject — a date-only UNTIL was written
+	// from the UTC date and read back as UTC midnight, dropping the final day
+	// independently of this wiring — and are asserted in
+	// endsondate_allday_test.go.
 	if !draft.AllDay {
 		t.Fatal("draft is not all-day; the anchor path under test was not exercised")
 	}

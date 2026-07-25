@@ -57,7 +57,7 @@ func NewRepeatChoices(comp *ical.Component, anchor time.Time, loc *time.Location
 			{label: presetSpec(repeatYearly, anchor).Humanize(anchor), kind: repeatYearly},
 		},
 	}
-	rule, recurring := recurrenceInfo(comp)
+	rule, recurring := recurrenceInfo(comp, loc)
 	if recurring {
 		rc.hadRule = true
 		if spec, ok := decomposeForSeed(rule, anchor); ok {
@@ -199,7 +199,7 @@ func presetSpec(kind repeatKind, anchor time.Time) RecurSpec {
 // rule, "custom (FREQ=…)" for a kept rule outside the vocabulary, "yes" for
 // RDATE-only recurrence or an unparseable rule, and "" when not recurring.
 func RecurrenceSummary(comp *ical.Component, anchor time.Time, loc *time.Location) string {
-	rule, recurring := recurrenceInfo(comp)
+	rule, recurring := recurrenceInfo(comp, loc)
 	if !recurring {
 		return ""
 	}
@@ -208,6 +208,12 @@ func RecurrenceSummary(comp *ical.Component, anchor time.Time, loc *time.Locatio
 	}
 	if spec, ok := decomposeForSeed(rule, anchor); ok {
 		return spec.Humanize(anchor)
+	}
+	// The stored bytes, not rule.RRuleString(): re-rendering normalizes UNTIL to a
+	// UTC DATE-TIME, so a kept rule with a DATE UNTIL would be shown as a day the
+	// .ics does not contain. What is on disk is what the user should read.
+	if rp := comp.Props.Get(ical.PropRecurrenceRule); rp != nil {
+		return "custom (" + rp.Value + ")"
 	}
 	return "custom (" + rule.RRuleString() + ")"
 }
@@ -230,13 +236,18 @@ func decomposeForSeed(rule *rrule.ROption, anchor time.Time) (RecurSpec, bool) {
 }
 
 // recurrenceInfo returns comp's parsed RRULE (nil when absent/unparseable) and
-// whether it recurs at all (RRULE or RDATE present).
-func recurrenceInfo(comp *ical.Component) (rule *rrule.ROption, recurring bool) {
+// whether it recurs at all (RRULE or RDATE present). A DATE-valued UNTIL is
+// re-bounded in loc like the expansion paths do, so the Custom… sub-form seeds
+// and the Detail pane name the end day the rule actually ends on — seeding the
+// raw UTC-midnight reading would show (and, on OK, store) the previous day in
+// every zone west of UTC.
+func recurrenceInfo(comp *ical.Component, loc *time.Location) (rule *rrule.ROption, recurring bool) {
 	if comp == nil {
 		return nil, false
 	}
 	if r, err := comp.Props.RecurrenceRule(); err == nil {
 		rule = r
+		applyDateOnlyUntilBound(comp.Props, rule, loc)
 	}
 	hasRDate := len(comp.Props.Values(ical.PropRecurrenceDates)) > 0
 	return rule, rule != nil || hasRDate

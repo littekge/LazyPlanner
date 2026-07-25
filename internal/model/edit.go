@@ -333,7 +333,9 @@ func applyRecurrence(comp *ical.Component, recur *RecurSpec, remove bool) {
 	comp.Props.SetRecurrenceRule(recur.ROption())
 	if recur.Until != nil && anchorIsDateOnly(comp) {
 		if rp := comp.Props.Get(ical.PropRecurrenceRule); rp != nil {
-			rp.Value = dateOnlyUntil(rp.Value)
+			// The end day is the one the user picked, i.e. the wall-clock date of
+			// recur.Until in its own location — not the UTC date rrule-go rendered.
+			rp.Value = dateOnlyUntil(rp.Value, *recur.Until)
 		}
 	}
 }

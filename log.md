@@ -4,6 +4,55 @@
 
 ---
 
+## 2026-07-25 — Fix (NEW, found during the arc): all-day "Ends on date D" dropped D — two bugs, four sites
+
+- **Not an audit finding.** Surfaced while writing the end-to-end guard for the timed-UNTIL wiring fix,
+  then reproduced independently from a hand-built `RecurSpec` with no form involved. **It falsifies the
+  pass-22 close-out**, which recorded all-day as already correct ("stays midnight → `dateOnlyUntil`
+  truncates unchanged"). Neither item type ever honoured the selected end day.
+- **It was TWO independent bugs, and the sign of each flips with the UTC offset** — which is why a
+  single-zone test never saw both:
+  1. **Read side:** a DATE `UNTIL` is parsed as **UTC midnight** (`StrToROption` →
+     `strToTimeInLoc(…, time.UTC)`), then compared as an absolute instant against occurrences generated
+     at the anchor's *local* midnight. West of UTC, D's occurrence is `D 04:00Z` > bound `D 00:00Z` and
+     is dropped; at or east of UTC it survives.
+  2. **Write side:** `dateOnlyUntil` truncated the *UTC* render, so in `Asia/Kolkata` an end date of the
+     25th rendered `20260724T183000Z` and **stored `UNTIL=20260724`** — a wrong day written into the
+     `.ics` that every foreign client also reads as the 24th.
+- **Two further sites in the same family**, found from the repro: `CapSeries` passed `occ.Add(-1s)`,
+  whose UTC date is already the day after the cut in west zones — so **fixing the read side alone would
+  have made a this-and-future split emit D twice**; and `NewSeriesFrom` unconditionally re-serialized the
+  inherited rule, converting `UNTIL=20260725` into `UNTIL=20260725T000000Z`, an RFC 5545 §3.3.10
+  value-type mismatch against a `VALUE=DATE` anchor.
+- **Fix:** a read-side `applyDateOnlyUntilBound` re-bounds a bare `YYYYMMDD` UNTIL at 23:59:59 of D **in
+  the series' own zone**, applied at the four sites that consume a parsed RRULE; the write-side
+  `dateOnlyUntil` now formats the day **in its own location** rather than the UTC render; `CapSeries`
+  passes the last kept day; and `NewSeriesFrom` re-serializes **only** a COUNT rule, keeping an
+  UNTIL/unbounded rule's original bytes (which also *reduces* rewriting of server data).
+- **Stored form is unchanged and RFC-correct** — `DTSTART;VALUE=DATE:20260720` +
+  `RRULE:FREQ=DAILY;UNTIL=20260725`, matching value types, UNTIL inclusive. The only output change is
+  that the date is now D **as the user picked it** rather than D's UTC-shifted date, so NextCloud web and
+  phones read the same inclusive day. The end-of-day widening exists only in memory, built via
+  `time.Date(…, loc)` so DST is the zone's problem, not ours.
+- **Iron rule:** the read-side re-bound mutates only the fresh `*rrule.ROption` returned by
+  `StrToROption`, never `Props`; all four call sites traced, none writes back. The write-side path fires
+  only where LazyPlanner just wrote the rule from its own `ROption` (`applyRecurrence` with `recur != nil`,
+  and `CapSeries`) — a server rule stays byte-identical.
+- **The recurring TODO twin was affected too:** an all-day recurring VTODO due D−1 with `UNTIL=D`
+  reported the series **exhausted** on complete and marked itself done, silently losing the final
+  occurrence.
+- **Guards:** `internal/model/allday_until_test.go` + `internal/ui/endsondate_allday_test.go` (driving the
+  real create form through to the stored object), every case run over **UTC / New_York / Kolkata /
+  Kiritimati** — a single-zone test would have passed on half the planet. Fix reverted to confirm RED,
+  restored and `diff`-verified byte-identical. No pre-existing test was pinning the bug.
+- **Verified independently:** full gate green, and `internal/model` passes in all four zones.
+- **Carried residuals:** `internal/store` decodes with hard-coded `time.Local`, so a CI box on UTC
+  exercises the store's own parse zone only in the UTC subtest. A DATE UNTIL on a *timed* series
+  (non-conformant foreign data) now bounds at end-of-day-D-local — a deliberate widening, untested.
+  `RecurSpec.Until` round-trips as 23:59:59-local vs 00:00-local from the form, so re-OKing a Custom…
+  form rewrites the rule (byte-identical UNTIL, but a SEQUENCE bump) — pre-existing, not worsened.
+  `internal/caldav` and the quick-add recurrence path were not swept for the same UTC-truncation pattern.
+
 ## 2026-07-25 — Fix Pass-23 MED: one recurrence budget per redraw (the pass-21 fix now holds in production)
 
 - **Finding (Pass 23 MED):** the pass-21 aggregate `model.StepBudget` is minted **per store call**, and

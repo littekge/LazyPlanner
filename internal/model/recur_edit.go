@@ -146,6 +146,7 @@ func componentRecurrenceSet(comp *ical.Component, anchor time.Time) (*rrule.Set,
 		return nil, fmt.Errorf("parsing RRULE: %w", err)
 	}
 	if roption != nil {
+		applyDateOnlyUntilBound(comp.Props, roption, anchor.Location())
 		roption.Dtstart = anchor
 		rule, err := rrule.NewRRule(*roption)
 		if err != nil {
@@ -347,18 +348,20 @@ func AddException(obj *Parsed, uid string, occ time.Time, allDay bool, now time.
 	return Parse(clone.Calendar, loc)
 }
 
-// dateOnlyUntil rewrites an RRULE string's UNTIL value from a DATE-TIME
-// (YYYYMMDDThhmmssZ) to a DATE (YYYYMMDD) — used when capping an all-day series,
-// where RFC 5545 requires UNTIL to match the date-only DTSTART value type.
-func dateOnlyUntil(rule string) string {
+// dateOnlyUntil rewrites an RRULE string's UNTIL value to the DATE (YYYYMMDD) of
+// `day`, read in day's own location — used when an all-day series gets an end
+// date, where RFC 5545 §3.3.10 requires UNTIL to match the date-only DTSTART
+// value type.
+//
+// The date must come from `day`, not from the rule text: rrule-go always renders
+// UNTIL as a UTC DATE-TIME, so truncating that text keeps the UTC date, which is
+// the *previous* day for every zone east of UTC (an end date of the 25th in
+// Asia/Kolkata rendered as 20260724T183000Z, and stored the 24th).
+func dateOnlyUntil(rule string, day time.Time) string {
 	parts := strings.Split(rule, ";")
 	for i, part := range parts {
-		if !strings.HasPrefix(part, "UNTIL=") {
-			continue
-		}
-		val := part[len("UNTIL="):]
-		if idx := strings.IndexByte(val, 'T'); idx == 8 { // YYYYMMDD then 'T'
-			parts[i] = "UNTIL=" + val[:idx]
+		if strings.HasPrefix(part, "UNTIL=") {
+			parts[i] = "UNTIL=" + day.Format(dateOnlyLayout)
 		}
 	}
 	return strings.Join(parts, ";")
@@ -427,7 +430,10 @@ func CapSeries(obj *Parsed, uid string, until time.Time, now time.Time, loc *tim
 	// a DATE UNTIL, else a strict server or another client may reject the object.
 	if dtstart := master.Props.Get(ical.PropDateTimeStart); dtstart != nil && isDateOnly(dtstart) {
 		if rp := master.Props.Get(ical.PropRecurrenceRule); rp != nil {
-			rp.Value = dateOnlyUntil(rp.Value)
+			// The last kept day is the one `until` falls on in the calendar's own
+			// zone — callers pass the split point minus a second, so in a
+			// west-of-UTC zone the UTC date is already the day after the cut.
+			rp.Value = dateOnlyUntil(rp.Value, until.In(loc))
 		}
 	}
 	// UNTIL bounds only the RRULE generator, not RDATEs (rrule-go's Set.Iterator
@@ -503,15 +509,18 @@ func NewSeriesFrom(obj *Parsed, uid string, occ time.Time, mutate func(*ical.Com
 	comp.Props.SetText(ical.PropUID, newUID)
 	// Preserve the rule's bound: keep an absolute UNTIL as-is, and reduce a COUNT by
 	// the occurrences that remain with the capped master (before occ), so the two
-	// halves together still yield the original number of occurrences.
-	if roption, err := comp.Props.RecurrenceRule(); err == nil && roption != nil {
-		if roption.Count > 0 {
-			remaining := roption.Count - pastCount
-			if remaining < 1 {
-				remaining = 1
-			}
-			roption.Count = remaining
+	// halves together still yield the original number of occurrences. Only a COUNT
+	// rule is re-serialized — rrule-go renders UNTIL as a UTC DATE-TIME, so
+	// rewriting an unchanged rule would turn an all-day series' DATE UNTIL into a
+	// DATE-TIME (an RFC 5545 §3.3.10 value-type mismatch that also loses the
+	// inclusive whole-day reading of the final day). Leaving the bytes alone is the
+	// iron-rule default anyway.
+	if roption, err := comp.Props.RecurrenceRule(); err == nil && roption != nil && roption.Count > 0 {
+		remaining := roption.Count - pastCount
+		if remaining < 1 {
+			remaining = 1
 		}
+		roption.Count = remaining
 		comp.Props.SetRecurrenceRule(roption)
 	}
 	setDateTimeUTC(comp, ical.PropCreated, now)
@@ -561,6 +570,7 @@ func rruleIterationsBefore(master *ical.Component, occ time.Time, loc *time.Loca
 	if err != nil || roption == nil {
 		return 0
 	}
+	applyDateOnlyUntilBound(master.Props, roption, loc)
 	roption.Dtstart = anchor
 	rule, err := rrule.NewRRule(*roption)
 	if err != nil {
