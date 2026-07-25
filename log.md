@@ -4,6 +4,26 @@
 
 ---
 
+## 2026-07-24 — Bare-Put sweep (grab.go): beginGrabFuture's master-cap write clobbered a concurrent pull
+
+- Pass 19's bare-Put sweep (see the reparentTo fix above): `beginGrabFuture` (`internal/ui/grab.go`),
+  the this-and-future grab's series split, wrote its FIRST resource (capping the master series)
+  with a bare `store.Put`. A background sync pull landing between the grab's `Locate` and that
+  write was silently overwritten — the cap was derived from the stale snapshot, so the write
+  adopted the pulled ETag while persisting pre-pull content, and the next push's CAS would have
+  overwritten the server's edit.
+- Fix: the master-cap write now commits via `PutIfUnchanged(loc.Prev)`; a version mismatch aborts
+  the grab (never started, nothing to cancel) rather than clobbering. The SECOND write — the new
+  future series — stays a bare `store.Put` and is annotated `// create: fresh UID, no existing
+  resource to clobber`: `SplitEvent` mints a brand-new series UID, so no existing resource can be
+  clobbered there; the existing rollback-the-cap-on-second-write-failure logic is unchanged.
+- Repro-first: `internal/ui/grab_split_clobber_test.go` —
+  `TestGrabFutureCapDoesNotClobberConcurrentPull` — confirmed RED against the bare `Put` (the
+  concurrent rename was overwritten and the grab wrongly started), GREEN after the fix.
+- Full gate passes (`go test ./...` except the pre-existing, out-of-scope
+  `TestSelectBulkOpDoesNotLeakCount` countleak repro; `go test -race ./internal/ui/...`;
+  `go vet ./...`; `staticcheck ./...`; `go build ./...`; `gofmt -l internal/ui` clean).
+
 ## 2026-07-24 — Fix MED data-loss: reparentTo's bare Put clobbered a concurrent pull (bare-Put class, 3rd reopen)
 
 - Hardening Pass 19 MED finding #6: `reparentTo` (`internal/ui/yankpaste.go`), the single-item

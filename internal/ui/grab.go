@@ -116,15 +116,25 @@ func (a *app) beginGrabFuture(loc store.Located, t editTarget) {
 	}
 	newUID := future.Events[0].UID
 	newName := store.ResourceName(newUID)
-	if _, err := a.store.Put(context.Background(), loc.CalID, loc.Name, capped); err != nil {
+	ctx := context.Background()
+	// Version-checked against loc.Prev: capped is derived from loc's snapshot, so a
+	// background sync pull landing since the Locate above must not be clobbered by
+	// capping the master (which would adopt the pulled ETag while persisting stale
+	// content and let the next push overwrite the server's edit).
+	applied, err := a.store.PutIfUnchanged(ctx, loc.CalID, loc.Name, capped, loc.Prev)
+	if err != nil {
 		a.flashErr("Grab", err)
 		return
 	}
-	if _, err := a.store.Put(context.Background(), loc.CalID, newName, future); err != nil {
+	if !applied {
+		a.flash("Item changed on the server — grab not started; retry")
+		return
+	}
+	if _, err := a.store.Put(ctx, loc.CalID, newName, future); err != nil { // create: fresh UID, no existing resource to clobber
 		// The master was already capped above. Roll it back so a failed second
 		// write can't half-complete the split — silently dropping the series'
 		// tail occurrences with no grab state to cancel and no undo step.
-		_, _ = a.store.Restore(context.Background(), loc.CalID, loc.Name, loc.Prev)
+		_, _ = a.store.Restore(ctx, loc.CalID, loc.Name, loc.Prev)
 		a.flashErr("Grab", err)
 		return
 	}
