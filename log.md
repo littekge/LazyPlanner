@@ -4,6 +4,23 @@
 
 ---
 
+## 2026-07-24 — Bare-Put sweep (edit.go): the three remaining sites are fresh creates, annotated
+
+- Pass 19's bare-Put sweep, continued: `internal/ui/edit.go`'s three bare-Put sites —
+  `createTask`, `createEvent`, and `applyMutation`'s creation branch (`prev == nil`) — were
+  audited and are all genuine fresh creates: each writes a brand-new resource named from a UID
+  minted moments earlier (`model.NewTodoObject`/`model.NewEventObject`'s fresh UID, or the
+  caller-supplied creation path with no prior version to guard), so none can clobber an existing
+  resource. No conversion needed; each site is now annotated `// create: fresh UID, no existing
+  resource to clobber` so the sweep is self-documenting, matching the annotation convention used
+  on the create-side writes in the grab.go/recur_edit.go/yankpaste.go fixes. `applyMutation`'s
+  doc comment already explained this distinction (`prev == nil` "always writes"); the annotation
+  makes that reasoning visible at the call site itself, not just in the doc comment above.
+- No behavior change; no new tests (nothing clobber-prone to guard) — `TestApplyMutationDoesNotClobberConcurrentPull` already covers `applyMutation`'s edit (`prev != nil`) branch.
+- Full gate passes (`go test ./...` except the pre-existing, out-of-scope
+  `TestSelectBulkOpDoesNotLeakCount` countleak repro; `go vet ./...`; `staticcheck ./...`;
+  `go build ./...`; `gofmt -l internal/ui` clean).
+
 ## 2026-07-24 — Bare-Put sweep (recur_edit.go): commitDetach/commitSplit's first writes clobbered a concurrent pull
 
 - Pass 19's bare-Put sweep, continued: `commitDetach` (this-occurrence todo detach) and

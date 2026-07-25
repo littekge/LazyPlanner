@@ -237,7 +237,7 @@ func (a *app) createTask(calID, parentUID, text string) {
 	obj := model.NewTodoObject(d, a.now)
 	uid := obj.Todos[0].UID
 	name := store.ResourceName(uid)
-	if _, err := a.store.Put(context.Background(), calID, name, obj); err != nil {
+	if _, err := a.store.Put(context.Background(), calID, name, obj); err != nil { // create: fresh UID, no existing resource to clobber
 		a.flashErr("Add", err)
 		return
 	}
@@ -276,7 +276,7 @@ func (a *app) createEvent(calID string, base time.Time, text string) {
 	}
 	uid := obj.Events[0].UID
 	name := store.ResourceName(uid)
-	if _, err := a.store.Put(context.Background(), calID, name, obj); err != nil {
+	if _, err := a.store.Put(context.Background(), calID, name, obj); err != nil { // create: fresh UID, no existing resource to clobber
 		a.flashErr("Add", err)
 		return
 	}
@@ -689,7 +689,7 @@ func (a *app) applyMutation(calID, name string, obj *model.Parsed, prev *store.R
 		if !applied {
 			return false, true
 		}
-	} else if _, err := a.store.Put(context.Background(), calID, name, obj); err != nil {
+	} else if _, err := a.store.Put(context.Background(), calID, name, obj); err != nil { // create: fresh UID, no existing resource to clobber
 		a.flashErr("Save", err)
 		return false, false
 	}
