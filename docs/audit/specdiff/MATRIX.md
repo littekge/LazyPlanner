@@ -1568,3 +1568,23 @@ asked to explicitly verify it, and one genuine non-hold from `slice-mouse.md`.
      handler — motion keys page/scroll them instead"); no code change, this is the deliberate,
      already-tested (`agendaclick_test.go`) auto-follow design, just under-scoped in the doc's
      exception clause.
+
+### Resolution (2026-07-24)
+
+All findings resolved and verified closed:
+
+- **Finding 1** (`:sync` [server] message): fixed in code, commit e653bb1. The flash message now
+  references `[[account]]` instead of the deprecated `[server]` section.
+- **Finding 2** (eager-echo inconsistency): fixed in code, commit a108cb0. Commands `:calendar
+  color`, `:calendar new`, `:account`, and `:config` now echo only on success, matching the
+  pattern used by `:calendar rename` and `:view`/`:goto`/`:search`/`:find`.
+- **Finding 3** (`:calendar` rename/color/hide/show task-list targeting): documented, commits
+  2633662 + d67d53c. The dual-target behavior (calendar when issued from Calendar mode, task list
+  when issued from Tasks pane) is now documented in main.md, README, and the `:calendar` help text.
+- **Finding 4** (`:calendar create` alias check): confirmed **non-issue** — verified code review
+  showed the check was accurate; code and all doc surfaces already agree that only `new` is
+  supported (no `create` alias exists). Retained in this audit record per the brief's explicit
+  request to verify this case.
+- **Finding 5** (agenda board scroll wheel): documented, commit 2633662. The doc carve-out
+  now names both the calendar grid and agenda board as taking no wheel handler (motion keys
+  navigate instead).

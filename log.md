@@ -4,6 +4,20 @@
 
 ---
 
+## 2026-07-24 — v1.5.0 phase-2 close-out: axis-extension resolution recorded
+
+- Docs-only bookkeeping entry recording that all v1.5.0 phase-2 axis-extension findings have been
+  owner-approved and resolved. The phase-2 matrix verification (initial 529 key×context cells) was
+  extended with two additional axes: the `:` command surface (35 rows) and the mouse-contract surface
+  (29 rows), expanding the verified-cell count to 593 total verified cells across all axes.
+- Axis-extension triage surfaced 5 findings total: 4 actionable (owner-approved and fixed via prior
+  commits e653bb1, a108cb0, 2633662+d67d53c) and 1 confirmed non-issue (`:calendar create` alias
+  check — code and docs already agree). Resolution summary added to `docs/audit/specdiff/MATRIX.md`
+  (new subsection 9.6 "### Resolution (2026-07-24)"); main.md's v1.5.0 Build Plan status line
+  updated to note the extension and resolution.
+- Files modified: `docs/audit/specdiff/MATRIX.md`, `main.md`.
+- Gate: `go build ./...` passes (docs-only, no code changes).
+
 ## 2026-07-24 — Fix doc accuracy: scope `:calendar` task-list targeting to rename/color/hide/show (exclude new)
 
 - Accuracy fix for the v1.5.0 phase-2 doc batch. The `:calendar new|rename|color|hide|show` clause
