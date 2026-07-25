@@ -287,6 +287,56 @@ type placedAt struct {
 	end  time.Time
 }
 
+// itemKey identifies a drill item the way itemIndex matches one: same UID, same
+// start instant. As with placementKey, the instant is keyed by its seconds and
+// nanoseconds since the epoch rather than the time.Time itself — a map key
+// compares with ==, which also compares the monotonic reading and the location
+// pointer, while the match is time.Equal.
+type itemKey struct {
+	uid  string
+	sec  int64
+	nsec int
+}
+
+func newItemKey(uid string, start time.Time) itemKey {
+	return itemKey{uid: uid, sec: start.Unix(), nsec: start.Nanosecond()}
+}
+
+// selDrillRange resolves the drilled SELECT range on the selected day into a
+// low→high index pair over that day's drill list, plus an index of the list by
+// (uid, start) so membership is a lookup. from is -1 (and itemAt nil) when no
+// range is active or the anchor is no longer in the list.
+//
+// The index exists because the draw path tests membership once per drawn
+// placement and once per timed due task: the linear itemIndex scan it replaces
+// made a single frame O(placements x items), so a SELECT range opened on a busy
+// day froze the UI — the day's layout being linearithmic bounds what that stage
+// produces, not what this one does with it. It is built only when a range is
+// actually active, so the common frame pays nothing.
+func (tg *timeGridView) selDrillRange() (from, to int, itemAt map[itemKey]int) {
+	if !tg.eventMode || tg.selAnchorUID == "" {
+		return -1, -1, nil
+	}
+	items := tg.daySelectables()
+	itemAt = make(map[itemKey]int, len(items))
+	for i, it := range items {
+		t := targetFromItem(it)
+		k := newItemKey(t.uid, t.occStart)
+		if _, seen := itemAt[k]; !seen {
+			itemAt[k] = i // first match wins, as itemIndex's scan did
+		}
+	}
+	anchor, ok := itemAt[newItemKey(tg.selAnchorUID, tg.selAnchorOcc)]
+	if !ok {
+		return -1, -1, nil
+	}
+	from, to = anchor, tg.eventIndex
+	if from > to {
+		from, to = to, from
+	}
+	return from, to, itemAt
+}
+
 // navCells maps each item of the drilled day (daySelectables order) to its
 // on-screen position.
 func (tg *timeGridView) navCells() []navCell {
@@ -582,22 +632,15 @@ func (tg *timeGridView) Draw(screen tcell.Screen) {
 	sel := tg.selectedItem()
 
 	// The drilled SELECT range: the anchor item's index in the selected day's
-	// list, paired with the cursor (eventIndex), normalized low→high.
-	selFrom, selTo := -1, -1
-	if tg.eventMode && tg.selAnchorUID != "" {
-		if ai := itemIndex(tg.daySelectables(), tg.selAnchorUID, tg.selAnchorOcc); ai >= 0 {
-			selFrom, selTo = ai, tg.eventIndex
-			if selFrom > selTo {
-				selFrom, selTo = selTo, selFrom
-			}
-		}
-	}
+	// list, paired with the cursor (eventIndex), normalized low→high, plus the
+	// index membership is tested against (built once per frame, not per item).
+	selFrom, selTo, selItemAt := tg.selDrillRange()
 	inSelRange := func(uid string, start time.Time) bool {
 		if selFrom < 0 {
 			return false
 		}
-		i := itemIndex(tg.daySelectables(), uid, start)
-		return i >= selFrom && i <= selTo
+		i, ok := selItemAt[newItemKey(uid, start)]
+		return ok && i >= selFrom && i <= selTo
 	}
 
 	// Header: one date per column. The cursor day reverses; inside an active

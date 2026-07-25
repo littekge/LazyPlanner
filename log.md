@@ -4,6 +4,41 @@
 
 ---
 
+## 2026-07-25 — Fix (NEW, found during the arc): Draw's inSelRange was quadratic with a SELECT range open
+
+- **Not an audit finding.** Measured by the agent that fixed the sibling `navCells` quadratic. Same class
+  as the Pass-23 `LayoutDay` HIGH, on the draw path: `Draw`'s `inSelRange` closure called
+  `itemIndex(tg.daySelectables(), …)` — a linear scan — **once per placement and once per timed due
+  task**, making Draw O(placements × items). It early-returns unless a drilled SELECT range is active,
+  which is exactly why nothing caught it: the cost is invisible until a user opens a range on a busy day.
+- **Fix:** `selDrillRange()` builds the day's drill-list index **once** per frame, resolves the anchor
+  through it and normalizes low→high; `inSelRange` becomes a map lookup. The key (`itemKey`) mirrors
+  `placementKey`'s rationale from `524c6e4` — `(uid, Start.Unix(), Start.Nanosecond())`, because
+  `itemIndex` matched with `Equal` while a `time.Time` map key compares with `==` (monotonic reading and
+  location pointer included). First-match-wins is reproduced explicitly. `itemIndex`'s signature is
+  unchanged, so its two other callers are untouched.
+- **Timings** (best-of-5 interleaved, post-GC), growth for 4× input: range active **15.5× → 4.2×**
+  (592 ms → 15.4 ms at n=8000); no range 3.9× → 3.8× (unchanged). `TestTimeGridDrawWithoutSelectRangeIsLinear`
+  pins the common path so the cost can't be relocated there later.
+- **Rendering identity proven:** `TestDrawSelRangeMatchesLinearScanReference` keeps the pre-index
+  predicate verbatim and diffs it over 70 randomized messy days — all-day events, all-day/timed due
+  tasks, drill items with no placement, one `*Event` at two starts, duplicate occurrences at the same
+  key, duplicate and empty UIDs — probing every placement, due task and drill item plus three miss
+  shapes including **an equal instant in another location** (the `Equal`-vs-`==` trap). Zero divergence.
+  Pre-existing `TestSelect*` (17), `TestTimeGrid*` (16), `TestBulk*` (22), `TestDrillRange*` and
+  `TestDisplayStress` all pass unmodified.
+- **Accepted behaviour change (agent-disclosed):** the index build walks the *entire* drill list on a
+  range-active frame, where the old anchor scan short-circuited — so `targetFromItem` is now invoked for
+  every item. The old code already reached every item on any `inSelRange` miss, so a range-active frame
+  already had full exposure, and `model.DayAgenda` doesn't emit an item with both `Event` and `Todo` nil.
+  Net cost is strictly lower.
+- **Sweep result:** no remaining superlinear join in `timegridview.go`'s draw or keypress paths.
+  `calendarview.go:281` resolves its SELECT anchor with one scan per cell — O(items) per cell, not
+  quadratic; noted, not changed.
+- **Residual:** the growth-ratio threshold (8.0×) is heuristic; a heavily loaded machine could in
+  principle push a linear run past it. Margin is comfortable (4.2× observed vs 15.5× quadratic). The
+  identity proof diffs the in-range *decision*, not final screen bytes.
+
 ## 2026-07-25 — Fix (NEW, found during the arc): all-day "Ends on date D" dropped D — two bugs, four sites
 
 - **Not an audit finding.** Surfaced while writing the end-to-end guard for the timed-UNTIL wiring fix,
