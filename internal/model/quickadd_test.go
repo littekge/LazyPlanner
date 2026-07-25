@@ -5,6 +5,45 @@ import (
 	"time"
 )
 
+// TestParsePriority pins the numeric priority boundary directly against
+// parsePriority: the accepted range is 1-9 inclusive (iCal PRIORITY's high end
+// of "in use" values), 0 and 10 are out of range and must not parse. This
+// closes a pass-19 canary escape: a mutation flipping the upper bound's
+// n<=9 to n<=8 slipped through undetected because the existing "!high"/"!1"
+// coverage never exercised !9, the boundary a n<=8 mutant would break.
+func TestParsePriority(t *testing.T) {
+	tests := []struct {
+		in     string
+		wantN  int
+		wantOK bool
+	}{
+		{"1", 1, true},
+		{"9", 9, true}, // upper edge: would fail under an n<=9 -> n<=8 mutation
+		{"5", 5, true},
+		{"0", 0, false},  // below range
+		{"10", 0, false}, // above range
+		{"-1", 0, false},
+		{"high", 1, true},
+		{"h", 1, true},
+		{"med", 5, true},
+		{"medium", 5, true},
+		{"m", 5, true},
+		{"low", 9, true},
+		{"l", 9, true},
+		{"HIGH", 1, true}, // case-insensitive alias
+		{"", 0, false},
+		{"abc", 0, false},
+	}
+	for _, tc := range tests {
+		t.Run(tc.in, func(t *testing.T) {
+			n, ok := parsePriority(tc.in)
+			if ok != tc.wantOK || (ok && n != tc.wantN) {
+				t.Errorf("parsePriority(%q) = (%d, %v), want (%d, %v)", tc.in, n, ok, tc.wantN, tc.wantOK)
+			}
+		})
+	}
+}
+
 func TestParseQuickAdd(t *testing.T) {
 	loc := time.UTC
 	// A Sunday, so weekday math is easy to reason about.

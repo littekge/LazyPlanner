@@ -4,6 +4,21 @@
 
 ---
 
+## 2026-07-24 — Close pass-19 canary escape: parsePriority's !9 upper edge was untested
+
+- `parsePriority` (`internal/model/quickadd.go`) is correct — numeric priorities are 1-9 inclusive
+  — but pass 19's mutation canary flipped the upper bound (`n <= 9` -> `n <= 8`) and no test
+  caught it: the existing numeric-priority coverage only exercised `!high` and `!1`, never `!9`,
+  so the upper edge was unguarded. A test hole, not a code bug.
+- Added `TestParsePriority` (`internal/model/quickadd_test.go`), a table-driven unit test directly
+  against `parsePriority` pinning the full boundary: `1`/`9`/`5` accepted, `0`/`10`/`-1` rejected,
+  plus the word aliases (`high`/`h`, `med`/`medium`/`m`, `low`/`l`, case-insensitive) and a couple of
+  non-numeric non-alias inputs.
+- Verified the test both ways: passes on current (correct) code, and fails (`TestParsePriority/9`)
+  when the `n <= 9 -> n <= 8` mutation is applied locally — confirmed by temporarily applying the
+  mutation, re-running, and reverting before committing.
+- Test-only change; no behavior, `main.md`, or README update needed.
+
 ## 2026-07-24 — Fix quick-add "every <month> <day>" accepting impossible dates (pass 19, finding #8)
 
 - `parseEveryRecur` (`internal/model/quickadd.go`) accepted any day 1–31 for the yearly
