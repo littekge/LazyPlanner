@@ -1,6 +1,7 @@
 package store
 
 import (
+	"encoding/base64"
 	"encoding/json"
 	"errors"
 	"fmt"
@@ -80,14 +81,66 @@ type resourceMeta struct {
 // conflictMeta stashes the server's diverging version of a resource so nothing
 // is lost while a conflict awaits resolution.
 type conflictMeta struct {
-	ServerETag string `json:"server_etag,omitempty"`
-	ServerData string `json:"server_data,omitempty"` // raw iCalendar of the server's version
+	ServerETag string
+	// ServerData is the raw iCalendar of the server's version, held as an opaque
+	// byte string: a server may hand back any encoding (Latin-1 accents, a
+	// mis-encoded description), and this stash is the ONLY copy of the server's
+	// side, so it must survive byte for byte. It is persisted base64-encoded —
+	// see conflictMeta's MarshalJSON.
+	ServerData string
 	// ServerDeleted marks a conflict where the server DELETED the resource while
 	// it was edited locally (ServerData is then empty). It disambiguates that case
 	// from a present-but-unparseable server version, which also stashes without a
 	// typed model but must NOT be treated as a deletion (that would silently
 	// discard the local edit on "keep server").
-	ServerDeleted bool `json:"server_deleted,omitempty"`
+	ServerDeleted bool
+}
+
+// conflictMetaJSON is the on-disk shape of a stashed conflict. The server's
+// bytes live in ServerDataB64 because encoding/json serializes a Go string as a
+// UTF-8 JSON string, replacing every invalid byte with U+FFFD — which would
+// hand the user a mangled "server version" to choose between (iron rule).
+// ServerDataPlain is the pre-base64 field, read for backward compatibility with
+// sidecars written by earlier versions and never written back.
+type conflictMetaJSON struct {
+	ServerETag      string `json:"server_etag,omitempty"`
+	ServerDataB64   string `json:"server_data_b64,omitempty"`
+	ServerDataPlain string `json:"server_data,omitempty"`
+	ServerDeleted   bool   `json:"server_deleted,omitempty"`
+}
+
+// MarshalJSON writes the stash with the server's bytes base64-encoded, so a
+// non-UTF-8 server version round-trips through the sidecar unchanged.
+func (c conflictMeta) MarshalJSON() ([]byte, error) {
+	out := conflictMetaJSON{ServerETag: c.ServerETag, ServerDeleted: c.ServerDeleted}
+	if c.ServerData != "" {
+		out.ServerDataB64 = base64.StdEncoding.EncodeToString([]byte(c.ServerData))
+	}
+	return json.Marshal(out)
+}
+
+// UnmarshalJSON reads either shape: the base64 field when present, else the
+// legacy plain-string field, so upgrading does not destroy a conflict already
+// stashed on disk. A base64 field that won't decode degrades to "no server
+// version stashed" rather than failing the whole entry — losing the etag and
+// the server-deleted flag as well would drop the conflict entirely and let the
+// local edit push unflagged.
+func (c *conflictMeta) UnmarshalJSON(data []byte) error {
+	var in conflictMetaJSON
+	if err := json.Unmarshal(data, &in); err != nil {
+		return err
+	}
+	c.ServerETag = in.ServerETag
+	c.ServerDeleted = in.ServerDeleted
+	c.ServerData = in.ServerDataPlain
+	if in.ServerDataB64 != "" {
+		if raw, err := base64.StdEncoding.DecodeString(in.ServerDataB64); err == nil {
+			c.ServerData = string(raw)
+		} else if in.ServerDataPlain == "" {
+			c.ServerData = ""
+		}
+	}
+	return nil
 }
 
 // tombstoneMeta is the server identity of a locally-deleted resource, enough to

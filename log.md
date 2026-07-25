@@ -4,6 +4,47 @@
 
 ---
 
+## 2026-07-25 — Fix Pass-23 HIGH + MED: failed conflict resolve rolls back; conflict stash is byte-lossless
+
+- **HIGH — a FAILED `ResolveKeepLocal` still resolved the conflict** (`internal/store/conflict.go:124`).
+  It mutated in-memory state first (ETag←ServerETag, Conflicted=false, Href cleared on ServerDeleted,
+  resource swapped, conflict deleted) and only then called `writeSidecar` — returning the error **without
+  reverting**. So a failed "Keep local" discarded the server version, removed the conflict from the UI,
+  and let the next sync push local over the server. Three independent skeptics each reproduced it.
+  **Fix:** restore the original resource + stashed conflict on write failure, following the package's
+  established `revertMutation` idiom (`mutate.go:117`/`:335`). It does *not* call `revertMutation` itself
+  because this path writes no `.ics` — the revert is in-memory-only and therefore infallible.
+  Copy-on-write preserved: the original pointer is never mutated.
+- **`ResolveKeepServer` did NOT share the defect** — it delegates to `Forget`/`PutRemote`, both of which
+  already revert. Guards were added for both its branches anyway so the class is nailed down on that side.
+- **Deliberately not "fixed": `MarkConflict`** has the same mutate-then-persist shape, but reverting there
+  would *discard the server's stashed version* — the data-losing direction. Leaving the conflict standing
+  in memory is the conservative choice and self-heals: the resource stays dirty with its old ETag, so the
+  next conditional PUT 412s and re-raises the conflict.
+- **MED — the conflict stash was not byte-lossless** (`internal/store/sidecar.go:72`): the server's raw
+  iCalendar went through JSON string serialization, so non-UTF-8 bytes became U+FFFD — and keep-server
+  then wrote that mojibake into the local `.ics`. The user was choosing between "local" and a corrupted
+  copy of the server's version, violating the iron rule on the only copy of the server's side.
+  **Fix:** `conflictMeta` gained `MarshalJSON`/`UnmarshalJSON` persisting the bytes as `server_data_b64`.
+  The in-memory type is unchanged, so no caller in store/sync/ui needed touching.
+- **Migration:** the legacy plain `server_data` field is kept **read-only** — `UnmarshalJSON` seeds from
+  it, then lets `server_data_b64` override when present, so an existing conflict survives the upgrade and
+  is re-emitted as base64 on the next write. An undecodable base64 degrades to "no server version
+  stashed" rather than erroring, since erroring would drop the whole entry (etag + server-deleted flag),
+  unflag the resource, and let the local edit push. Guarded by `TestConflictStashReadsLegacyPlainSidecar`.
+- **Guards:** `resolvefail_test.go` + `conflict_bytelossless_test.go` — both sides of each class: a failed
+  resolve leaves the conflict listed / resource Conflicted / local `.ics` intact / stash bytes intact
+  (keep-local *and* keep-server, incl. server-deleted flavours); a SUCCESSFUL resolve still fully
+  resolves with no `conflict` key left on disk and no reappearance after reload; byte-losslessness for
+  non-UTF-8, for valid UTF-8 + emoji, and across the legacy migration. Gate green incl. `-race`.
+- **Accepted trade-off (downgrade is lossy):** a sidecar written by this version and read by an *older*
+  binary finds no `server_data`, so keep-server there reports "server version unavailable" and only
+  keep-local works. Dual-writing both fields was rejected — it would re-introduce U+FFFD in the plain
+  field and double the sidecar size.
+- **Required follow-up (out of scope, still broken):** `internal/ui/conflicts.go:69` does not refresh the
+  conflict list when a resolve returns an error, so the UI still shows the conflict as gone until
+  something else redraws. The store is now correct; the UI half is not.
+
 ## 2026-07-25 — Fix Pass-23 LOW ×3: blank search guard, identity-anchored `n`/`N`, status-bar tag escaping
 
 - Three LOW findings sharing `internal/ui/search.go` + `command.go`, so fixed as one increment.
