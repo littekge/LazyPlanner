@@ -4,16 +4,7 @@
 
 ---
 
-## 2026-07-24 — v1.5.0 mid-arc: phase 3 remains
-
-**Where the version stands** (detail: main.md's v1.5.0 Build Plan status line): step 0, both
-gap-closers, phase 1 (spec-diff sweep + triaged fixes), and phase 2 (key×context consistency
-matrix, `docs/audit/specdiff/MATRIX.md` — 529 cells, 20 divergences, all fixed) are shipped and
-pushed. The remaining v1.5.0 work:
-
-1. **Phase 3 — deep audit**: `/audit`, minimum one pass, targets already listed in main.md's
-   convergence paragraph (SELECT/bulk-ops surface, v1.3.0 recurrence primitives, v1.2.0 grammar,
-   sync-core reconcile matrix beyond `CommitPush` incl. the rollback-`Restore` clause noted in
-   COVERAGE.md).
-2. **Release gate** (spec §Release criteria): claim inventory dispositioned ✓ · matrix reconciled
-   ✓ · gap-closers ✓ · ≥1 audit pass ✗ · docs current ✓ (as of this entry).
+Nothing in progress. v1.5.0 release gate is fully satisfied (claim inventory dispositioned ✓ ·
+matrix reconciled ✓ · gap-closers ✓ · ≥1 audit pass ✓ (Pass 19 done, all 8 findings fixed) · docs
+current ✓, as of 2026-07-24) — ready for owner review/merge/tag. See `log.md` for the close-out
+entries and `docs/audit/passes/PASS-19.md` for the audit resolution.

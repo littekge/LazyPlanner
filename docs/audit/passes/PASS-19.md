@@ -250,3 +250,48 @@ resource still being absent (mirror pullInto's expectedPrev); coalesce same-reso
 full-bundle snapshot wins; route reparentTo through `PutIfUnchanged`; reset the vim count on the
 SELECT-swallow path; gate parseEveryRecur on validYMD; and close both canary holes with boundary tests.
 After the two class-reopening fixes, sweep every peer path before re-declaring either class shut.
+
+---
+
+## Resolution (2026-07-24)
+
+All eight confirmed findings were fixed repro-first, one commit each, full gate green every commit:
+
+1. HIGH — bulkDelete/deleteWholeObject co-resident bystander: **40b0803**
+2. HIGH — ReanchoredRecurrence "last &lt;weekday&gt;" backward-move contradiction: **8051ddc**
+3. HIGH — pushDelete 412 resurrect clobbers concurrent undo: **d39853d**
+4. HIGH — undo of a co-resident multi-root move loses a root: **9de7ecc**
+5. MED — ReanchoredRecurrence positive-nth escapes the editable vocabulary: **228dbbc** (fixed same
+   commit as #2, 8051ddc; 228dbbc re-adds the regression test the auditor's synthesis-only repro left
+   out of the tree)
+6. MED — reparentTo bare Put: **18fbca3**, plus the class sweep this reopening triggered across
+   `internal/ui` (**18fbca3..c50a42d**: grab.go, recur_edit.go, yankpaste.go fresh-create annotations,
+   and the CLAUDE.md Hard-won-guardrail update)
+7. LOW — SELECT vim-count leak: **33d01d3** (regression test added **c441b32** after being left
+   untracked in 33d01d3)
+8. LOW — parseEveryRecur impossible month-day: **acc0c6b**
+
+Both escaped mutation canaries are closed with regression tests: the `parsePriority` numeric-boundary
+hole — **29ca392** (`internal/model/quickadd_test.go`) — and the `dayInRange` highlight-boundary hole
+— **fb7d8e2** (`internal/ui/selection_test.go`).
+
+A final whole-arc review (commit range 66222d9..c441b32) came back **READY TO MERGE**: 0
+Critical/Important findings, 7/7 cross-cutting checks PASS, 3 non-blocking minors (the CLAUDE.md
+missing test-citation, addressed in this close-out increment; the pre-existing `moveSubtreeOps`
+dest-Put orphan-retry residual, recorded as a named blind spot in `COVERAGE.md`; an unreachable
+defensive branch in the reanchor code, no action needed).
+
+The review's recommendation was **more_passes_recommended** — this pass's own convergence trend ran
+UP (HIGH 2→4, total 3→8), not down, so hardening continues in a future pass even though every finding
+this pass produced is now fixed. Residual risk carried forward, per `COVERAGE.md`:
+
+- The two reopened classes (bare-Put clobber; the "concurrent-write signal has no resource-is-gone
+  case" reconcile class) had their *found* sites fixed and, for bare-Put, a full `internal/ui` sweep —
+  but neither sweep crossed into peer packages (`internal/store`, `internal/model`, `internal/caldav`)
+  for the same two shapes. That cross-package sweep is a target for a future pass.
+- The pre-existing `moveSubtreeOps` dest-Put orphan-retry residual (yankpaste.go:344) — a swallowed-
+  error rollback gap where a retried move's fresh-create bare Put could clobber an orphaned
+  destination-side copy left by a prior failed attempt — was not a pass-19 finding (no repro run
+  against it) and is now a named blind spot for a future pass.
+- The recent cells from passes 15–18 were deliberately left to cool, per the pass-19 body's own
+  "not covered / still deferred" note.

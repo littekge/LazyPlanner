@@ -4,6 +4,39 @@
 
 ---
 
+## 2026-07-24 — Close-out bookkeeping: Pass-19 FIX ARC resolution, v1.5.0 release gate now all-✓
+
+- Recorded the Pass-19 resolution across the audit ledger: `docs/audit/COVERAGE.md` marks all 8
+  confirmed findings FIXED with their fix commits (bulkDelete co-resident 40b0803; last-weekday
+  reanchor 8051ddc; pushDelete-412 resurrect d39853d; undo multi-root 9de7ecc; MonthlyNth=5
+  228dbbc/8051ddc; reparentTo bare-Put + the class sweep 18fbca3..c50a42d; SELECT count-leak
+  33d01d3/c441b32; parseEveryRecur impossible-date acc0c6b) and both escaped canaries CLOSED
+  (parsePriority 29ca392; dayInRange fb7d8e2). Added two blind-spot notes: the pre-existing
+  `moveSubtreeOps` dest-Put orphan-retry residual (yankpaste.go:344, not a pass-19 finding), and a
+  residual on the two reopened classes (bare-Put clobber; reconcile resource-gone) — found sites
+  fixed, plus a full `internal/ui` sweep for bare-Put, but untested peer paths in
+  store/model/caldav were not swept this pass.
+- `docs/audit/passes/PASS-19.md` gained a "## Resolution (2026-07-24)" section: all 8 findings
+  fixed repro-first (one commit each, listed above), both canary holes closed with regression
+  tests, and the final whole-arc review (66222d9..c441b32) came back READY TO MERGE (0
+  Critical/Important, 7/7 cross-cutting checks). Recorded the review's own recommendation
+  (`more_passes_recommended` — severity trended up, not down) so hardening continues in a future
+  pass even though this pass's findings are fully resolved.
+- `CLAUDE.md`'s "Concurrent writes are version-checked" guardrail (Hard-won guardrails) was the
+  only entry in that list missing a trailing `Regression tests: …` citation — added one naming
+  `TestApplyMutationDoesNotClobberConcurrentPull` (`internal/ui/editclobber_test.go`) and the
+  pass-19 sweep's four per-site clobber guards (`reparent_clobber_test.go`,
+  `grab_split_clobber_test.go`, `recur_edit_clobber_test.go`, `movesubtree_clobber_test.go`).
+- `main.md`'s v1.5.0 Build Plan status line now reads Phase 3 (deep audit) as done — Pass 19
+  complete, all 8 findings fixed, final review READY TO MERGE — with hardening noted as
+  continuing post-release since convergence trended up, not down. This flips the last release-gate
+  item.
+- `notes.md`'s release-gate checklist is now all ✓ (claim inventory, matrix reconciled,
+  gap-closers, ≥1 audit pass, docs current); trimmed the file to its healthy empty steady state
+  with a pointer to `log.md`/`PASS-19.md` — v1.5.0 is ready for owner review/merge/tag.
+- Docs/ledger-only change; verified `go build ./...` and `go test ./...` still pass (no code
+  touched).
+
 ## 2026-07-24 — Add #7 SELECT count-leak regression guard (was left untracked in 33d01d3)
 
 - The repro test for pass-19 finding #7 (`internal/ui/countleak_repro_test.go` /
