@@ -4,6 +4,66 @@
 
 ---
 
+## 2026-07-25 — Close out Pass-22 FIX ARC: ledger + pass report resolved, docs current
+
+- Recorded the Pass-22 resolution. `docs/audit/COVERAGE.md`: the v1.3.0-Custom-form MED row carries a
+  FIXED clause (c6f79f0); the three finding/canary blind-spot entries flip to RESOLVED/CLOSED; the
+  pass-22 canary section header + all three escape entries + their inline row markers mark CLOSED
+  (e7f3625). `docs/audit/passes/PASS-22.md` gained a "## Resolution (2026-07-25)" section: the fix table,
+  the note on why the MED was fixed in the UI (not the model — `spec.Until` is also fed by foreign-rule
+  decomposition, so a model bump risks an iron-rule rewrite), the strategic "blind spot largely retired"
+  result, and the carried `internal/caldav` write-path residual.
+- `main.md` Build Plan (v1.5.0 phase-3 narrative) gained the Pass 22 one-liner: the targeted pass retired
+  most of the cross-package resource-is-gone residual, found 1 MED elsewhere (fixed), and closed 3/4
+  escaped canaries; findings converged but the canary net regressed, so `more_passes_recommended` stands.
+- No README change (no user-visible usage/keybinding/build change — the timed-UNTIL fix corrects a wrong
+  result, not a documented behavior). Gate green (`go test ./...`, `go vet`, `staticcheck`, `gofmt`).
+
+## 2026-07-25 — Close 3 Pass-22 canary escapes (normalizeETag W/ · reconcileReadOnly dirty-discard · drillRange bound)
+
+- Pass 22's canary phase had 3 of 4 escape — all test-coverage holes on correctness paths (code correct,
+  guard untested). Closed each with a boundary test verified to kill its exact mutation (RED under
+  mutation, GREEN reverted); test-only, no behavior change. Commit e7f3625.
+- **`normalizeETag`** (`internal/caldav`): the `W/` weak-validator strip was untested (all ETag tests use
+  strong quoted ETags) → dropping the `TrimPrefix` would store `W/"…"` verbatim and never match a later
+  If-Match (spurious 412s). `TestNormalizeETag` pins the `W/` rows.
+- **`reconcileReadOnly`** (`internal/sync`): the dirty-discard guard `r.Dirty || r.Href==""` was tested
+  only with a never-synced (Href="", Dirty) resource satisfying both OR and `&&` → weakening to `&&` lets
+  a synced-then-edited resource keep an un-pushable local edit on a read-only calendar (hard-invariant
+  violation). `TestReadOnlyDiscardsSyncedThenEditedResource` covers the OR-only case.
+- **`drillRange`** (`internal/ui`): the `idx >= len(items)` upper-bound guard was untested → relaxing to
+  `>` slices `items[ai:idx+1]` out of range and panics the TUI on a bulk-select at a drilled day's
+  terminal index. `TestDrillRangeAtTerminalIndexDoesNotPanic` drives `idx==len` with a valid anchor
+  (panics under the mutation).
+
+## 2026-07-25 — Fix Pass-22 MED: Custom repeat "Ends on date" includes the end day for timed items
+
+- **Finding (Pass 22 MED, `internal/ui/recurcustom.go`):** the v1.3.0 Custom repeat "Ends on date D" field
+  parsed D to midnight-local and stored it as `spec.Until`. The model only makes UNTIL inclusive-of-the-day
+  (`dateOnlyUntil` → VALUE=DATE) for ALL-DAY anchors; for a TIMED series the occurrence on D falls at the
+  anchor's time-of-day, so a midnight UNTIL dropped it silently (a timed daily event "ending 2026-07-25"
+  stopped at 07-24). Timed and all-day items disagreed on what "Ends on D" means.
+- **Fix (UI layer):** anchor UNTIL at D + the anchor's own wall-clock time-of-day (built in `a.loc`). Timed
+  15:00 series → D 15:00 (D included, D+1 excluded); all-day (midnight) anchor → stays midnight →
+  `dateOnlyUntil` truncates unchanged. One formula, no all-day flag, DST/offset-robust. Fixed in the UI
+  (not the model) because `spec.Until` is also fed by foreign-rule decomposition, where a model-layer bump
+  would risk an iron-rule rewrite.
+- **Repro-first:** `internal/ui/ends_on_date_test.go` — `TestEndsOnDateIncludesTimedOccurrence` (drives the
+  real `readCustomRecur` → `NewEventObject` → `EventOccurrences`; RED before, GREEN after) +
+  `TestEndsOnDateAllDayUnchanged` (all-day Until stays midnight). Commit c6f79f0.
+
+## 2026-07-25 — Record hardening Pass 22 (targeted: cross-package resource-is-gone / peer write paths)
+
+- Ran the `hardening-audit` workflow (Pass 22, 21 agents) aimed explicitly at the carried residual —
+  `internal/model` + `internal/caldav` peer write paths, `data-loss` method — the resource-is-gone /
+  bare-write class that had reopened three times. Result: 1 confirmed MED (elsewhere — the timed-UNTIL
+  Custom-form bug), 3 of 4 canary escapes, `more_passes_recommended`.
+- Strategic outcome: the blind spot was largely **retired** — `internal/model` is pure/headless (the
+  concurrency class can't manifest there by construction) and `internal/caldav` conditional-write paths
+  held under data-loss fault injection. Verified the workflow's claims (gate green — repro removed
+  post-run, no breakage; PASS-22.md + COVERAGE.md written), swept 4 leftover canary worktrees. The FIX ARC
+  and doc close-out are the entries above.
+
 ## 2026-07-25 — Close out Pass-21 FIX ARC: ledger + pass report resolved, docs current
 
 - Recorded the Pass-21 resolution across the audit record. `docs/audit/COVERAGE.md`: the three finding
