@@ -89,3 +89,28 @@ func BenchmarkBuildTree(b *testing.B) {
 		})
 	}
 }
+
+// buildDayOccurrences makes n timed occurrences that all overlap each other on
+// one day — the worst case for lane packing, and the shape a bounded-but-large
+// recurrence expansion lands in. LayoutDay runs on the time-grid Draw path and
+// on every navigation keypress, so ns/op must stay near-linear in n.
+func buildDayOccurrences(n int) []model.Occurrence {
+	day := time.Date(2026, 3, 4, 0, 0, 0, 0, time.UTC)
+	occs := make([]model.Occurrence, n)
+	for i := range occs {
+		start := day.Add(time.Duration(i) * time.Second)
+		occs[i] = model.Occurrence{Start: start, End: start.Add(24 * time.Hour)}
+	}
+	return occs
+}
+
+func BenchmarkLayoutDay(b *testing.B) {
+	for _, n := range []int{100, 1000, 5000, 25000} {
+		occs := buildDayOccurrences(n)
+		b.Run(fmt.Sprintf("n=%d", n), func(b *testing.B) {
+			for i := 0; i < b.N; i++ {
+				model.LayoutDay(occs)
+			}
+		})
+	}
+}

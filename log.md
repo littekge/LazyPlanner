@@ -4,6 +4,37 @@
 
 ---
 
+## 2026-07-25 — Fix Pass-23 HIGH: LayoutDay's lane packing is a sweep line, not a Θ(n²) first-fit scan
+
+- **Finding (Pass 23 HIGH, `internal/model/timegrid.go`):** `LayoutDay`'s overlap-lane packing was
+  **Θ(n²)**. The first-fit lane scan sits inside the per-occurrence loop, so when every occurrence
+  overlaps every other, no lane is ever free and occurrence *i* walks all *i* lanes. The pass-21
+  aggregate `StepBudget` bounds how many occurrences are *produced*, but nothing bounded the **layout of
+  that bounded output** — so a pathological day still froze the UI on every draw and every keypress.
+  Measured RED: `LayoutDay(30000)` = 992.66 ms; n=100000 = 8.92 s (5× input → 20.8× time).
+- **Fix:** sweep line over two `container/heap` min-heaps — `busyLanes` keyed by release time (pop every
+  lane whose end ≤ this start), `freeLanes` keyed by **lane index** so the lane chosen is the lowest-
+  numbered free one, which is exactly what the linear first-fit picked. That equivalence is what
+  preserves visual identity. `laneEnds` becomes a `laneCount`; cluster-boundary logic untouched.
+  O(n log n), package stays pure (stdlib only). After: 30000 → 11.0 ms (~90×), n=100000 → 22.0 ms (~405×).
+- **Proof of visual identity** (this function is rendering-visible, so "faster but different" would be a
+  regression): every pre-existing expectation passes UNMODIFIED, including the pass-13 touching-boundary
+  canary guards. Stronger, `TestLayoutDayMatchesFirstFitReference` keeps a copy of the **old naive
+  algorithm** in the test file and diffs it placement-by-placement over 160 randomized days at
+  n ∈ {0,1,2,5,17,64,250,1000} — including touching boundaries, start ties and zero-length occurrences.
+  Zero divergence.
+- **Durable artifact per the Scale-invariants guardrail:** `BenchmarkLayoutDay` added to
+  `scale_test.go` in the existing `BenchmarkBuildTree` style (19.8 µs → 3.32 ms across n ∈ {100…25000},
+  near-linear). Plus `TestLayoutDayGrowthIsSubQuadratic` as the load-tolerant guard (growth ratio, not
+  wall clock — quadratic would be ~16× for 4× input; observed 4.6–7.4×).
+- **Guardrail extended** (`CLAUDE.md`): now four hot paths, naming `LayoutDay`'s sweep line, plus the
+  general lesson this finding taught — *bounding what a stage produces does not bound what the next
+  stage does with it*; check the whole pipeline to the pixel.
+- **Known half-fix, dispatched separately:** `internal/ui/timegridview.go` `navCells()` has its OWN
+  quadratic on the same day — after calling `LayoutDay` it linear-scans the whole `placements` slice per
+  item, and it runs on **every h/j/k/l keypress**. The Draw path is now fast; keyboard navigation on a
+  pathological day is not yet.
+
 ## 2026-07-25 — Fix Pass-23 HIGH: a corrupt sidecar salvages its sync state instead of discarding it
 
 - **Finding (Pass 23 HIGH, `internal/store/sidecar.go` / `store.go`):** a sidecar that failed to parse
