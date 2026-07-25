@@ -570,8 +570,9 @@ func rruleIterationsBefore(master *ical.Component, occ time.Time, loc *time.Loca
 	set.DTStart(anchor)
 	set.RRule(rule)
 	// safeBetween (not set.Between) so a degenerate rule degrades to 0 rather than
-	// panicking during a this-and-future split (iron rule).
-	starts, ok := safeBetween(set, anchor, occ)
+	// panicking during a this-and-future split (iron rule). This is a single
+	// write-side rule, so it gets the full per-event step cap and no shared budget.
+	starts, _, ok := safeBetween(set, anchor, occ, maxOccurrenceSteps)
 	if !ok {
 		return 0
 	}

@@ -30,6 +30,16 @@ type Occurrence struct {
 // Occurrences considers only this one component. RECURRENCE-ID overrides, which
 // live in sibling components, are applied by Parsed.EventOccurrences.
 func (e *Event) Occurrences(from, to time.Time) ([]Occurrence, error) {
+	return e.occurrences(from, to, nil)
+}
+
+// occurrences is Occurrences with an optional shared step budget. A nil budget
+// gives the event the full per-event step cap on its own (the standalone case).
+// A non-nil budget is drawn down by the steps this expansion consumes and shared
+// across a batch (Parsed.EventOccurrences, or a whole redraw via the store), so a
+// flood of pathological events can't multiply the per-event bound into a freeze;
+// once the shared budget is spent, further events degrade to their base instance.
+func (e *Event) occurrences(from, to time.Time, budget *StepBudget) ([]Occurrence, error) {
 	dur := e.Duration()
 
 	hasRRULE := e.Raw.Props.Get(ical.PropRecurrenceRule) != nil
@@ -37,6 +47,19 @@ func (e *Event) Occurrences(from, to time.Time) ([]Occurrence, error) {
 
 	if !hasRRULE && !hasRDATE {
 		return e.baseInstance(from, to), nil
+	}
+
+	// Each event may step at most the per-event cap, further limited to whatever
+	// the shared budget has left. An exhausted budget degrades straight to the
+	// base instance without iterating — the same graceful fallback as a bad rule.
+	maxSteps := maxOccurrenceSteps
+	if budget != nil {
+		if budget.remaining <= 0 {
+			return e.baseInstance(from, to), nil
+		}
+		if budget.remaining < maxSteps {
+			maxSteps = budget.remaining
+		}
 	}
 
 	set, err := e.recurrenceSet(hasRRULE)
@@ -51,7 +74,10 @@ func (e *Event) Occurrences(from, to time.Time) ([]Occurrence, error) {
 
 	// Start the query one duration early so an instance that begins before the
 	// window but runs into it is still found — Between filters on start alone.
-	starts, ok := safeBetween(set, from.Add(-dur), to)
+	starts, used, ok := safeBetween(set, from.Add(-dur), to, maxSteps)
+	if budget != nil {
+		budget.remaining -= used
+	}
 	if !ok {
 		// rrule-go panics (index out of range in calcDaySet) while iterating some
 		// degenerate rules — e.g. a near-zero DTSTART year. Degrade to the base
@@ -83,35 +109,64 @@ const (
 	// contributes, so a single high-frequency event can't flood a view. Far above
 	// any realistic count (a month of hourly instances is < 800).
 	maxOccurrencesPerEvent = 10000
+
+	// maxAggregateOccurrenceSteps bounds the TOTAL raw recurrence steps across a
+	// batch of expansions sharing one StepBudget — every event in a resource, or
+	// every event across all visible calendars on a single redraw. The per-event
+	// cap (maxOccurrenceSteps) alone leaves the SUM unbounded: N far-anchored
+	// FREQ=SECONDLY events each burn the full per-event budget, so a redraw scales
+	// as N × per-event and freezes (measured: 50 such events ≈ 5s). This ceiling
+	// caps the sum instead; it sits comfortably above the per-event cap so a lone
+	// pathological event never starves legitimate siblings, yet far below what any
+	// realistic calendar view needs (real rules step a handful of times to reach
+	// the window), so it only ever bites hostile/degenerate input.
+	maxAggregateOccurrenceSteps = 2 << 20
 )
+
+// StepBudget is a shared ceiling on raw recurrence-iteration steps across a batch
+// of event expansions. Pass one budget to Parsed.EventOccurrencesBudgeted for
+// every resource in a redraw so the aggregate cost stays bounded regardless of
+// how many pathological events the cache holds; once it is spent, remaining
+// events degrade to their base instance rather than iterating. A nil *StepBudget
+// means "no shared cap" — each event still gets the per-event bound.
+type StepBudget struct {
+	remaining int
+}
+
+// NewStepBudget returns a StepBudget primed with the aggregate step ceiling.
+func NewStepBudget() *StepBudget {
+	return &StepBudget{remaining: maxAggregateOccurrenceSteps}
+}
 
 // safeBetween returns the recurrence-set instances in [from, to], bounded so a
 // pathological rule can neither hang nor exhaust memory: iteration stops after
-// maxOccurrenceSteps raw steps or maxOccurrencesPerEvent collected instances. It
-// also contains any panic rrule-go raises on a degenerate rule (ok=false) so the
-// caller can degrade instead of crashing. Vendored code must not be hand-edited,
-// so both guards live here at the call boundary. Within the bounds the result is
-// identical to set.Between(from, to, true).
-func safeBetween(set *rrule.Set, from, to time.Time) (starts []time.Time, ok bool) {
+// maxSteps raw steps or maxOccurrencesPerEvent collected instances. It reports
+// used, the number of steps actually consumed, so a shared StepBudget can be
+// drawn down across events. It also contains any panic rrule-go raises on a
+// degenerate rule (ok=false) so the caller can degrade instead of crashing.
+// Vendored code must not be hand-edited, so both guards live here at the call
+// boundary. Within the bounds the result is identical to set.Between(from, to, true).
+func safeBetween(set *rrule.Set, from, to time.Time, maxSteps int) (starts []time.Time, used int, ok bool) {
+	ok = true
 	defer func() {
 		if r := recover(); r != nil {
 			starts, ok = nil, false
 		}
 	}()
 	next := set.Iterator()
-	for steps := 0; steps < maxOccurrenceSteps; steps++ {
+	for used = 0; used < maxSteps; used++ {
 		v, valid := next()
 		if !valid || v.After(to) {
-			return starts, true
+			return
 		}
 		if !v.Before(from) {
 			starts = append(starts, v)
 			if len(starts) >= maxOccurrencesPerEvent {
-				return starts, true
+				return
 			}
 		}
 	}
-	return starts, true
+	return
 }
 
 // safeAfter returns the first recurrence instant strictly after `after` (or at or
@@ -224,6 +279,17 @@ func (e *Event) recurrenceSet(hasRRULE bool) (*rrule.Set, error) {
 // affects only its own instance here. That refinement can land with the
 // recurrence-editing step.
 func (p *Parsed) EventOccurrences(from, to time.Time) ([]Occurrence, error) {
+	return p.eventOccurrences(from, to, NewStepBudget())
+}
+
+// EventOccurrencesBudgeted is EventOccurrences with a caller-supplied StepBudget
+// shared across resources, so a whole redraw (store.EventOccurrencesVisible over
+// every visible calendar) is bounded in aggregate, not just per resource.
+func (p *Parsed) EventOccurrencesBudgeted(from, to time.Time, budget *StepBudget) ([]Occurrence, error) {
+	return p.eventOccurrences(from, to, budget)
+}
+
+func (p *Parsed) eventOccurrences(from, to time.Time, budget *StepBudget) ([]Occurrence, error) {
 	masters := map[string]*Event{}
 	overrides := map[string][]*Event{}
 	var uidOrder []string
@@ -256,7 +322,7 @@ func (p *Parsed) EventOccurrences(from, to time.Time) ([]Occurrence, error) {
 			// sibling component in the file (iron rule: degrade gracefully).
 			// Occurrences already degrades a bad rule to the base instance, so
 			// an error here is unexpected — but guard anyway.
-			occs, err := master.Occurrences(from, to)
+			occs, err := master.occurrences(from, to, budget)
 			if err != nil {
 				continue
 			}
