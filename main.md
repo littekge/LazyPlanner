@@ -285,7 +285,7 @@ The keyboard interface feels like **vim, not lazygit**: single keys for panel fo
 
 ### `:` commands
 
-`:sync` · `:config` (open in `$EDITOR`, reload on exit) · `:view month|week|day` · `:goto <date>` (smart-parsed) · `:search <text>` · `:account` (switch the active account, when more than one is configured) · `:calendar new|rename|color|hide|show` (server-side via sync where applicable; `color` with no hex opens the swatch picker; targets the focused task list when issued from the Tasks pane, symmetric with `e`/`d`) · `:conflicts` (list/resolve conflicted items) · `:help` · `:q`
+`:sync` · `:config` (open in `$EDITOR`, reload on exit) · `:view month|week|day` · `:goto <date>` (smart-parsed) · `:search <text>` · `:account` (switch the active account, when more than one is configured) · `:calendar new|rename|color|hide|show` (server-side via sync where applicable; `color` with no hex opens the swatch picker; `rename`/`color`/`hide`/`show` target the focused task list when issued from the Tasks pane, symmetric with `e`/`d`) · `:conflicts` (list/resolve conflicted items) · `:help` · `:q`
 
 Several commands accept a shorter alias: `:q`/`:quit`, `:search`/`:find`, `:account`/`:acct`, `:calendar`/`:cal`, `:conflicts`/`:conflict`, `:help`/`:h`.
 

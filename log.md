@@ -4,6 +4,19 @@
 
 ---
 
+## 2026-07-24 — Fix doc accuracy: scope `:calendar` task-list targeting to rename/color/hide/show (exclude new)
+
+- Accuracy fix for the v1.5.0 phase-2 doc batch. The `:calendar new|rename|color|hide|show` clause
+  stating it "targets the focused task list when issued from the Tasks pane" was incorrectly scoped
+  to the entire command, including `new`. Verified in `internal/ui/command.go`:289-294 — `:calendar
+  new` always opens a blank create form regardless of pane/mode; only `rename`/`color`/`hide`/`show`
+  retarget via `currentCalendarID()`.
+- Scoped the clause to the correct sub-verbs in three locations: main.md line 288 (`:` commands
+  section), README.md line 97 (Managing Calendars), internal/ui/help.go line 105 (`:calendar`
+  cheat-sheet entry).
+- Files modified: `main.md`, `README.md`, `internal/ui/help.go`.
+- Gate: `go build ./...`, `go vet ./...`, `gofmt -l internal/ui` all pass.
+
 ## 2026-07-24 — v1.5.0 phase-2 axis-extension triage: doc gaps #3/#4 (`:calendar` task-list targeting, agenda board wheel)
 
 - Doc-only fixes from the v1.5.0 phase-2 axis-extension triage (findings #3 and #4). No source

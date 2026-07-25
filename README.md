@@ -94,7 +94,7 @@ Editing (`e`), deleting (`d`), or grabbing (`m`) a recurring **event** opens a s
 
 ### Managing Calendars
 
-You can create and delete calendars/task lists in-app (`ic` / `il` to create a calendar / list, `d` to delete the focused pane's collection — confirmed by typing the collection's name, since it can't be undone — all offline-first), so you never need the NextCloud web UI. The in-app color field and `:calendar color` both accept `#rrggbb` or `#rrggbbaa` (the alpha byte is accepted but ignored). `:calendar` targets the focused task list when issued from the Tasks pane, symmetric with `e`/`d`. These CLI subcommands do the same directly on the server (via CalDAV `MKCALENDAR` / `DELETE`); they take the same connection flags/env vars as the other subcommands (see [Syncing](#syncing)).
+You can create and delete calendars/task lists in-app (`ic` / `il` to create a calendar / list, `d` to delete the focused pane's collection — confirmed by typing the collection's name, since it can't be undone — all offline-first), so you never need the NextCloud web UI. The in-app color field and `:calendar color` both accept `#rrggbb` or `#rrggbbaa` (the alpha byte is accepted but ignored). `:calendar rename`/`color`/`hide`/`show` target the focused task list when issued from the Tasks pane, symmetric with `e`/`d`. These CLI subcommands do the same directly on the server (via CalDAV `MKCALENDAR` / `DELETE`); they take the same connection flags/env vars as the other subcommands (see [Syncing](#syncing)).
 
 ```sh
 lazyplanner calendar list                          # show calendars + their server paths
