@@ -231,7 +231,7 @@ func (a *app) pasteMultiRoot(targetParent, targetCal string) {
 			}
 			err = a.reparentOps(src, root, targetParent, &ops, &rollback)
 		default:
-			err = a.moveSubtreeOps(root, targetParent, src.CalID, targetCal, &ops, &rollback)
+			err = a.moveSubtreeOps(root, targetParent, targetCal, &ops, &rollback)
 		}
 		if err != nil {
 			for i := len(rollback) - 1; i >= 0; i-- {
@@ -294,7 +294,7 @@ func (a *app) moveSubtree(uid, targetParent, srcCal, dstCal string) {
 	}
 	var ops []undoOp
 	var rollback []func()
-	if err := a.moveSubtreeOps(uid, targetParent, srcCal, dstCal, &ops, &rollback); err != nil {
+	if err := a.moveSubtreeOps(uid, targetParent, dstCal, &ops, &rollback); err != nil {
 		for i := len(rollback) - 1; i >= 0; i-- {
 			rollback[i]()
 		}
@@ -308,14 +308,16 @@ func (a *app) moveSubtree(uid, targetParent, srcCal, dstCal string) {
 }
 
 // moveSubtreeOps is the write half of a subtree move: relocate uid and all its
-// descendants from srcCal to dstCal, appending onto the caller's shared ops
-// (undo) and rollback (failure reversal) slices. Extracted from moveSubtree so
-// a multi-root paste can share ONE ops/rollback pair across every root — a
-// failure on root N rolls back roots 1..N-1 too. Returns the first error, if
-// any; the caller runs the rollback slice on failure and pushes undo/flashes
-// on success. Callers must confirm both calendars are writable (guardWrite or
-// the equivalent read-only check) before calling.
-func (a *app) moveSubtreeOps(uid, targetParent, srcCal, dstCal string, ops *[]undoOp, rollback *[]func()) error {
+// descendants into dstCal, appending onto the caller's shared ops (undo) and
+// rollback (failure reversal) slices. Each member is moved from its OWN calendar
+// (loc.CalID) — a subtree may span collections — so no single source calendar is
+// passed; the destination is the only shared target. Extracted from moveSubtree
+// so a multi-root paste can share ONE ops/rollback pair across every root — a
+// failure on root N rolls back roots 1..N-1 too. Returns the first error, if any;
+// the caller runs the rollback slice on failure and pushes undo/flashes on
+// success. dstCal must be writable (guardWrite); each member's source calendar is
+// read-only-checked here per member.
+func (a *app) moveSubtreeOps(uid, targetParent, dstCal string, ops *[]undoOp, rollback *[]func()) error {
 	uids := append([]string{uid}, a.descendants(uid)...)
 	ctx := context.Background()
 
@@ -339,8 +341,43 @@ func (a *app) moveSubtreeOps(uid, targetParent, srcCal, dstCal string, ops *[]un
 			return err
 		}
 		name := store.ResourceName(u)
-		// create: a fresh (dstCal, name) pair — u is moving into dstCal for the first
-		// time, so no resource can exist there yet to clobber.
+		// The member's REAL calendar. A subtree can span collections via a
+		// cross-collection RELATED-TO link (parent in list A, a child in list B, both
+		// server-synced — a legitimate state another client can create; descendants()
+		// links them globally), so each member's source side must target where it
+		// actually lives, not one caller-supplied source calendar.
+		srcC := loc.CalID
+		// The caller's read-only guard covers only the root's source (loc.CalID at
+		// paste-validation time) and dstCal; a cross-collection descendant can live
+		// in a THIRD calendar that was never checked. Never write there — honor the
+		// "read-only calendars are never written to" invariant per member.
+		if a.calReadOnly(srcC) {
+			return fmt.Errorf("a subtask lives in a read-only calendar — move blocked")
+		}
+
+		if srcC == dstCal {
+			// The member already resides in the destination collection: this is not a
+			// relocation. A create-then-delete would Put over, then Forget, the
+			// member's OWN resource — losing it (the pass-20 cross-collection defect).
+			// Rewrite in place instead (the root's parent link may have changed; a
+			// non-root is unchanged) with no source delete. Version-checked so a
+			// concurrent pull fails the move rather than being clobbered.
+			applied, err := a.store.PutIfUnchanged(ctx, dstCal, name, single, loc.Prev)
+			if err != nil {
+				return err
+			}
+			if !applied {
+				return fmt.Errorf("an item changed on the server — retry")
+			}
+			srcPrev := loc.Prev
+			*rollback = append(*rollback, func() { _, _ = a.store.Restore(ctx, dstCal, name, srcPrev) })
+			*ops = append(*ops, undoOp{calID: dstCal, name: name, prev: loc.Prev})
+			continue
+		}
+
+		// create: a fresh (dstCal, name) pair — u lives in srcC (≠ dstCal) and name
+		// derives from u's globally-unique UID, so nothing can exist at (dstCal, name)
+		// to clobber.
 		if _, err := a.store.Put(ctx, dstCal, name, single); err != nil {
 			return err
 		}
@@ -348,9 +385,9 @@ func (a *app) moveSubtreeOps(uid, targetParent, srcCal, dstCal string, ops *[]un
 		// leaves no tombstone).
 		*rollback = append(*rollback, func() { _ = a.store.Forget(ctx, dstCal, name) })
 
-		// Source side: remove just u. If other items still share the resource,
-		// rewrite it without u; only delete the file when u was its last item — so a
-		// co-resident bystander is never erased from the source.
+		// Source side: remove just u from its real calendar. If other items still
+		// share the resource, rewrite it without u; only delete the file when u was
+		// its last item — so a co-resident bystander is never erased from the source.
 		reduced, remaining, err := model.RemoveComponent(loc.Object, u, a.loc)
 		if err != nil {
 			return err
@@ -359,25 +396,25 @@ func (a *app) moveSubtreeOps(uid, targetParent, srcCal, dstCal string, ops *[]un
 			// Version-checked, never a bare Put: a sync pull updating a co-resident
 			// bystander between this loop's Locate and the rewrite must fail the move
 			// (caller rolls back) rather than be silently overwritten.
-			applied, err := a.store.PutIfUnchanged(ctx, srcCal, loc.Name, reduced, loc.Prev)
+			applied, err := a.store.PutIfUnchanged(ctx, srcC, loc.Name, reduced, loc.Prev)
 			if err != nil {
 				return err
 			}
 			if !applied {
 				return fmt.Errorf("an item changed on the server — retry")
 			}
-		} else if err := a.store.Delete(ctx, srcCal, loc.Name); err != nil {
+		} else if err := a.store.Delete(ctx, srcC, loc.Name); err != nil {
 			return err
 		}
 		// Reversal restores the original resource (full, with u) whether it was
 		// rewritten or deleted.
 		srcName, srcPrev := loc.Name, loc.Prev
-		*rollback = append(*rollback, func() { _, _ = a.store.Restore(ctx, srcCal, srcName, srcPrev) })
+		*rollback = append(*rollback, func() { _, _ = a.store.Restore(ctx, srcC, srcName, srcPrev) })
 
 		// Undo reverses both writes: delete the new copy, restore the original.
 		*ops = append(*ops,
 			undoOp{calID: dstCal, name: name, prev: nil},
-			undoOp{calID: srcCal, name: loc.Name, prev: loc.Prev},
+			undoOp{calID: srcC, name: loc.Name, prev: loc.Prev},
 		)
 	}
 	return nil

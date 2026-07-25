@@ -4,6 +4,34 @@
 
 ---
 
+## 2026-07-25 — Fix Pass-20 MED #2: moveSubtreeOps lost a cross-collection RELATED-TO child
+
+- **Finding (Pass 20 #2, MED, `internal/ui/yankpaste.go`):** `moveSubtreeOps` located each
+  subtree member's real calendar (`loc.CalID`) but hard-coded the caller's `srcCal` for every
+  source-side write/delete/restore, and treated the destination Put as a guaranteed fresh create.
+  Both premises break for a subtree spanning collections via a cross-collection RELATED-TO link
+  (parent in list A, child in list B, both synced — a legit state another client can create). Cut
+  the parent, paste into the child's OWN list: for the child `Locate` finds `B/C.ics` (not a fresh
+  create), so the bare Put clobbered it; the source Delete then targeted `srcCal=A` (no `C.ics`) and
+  errored; rollback's `Forget(B, C.ics)` deleted the child's REAL resource with no tombstone — the
+  child vanished. This was the pass-19 explicitly-OPEN residual, now confirmed and closed.
+- **Fix:** each member now uses its own `loc.CalID` (`srcC`) for all source-side ops; the dead
+  `srcCal` parameter was dropped from `moveSubtreeOps` (its two callers updated; the `moveSubtree`
+  wrapper keeps `srcCal` for its own `guardWrite`). When a member already resides in `dstCal`
+  (`srcC == dstCal`) the move is a rewrite-in-place via `PutIfUnchanged` with **no** source delete,
+  instead of create-then-delete-its-own-resource. Added a per-member `calReadOnly(srcC)` guard so a
+  cross-collection descendant in an un-checked third calendar can never be written (honors the
+  "read-only calendars are never written to" hard invariant — the caller only guards the root's
+  source + dstCal).
+- **Repro → regression guard:** `internal/ui/movesubtree_crosscoll_test.go`
+  (`TestMoveSubtreeCrossCollectionChildIsLost`, promoted from the audit repro) — RED before (child
+  no longer locatable after the failed move), GREEN after. Added to the version-check guardrail's
+  citation list in `CLAUDE.md`.
+- Files: `internal/ui/yankpaste.go`, `internal/ui/movesubtree_crosscoll_test.go`, `CLAUDE.md`.
+- Gate: `go test ./...`, `go test -race ./internal/ui/`, `go vet`, `staticcheck`, `go build` all
+  clean; `gofmt -l internal/ui` empty. No `main.md`/README change (behavior matches the documented
+  all-or-nothing cross-list move; this fixes a data-loss bug within it).
+
 ## 2026-07-25 — Fix Pass-20 HIGH: step-(A) remote-delete Forget clobbered a concurrent local edit
 
 - **Finding (Pass 20 #1, HIGH, `internal/sync/sync.go`):** `reconcileCalendar`'s
