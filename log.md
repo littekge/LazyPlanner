@@ -4,6 +4,25 @@
 
 ---
 
+## 2026-07-25 — Close both Pass-20 escaped mutation canaries (parseTimeHalf ceiling · weekdayStrip clamp)
+
+- Pass 20's mutation-canary phase flipped two correct boundaries that no test caught — test-coverage
+  holes, not code bugs. Closed both with direct boundary tests, each verified to kill its mutation.
+- **`parseTimeHalf` 24-hour ceiling** (`internal/model/quickadd.go`): the no-am/pm branch caps the
+  hour at 23, but no test fed an out-of-range hour, so `h > 23` → `h > 24` (accepting `24:00`, which
+  `time.Date` spills to the next day) survived. Added `internal/model/parsetimehalf_test.go`
+  (`TestParseTimeHalfHourCeiling`) pinning `0/23/23:59` accepted, `24:00/25:00/99:00` rejected, plus
+  the 12-hour am/pm ceilings. Confirmed RED under the mutation, GREEN on correct code.
+- **`weekdayStrip.moveCursor` upper clamp** (`internal/ui/weekdaystrip.go`): the clamp
+  `w.cursor > daysInWeek-1` had no test, so weakening it to `> daysInWeek` (letting the cursor reach
+  index 7, one past the last cell 6 and out of bounds for the `[daysInWeek]bool` selection array)
+  survived. Added `TestWeekdayStripCursorClampsAtRightEdge` (`internal/ui/weekdaystrip_test.go`),
+  which steps Right exactly onto the boundary (overshooting clamps under either version — only landing
+  on 7 exposes it) and asserts `cursor == 6`. Confirmed RED under the mutation (`cursor = 7`), GREEN
+  after.
+- Test-only change; no behavior, `main.md`, or README update. Gate clean (`go test ./...`, `go vet`,
+  `staticcheck`, `gofmt -l internal/`).
+
 ## 2026-07-25 — Fix Pass-20 LOW #5: SELECT day-range highlight exceeded the 366-day acted-on cap
 
 - **Finding (Pass 20 #5, LOW, `internal/ui/selection.go`):** the SELECT day-range materialization

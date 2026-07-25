@@ -47,6 +47,33 @@ func TestWeekdayStripToggleAndCursor(t *testing.T) {
 	}
 }
 
+// TestWeekdayStripCursorClampsAtRightEdge closes a Pass-20 mutation-canary escape:
+// moveCursor's upper clamp (`w.cursor > daysInWeek-1`) had no test, so weakening it
+// to `> daysInWeek` — letting the cursor reach index 7, one past the last cell 6 and
+// out of bounds for the [daysInWeek]bool selection array — went uncaught. Stepping
+// exactly onto 7 (not overshooting, which clamps under either version) is what
+// exposes it.
+func TestWeekdayStripCursorClampsAtRightEdge(t *testing.T) {
+	w := newWeekdayStrip("Repeat on")
+	w.setDays(nil)
+	handler := w.InputHandler()
+	noFocus := func(tview.Primitive) {}
+
+	// Press Right once more than there are cells; the cursor must stop at the last
+	// valid index (Sunday = 6), never step to 7.
+	for i := 0; i < daysInWeek; i++ {
+		handler(keyEv(tcell.KeyRight), noFocus)
+	}
+	if w.cursor != daysInWeek-1 {
+		t.Fatalf("cursor after over-scrolling right = %d, want %d (last valid cell)", w.cursor, daysInWeek-1)
+	}
+	// Space at the clamped edge toggles Sunday without an out-of-bounds panic.
+	handler(runeKey(' '), noFocus)
+	if got := w.days(); len(got) != 1 || got[0] != time.Sunday {
+		t.Fatalf("after clamping right + Space days() = %v, want [Sun]", got)
+	}
+}
+
 func TestWeekdayStripSelectionIsLegible(t *testing.T) {
 	w := newWeekdayStrip("Repeat on")
 	w.setDays([]time.Weekday{time.Tuesday})
