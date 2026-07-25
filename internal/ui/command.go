@@ -67,10 +67,14 @@ func (a *app) runCommand(line string) {
 			return
 		}
 		a.runSearch(args)
-		if a.searchQuery != "" {
+		if !blankQuery(a.searchQuery) {
 			a.setFocus(a.searchWidget())
 		}
-		a.echo(":search " + args)
+		// statusLeft/statusMid have dynamic colors on, so every echo/flash below that
+		// carries user-typed text (or a server-owned name) escapes it — otherwise a
+		// bracket run in the argument is swallowed as a style tag and repaints the
+		// rest of the status bar.
+		a.echo(":search " + tview.Escape(args))
 	case "account", "acct":
 		a.cmdAccount(args)
 	case "config":
@@ -83,7 +87,7 @@ func (a *app) runCommand(line string) {
 		a.showHelp()
 		a.echo(":help")
 	default:
-		a.flash("unknown command: " + name)
+		a.flash("unknown command: " + tview.Escape(name))
 	}
 }
 
@@ -116,11 +120,11 @@ func (a *app) switchAccount(name string) {
 		}
 	}
 	if match == "" {
-		a.flash("unknown account: " + name)
+		a.flash("unknown account: " + tview.Escape(name))
 		return
 	}
 	if strings.EqualFold(match, a.activeAccount) {
-		a.flash("already on " + match)
+		a.flash("already on " + tview.Escape(match))
 		return
 	}
 	a.echo(":account")
@@ -202,7 +206,7 @@ func (a *app) cmdConfig() {
 // application.
 func (a *app) applyConfigReload(res ConfigReload, err error) {
 	if err != nil {
-		a.flash("config: " + err.Error())
+		a.flash("config: " + tview.Escape(err.Error()))
 		return
 	}
 	// Adopt the reloaded account list so a :config-added/renamed account is visible
@@ -231,7 +235,7 @@ func (a *app) applyConfigReload(res ConfigReload, err error) {
 		}
 	}
 	if res.Warning != "" {
-		a.flash("config: " + res.Warning)
+		a.flash("config: " + tview.Escape(res.Warning))
 		return
 	}
 	a.flash("config reloaded")
@@ -253,7 +257,7 @@ func (a *app) cmdView(arg string) {
 		a.refocusCalendar()
 	}
 	a.updateStatus()
-	a.echo(":view " + arg)
+	a.echo(":view " + tview.Escape(arg))
 }
 
 // cmdGoto jumps the calendar to a smart-parsed date and shows it.
@@ -264,7 +268,7 @@ func (a *app) cmdGoto(arg string) {
 	}
 	qa := model.ParseQuickAdd(arg, a.now, a.loc)
 	if !qa.HasDate {
-		a.flash("goto: couldn't read a date from " + arg)
+		a.flash("goto: couldn't read a date from " + tview.Escape(arg))
 		return
 	}
 	day, _ := qa.At(model.DayStart(a.now), a.loc)
@@ -276,7 +280,7 @@ func (a *app) cmdGoto(arg string) {
 		a.refocusCalendar()
 	}
 	a.updateStatus()
-	a.echo(":goto " + arg)
+	a.echo(":goto " + tview.Escape(arg))
 }
 
 // cmdCalendar handles ":calendar <sub>" — rename/color push server-owned

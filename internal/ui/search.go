@@ -2,6 +2,7 @@ package ui
 
 import (
 	"fmt"
+	"slices"
 	"strings"
 
 	"github.com/gdamore/tcell/v2"
@@ -37,7 +38,7 @@ func (a *app) openSearch() {
 		switch key {
 		case tcell.KeyEnter:
 			a.root.RemovePage(pageSearch)
-			if a.searchQuery != "" {
+			if !blankQuery(a.searchQuery) {
 				// Land on the matched item, discarding the pre-search selection —
 				// but still pop the captured focus so the stack stays balanced.
 				if n := len(a.focusStack); n > 0 {
@@ -66,38 +67,59 @@ func (a *app) openSearch() {
 // changes only the selection, not the focus, so the search input keeps focus
 // while typing.
 func (a *app) runSearch(q string) {
-	a.searchQuery = q
-	if strings.TrimSpace(q) == "" {
+	if blankQuery(q) {
+		// Store "" rather than the raw text: matchIndices trims before comparing, so
+		// a whitespace-only query left active would match every row on the next n.
+		a.searchQuery = ""
 		return
 	}
-	labels, sel := a.searchItems()
+	a.searchQuery = q
+	labels, sel, _ := a.searchItems()
 	matches := matchIndices(labels, q)
 	if len(matches) == 0 {
-		a.flash("no match: " + q)
+		// Escaped: statusLeft has dynamic colors on, so a query containing a bracket
+		// run ("[red]") would be eaten as a style tag instead of echoed back.
+		a.flash("no match: " + tview.Escape(q))
 		return
 	}
 	a.searchIdx = 0
 	sel(matches[0])
-	a.flash(fmt.Sprintf("/%s  (1/%d)", q, len(matches)))
+	a.flash(fmt.Sprintf("/%s  (1/%d)", tview.Escape(q), len(matches)))
 }
 
 // searchNext moves to the next (dir=1) or previous (dir=-1) match. Matches are
-// recomputed so the cycle survives edits between presses.
+// recomputed on every press, and so is the position to step from: it is derived
+// from where the selection actually *is* (searchItems' cur, found by the task's
+// UID in Tasks mode — the same identity idiom sync-highlight preservation uses).
+// A remembered ordinal is only the fallback: an item added, deleted or synced
+// away between presses shifts every index, which used to make n stall or skip.
 func (a *app) searchNext(dir int) {
-	if a.searchQuery == "" {
+	if blankQuery(a.searchQuery) {
 		a.flash("no active search (/ to search)")
 		return
 	}
-	labels, sel := a.searchItems()
+	labels, sel, cur := a.searchItems()
 	matches := matchIndices(labels, a.searchQuery)
 	if len(matches) == 0 {
-		a.flash("no match: " + a.searchQuery)
+		a.flash("no match: " + tview.Escape(a.searchQuery))
 		return
 	}
-	a.searchIdx = (a.searchIdx + dir + len(matches)) % len(matches)
+	pos := slices.Index(matches, cur)
+	if pos < 0 {
+		// The selection is on no match at all (it was deleted, or the user moved
+		// off it): resume from the nearest surviving ordinal rather than restart.
+		pos = a.searchIdx
+		if pos >= len(matches) {
+			pos = len(matches) - 1
+		}
+		if pos < 0 {
+			pos = 0
+		}
+	}
+	a.searchIdx = (pos + dir + len(matches)) % len(matches)
 	sel(matches[a.searchIdx])
 	a.setFocus(a.searchWidget())
-	a.flash(fmt.Sprintf("/%s  (%d/%d)", a.searchQuery, a.searchIdx+1, len(matches)))
+	a.flash(fmt.Sprintf("/%s  (%d/%d)", tview.Escape(a.searchQuery), a.searchIdx+1, len(matches)))
 }
 
 // searchWidget is the primitive that owns the current mode's searchable list.
@@ -112,17 +134,27 @@ func (a *app) searchWidget() tview.Primitive {
 	}
 }
 
-// searchItems returns the labels of the current mode's collection plus a function
-// that selects the item at a given index (selection only — no focus change).
-func (a *app) searchItems() (labels []string, sel func(i int)) {
+// searchItems returns the labels of the current mode's collection, a function
+// that selects the item at a given index (selection only — no focus change), and
+// cur: the index the selection is currently on, or -1. cur is re-derived from the
+// live collection on every call, which is what lets n/N keep their place across a
+// rebuild instead of trusting an ordinal that the rebuild invalidated.
+func (a *app) searchItems() (labels []string, sel func(i int), cur int) {
+	cur = -1
 	switch a.mode {
 	case modeTasks:
 		var hits []treeHit
 		collectTreeHits(a.tree.GetRoot(), nil, &hits)
 		labels = make([]string, len(hits))
+		// The tree is rebuilt from scratch on every reload, so the highlighted row is
+		// located by UID rather than by node pointer or position.
+		uid := a.currentTreeUID()
 		for i, h := range hits {
 			if t, ok := h.node.GetReference().(*model.Todo); ok {
 				labels[i] = t.Summary
+				if uid != "" && t.UID == uid {
+					cur = i
+				}
 			}
 		}
 		sel = func(i int) {
@@ -137,6 +169,7 @@ func (a *app) searchItems() (labels []string, sel func(i int)) {
 		for i := 0; i < n; i++ {
 			labels[i], _ = a.agendaList.GetItemText(i)
 		}
+		cur = a.agendaList.GetCurrentItem()
 		sel = func(i int) { a.agendaList.SetCurrentItem(i) }
 	default: // calendar: search calendar names
 		n := a.calendars.GetItemCount()
@@ -144,9 +177,13 @@ func (a *app) searchItems() (labels []string, sel func(i int)) {
 		for i := 0; i < n; i++ {
 			labels[i], _ = a.calendars.GetItemText(i)
 		}
+		cur = a.calendars.GetCurrentItem()
 		sel = func(i int) { a.calendars.SetCurrentItem(i) }
 	}
-	return labels, sel
+	if cur >= len(labels) {
+		cur = -1
+	}
+	return labels, sel, cur
 }
 
 // currentSelectionRestore captures the current selection so Esc can put it back.
@@ -214,6 +251,12 @@ func collectTreeHits(node *tview.TreeNode, ancestors []*tview.TreeNode, out *[]t
 		collectTreeHits(c, childAnc, out)
 	}
 }
+
+// blankQuery reports whether a query is effectively empty — the single place that
+// decides it, so the callers that gate on "is a search active" cannot drift apart
+// from matchIndices, which trims before comparing (a whitespace-only query would
+// otherwise match every row).
+func blankQuery(q string) bool { return strings.TrimSpace(q) == "" }
 
 // matchIndices returns the indices of labels containing q (case-insensitive).
 func matchIndices(labels []string, q string) []int {

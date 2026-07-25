@@ -4,6 +4,78 @@
 
 ---
 
+## 2026-07-25 — Fix Pass-23 LOW ×3: blank search guard, identity-anchored `n`/`N`, status-bar tag escaping
+
+- Three LOW findings sharing `internal/ui/search.go` + `command.go`, so fixed as one increment.
+- **Whitespace-only query** (`search.go:69`): `" "` slipped past both empty-query guards and `n`/`N` then
+  matched every row — `runSearch` stored the raw text *then* returned, leaving a search "active" that
+  `matchIndices` trimmed to `""`. Added one decision point, `blankQuery`, now called by all four gates
+  (`runSearch`, `searchNext`, `openSearch`'s Enter handler, `:search`) so they can't drift from
+  `matchIndices` again — the drift *was* the root cause.
+- **Stale positional `searchIdx`** (`search.go:97`): `n` stalled or skipped after the collection changed.
+  `searchItems` now returns the index the selection is *currently* on, re-derived live each call — by
+  **UID** in Tasks mode via the existing `currentTreeUID` idiom (the project's established
+  identity-anchoring pattern), not by ordinal. `searchIdx` survives only as the clamped fallback for when
+  the selection sits on no match. No new App state was added (that would have needed an out-of-scope file).
+- **Unescaped user text in dynamic-colour status strings** (`search.go:81`, `command.go` ×4): a query like
+  `[white:black]` was parsed by tview as a colour tag and vanished from the status bar. `tview.Escape` now
+  applied at the concatenation boundary — at the 5 cited sites plus **4 more found in the same two files**
+  and both `/query (n/m)` counters.
+- **Guards:** `search_blank_test.go`, `search_staleidx_test.go`, `statusbar_tagescape_test.go`, each
+  closing both sides — a real query (incl. `"  beta  "`) still activates and cycles; `n`/`N` still walk
+  and wrap an unchanged collection; five bracket-free messages must render **byte-identical** so escaping
+  can't leak a stray `[]`. The stale-index fix was mutation-canaried (forcing `cur = -1` turns it RED).
+- **The tag-escaping class is materially wider than the finding stated** — ~10 further unescaped sites
+  outside the two files in scope, notably `calendar.go:74/82/84` (raw `cal.DisplayName`, inconsistent
+  with `render.go:37/66` which already escapes the same names) and `edit.go:1131` `flashErr`, the funnel
+  for ~15 `"X failed: " + err.Error()` sites where server text and file paths can carry brackets.
+  Escaping inside `flash()`/`echo()` is NOT viable — `recur_edit.go:299` deliberately passes tags — so
+  each call site must escape. Swept separately in the next entry.
+- **Honest test-quality note from the agent:** `TestSearchNextWalksEveryMatchWhenCollectionUnchanged`
+  still passes with `cur` forced to −1, so it guards the normal cycle but is *not* evidence the identity
+  anchor works; only the shrink test binds to the fix. Agenda/Calendars modes still resolve `cur` by
+  cursor ordinal rather than a per-row key — self-consistent within a press, but a rebuild that moves the
+  agenda selection to a different item at the same index would resume `n` from the wrong item. Untested.
+
+## 2026-07-25 — Fix Pass-23 HIGH + MED: RRULE decomposer rejects two rules it wrongly called representable
+
+- Both fixes make `RecurSpecFromRule` match its own stated contract (`main.md`:426 — "deliberately
+  conservative … any feature outside the vocabulary returns ok=false, and so does a rule that contradicts
+  its own anchor"). A rule wrongly declared representable is dangerous because a later grab/edit
+  **rewrites it from the spec**, silently changing the user's recurrence. Neither fix touches the
+  humanizer or `ROption()`; the `custom (…)` fallback engages automatically once ok=false.
+- **HIGH — `FREQ=YEARLY;BYMONTHDAY=n` with no BYMONTH** (`recurdecompose.go:144`): per RFC 5545 an
+  unqualified BYMONTHDAY on a YEARLY rule fires that day of **every** month. RED evidence: the rule
+  decoded ok as plain yearly, ground truth was **12 occurrences/year**, re-serialization dropped 11 of
+  them, and `ReanchoredRecurrence(+1 day)` did not block — the moved event had **0 occurrences** in the
+  target month. Now rejected; bytes verified untouched.
+- **MED — negative `INTERVAL`** (`recurdecompose.go:49`): parsed as `Interval=-1` and declared
+  representable, so a grab move minted an unbounded `FREQ=WEEKLY;BYDAY=TU` series from a rule whose real
+  series had one occurrence. Boundary verified against the vendored rrule-go rather than guessed:
+  `validator` errors on `Interval < 0` (unbuildable) while `NewRRule` normalizes `< 1` → 1, so
+  **negative is rejected and 0 is accepted** (0 is losslessly the spec's zero value).
+- **A test was pinning the bug.** `FREQ=YEARLY;BYMONTHDAY=22` sat in
+  `TestRecurSpecFromRuleAnchorConsistent` as an expected-representable row — the defect encoded as an
+  expectation. Moved to the unrepresentable catalogue.
+- **Guards:** `yearly_bymonthday_test.go` (incl. the both-sides case — `BYMONTH=7;BYMONTHDAY=20` still
+  decodes ok and round-trips to identity — and a bytes-preserved assertion) and `negative_interval_test.go`
+  (the −2/−1/0/1/2 row across all four frequencies). The existing catalogue tables in
+  `recurdecompose_test.go` gained four rows. `FuzzRecurrenceMutations` deliberately not extended: it
+  asserts no-panic + re-encodability, never decomposer semantics — an orthogonal property.
+- **Whole-surface audit, no further defects:** every `ROption` BY* field is now accounted for.
+  `COUNT=0/-3` and an UNTIL before DTSTART are accepted-but-degenerate, matching rrule-go's own
+  normalization (semantically lossless, byte-lossy on rewrite — the same trade as `INTERVAL=0`).
+- **Reported, not fixed (owner's call):** `FREQ=WEEKLY;BYDAY=TU,TH` with a **Monday** anchor is accepted
+  — the anchor isn't a member of its own recurrence set, exactly the "contradicts its own anchor" shape
+  the monthly and yearly branches reject. Identity holds and no bytes are lost, so it isn't a
+  representability bug, but it is an asymmetry in the contract.
+- **Carried residual:** the "accepted but actually unrepresentable" class is guarded only by a
+  hand-written catalogue, so an unenumerated shape can still slip through. A property fuzzer asserting
+  *ok=true ⟹ the re-serialized rule's occurrence set equals the original's* would close it structurally.
+  Also: rules that previously seeded the Repeat dropdown as Yearly/Weekly now seed as *Custom rule
+  (kept)* — a user-visible string change, verified by grep (no fixtures affected) but the UI suite must
+  run before merge.
+
 ## 2026-07-25 — Fix Pass-23 HIGH: LayoutDay's lane packing is a sweep line, not a Θ(n²) first-fit scan
 
 - **Finding (Pass 23 HIGH, `internal/model/timegrid.go`):** `LayoutDay`'s overlap-lane packing was
