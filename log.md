@@ -4,6 +4,43 @@
 
 ---
 
+## 2026-07-25 — Fix Pass-23 HIGH: heal-set strip becomes deny-by-default (4th reopening of the class)
+
+- **Finding (Pass 23 HIGH, `internal/model/decode.go`):** `allowedChildren` was **allow-by-default** —
+  `stripForbiddenChildren` only filtered containers that had a map entry. A phantom component nested
+  under an *unknown* container (`X-*`, VAVAILABILITY, a nested VCALENDAR) was therefore never stripped
+  at all, and go-ical's recursive `checkComponent` bricked the whole resource (valid siblings included)
+  on the first edit's `Encode()`. FOURTH reopening: pass 10 (top-level), pass 16 (VJOURNAL/VFREEBUSY),
+  pass 21 (recursion depth), pass 23 (unknown containers).
+- **Root cause of the recurrence — the guardrail itself was unsatisfiable.** It demanded `allowedChildren`
+  "carry an entry for every container `checkComponent` recurses into", but `encodeComponent` recurses into
+  *every* child regardless of name while `checkComponent` has cases for only the RFC 5545 core set. The
+  map can't name a type nobody has invented yet, so the enumeration could never be completed.
+- **Fix — deny-by-default, restricted to the types go-ical validates.** A container WITH an entry keeps
+  exactly its listed child types (unchanged). A container WITHOUT one keeps every child whose name is
+  *not* in the new `encoderValidatedComponents` table (the nine names `checkComponent` switches on) and
+  drops only those that are. The criterion is exactly "can fail an encode": `checkComponent` has **no
+  default case**, so a name outside that set gets nil cardinality lists and always returns nil.
+- **Why not blanket deny-by-default** (the first attempt, rejected before commit): it silently dropped
+  *valid* data on ingest — an RFC 7953 VAVAILABILITY's AVAILABLE sub-components, a vendor's X- payload —
+  a real iron-rule violation on valid input, broader than the owner-approved `dropUnusableTimezones`
+  exception. The premise enabling the narrower fix was verified against `vendor/.../encoder.go`, including
+  `encodeProp`'s other failure paths: a param double-quote is rejected at *decode* (both spellings) and
+  CR/LF in a value is healed by `sanitizePropValues`, so neither can reach the encoder.
+- **Repro → regression guards:** `internal/model/unknown_container_test.go` —
+  `TestUnknownContainerBricksResource` (3 sub-cases, RED before / GREEN after) plus
+  `TestUnknownContainerKeepsUnvalidatedChildren`, which pins the refinement (a VAVAILABILITY with a real
+  AVAILABLE child and an X-VENDOR blob must survive round-trip). Proven non-vacuous: reverting to blanket
+  deny makes it fail. `Parse` confirmed the sole call site of `stripForbiddenNesting`.
+- **Guardrail rewritten in place** (`CLAUDE.md`, PROTOCOL rule 9): the unsatisfiable enumeration is
+  replaced by the deny-by-default-restricted rule, with a symmetric warning in both directions — never
+  invert back to allow-by-default, and never widen the strip to *all* children of an unknown container.
+- **Named accepted cost:** a *valid* VEVENT/VTODO nested under an unknown container is still stripped
+  though it would have encoded fine — unreachable data (`Parse` walks only direct children), never a real
+  RFC shape. **Carried residual:** `encoderValidatedComponents` is now a fourth hand-mirrored table
+  (with `singleValuedProps`, the DTSTAMP-heal set, `allowedChildren`) and nothing tests any of them
+  against vendor's actual switch — that manual re-diff is what failed in three of the four reopenings.
+
 ## 2026-07-25 — Fix Pass-23 MED: time-grid event blocks stay inside their day column and the pane rect
 
 - **Finding (Pass 23 MED, `internal/ui/timegridview.go`):** when a day had more overlap lanes than the

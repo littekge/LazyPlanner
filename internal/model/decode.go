@@ -186,61 +186,122 @@ func dedupeProps(props ical.Props, names []string) {
 	}
 }
 
-// allowedChildren lists the only nested component types go-ical will encode
-// under each parent (encoder.go): a VEVENT or VTODO admits only VALARM, a
-// VTIMEZONE only STANDARD/DAYLIGHT. Any other nesting is malformed and, left in
-// place, blocks encoding the entire resource.
+// allowedChildren lists the nested component types that are legal below the
+// top-level VCALENDAR: a VEVENT or VTODO admits only VALARM, a VTIMEZONE only
+// STANDARD/DAYLIGHT, and VJOURNAL/VFREEBUSY/VALARM/STANDARD/DAYLIGHT admit
+// nothing at all (RFC 5545; go-ical's VALARM case is an empty TODO that rejects
+// nothing, so it silently recurses into junk).
 //
-// It must have an entry for EVERY non-calendar container type go-ical's encoder
-// recurses into — that recursion is what makes a phantom component nested at ANY
-// depth brick the whole resource: encodeComponent validates every child at every
-// depth, so a VEVENT/VTODO missing DTSTAMP (or with DTEND+DURATION) nested under a
-// VALARM/STANDARD/DAYLIGHT fails checkComponent and takes its valid top-level
-// siblings down with it. VALARM, STANDARD, and DAYLIGHT admit NO nested components
-// at all per RFC 5545 (go-ical's VALARM case is an empty TODO that rejects
-// nothing, so it silently recurses into junk), so an empty allow-set strips
-// whatever a foreign object nested there — the same treatment as VJOURNAL/VFREEBUSY.
-// With every container covered, no VEVENT/VTODO/VJOURNAL/VFREEBUSY can survive
-// below the top level, so the top-level-only required-prop/mutual-exclusion heals
-// (ensureDTStamp, healComponentConstraints) suffice: there is nothing left nested
-// for them to miss. If go-ical grows a new container (or its VALARM case gains
-// child rules) on a dependency bump, add its entry here.
+// The map is consulted DENY-BY-DEFAULT: a component type with no entry admits no
+// child of a type go-ical's encoder validates (see encoderValidatedComponents).
+// That inversion is the whole point — an allow-by-default map would have to
+// enumerate every container go-ical's encoder recurses into, and that enumeration
+// is unsatisfiable: encodeComponent recurses into EVERY child at EVERY depth
+// regardless of name, while checkComponent has cases for only the RFC 5545 core
+// set. So an X- component, a VAVAILABILITY, or any type a future spec adds is a
+// container go-ical walks into but we can never have listed. A phantom
+// VEVENT/VTODO nested inside one (missing DTSTAMP, or carrying DTEND+DURATION)
+// fails checkComponent and takes its valid top-level siblings down with it —
+// bricking the whole resource for edit, complete, grab and push.
+//
+// Deny-by-default makes the safety net complete without enumerating the unknown:
+// no VEVENT/VTODO/VJOURNAL/VFREEBUSY can survive below the top level, so the
+// top-level-only required-prop/mutual-exclusion heals (ensureDTStamp,
+// healComponentConstraints) suffice — there is nothing left nested for them to
+// miss. On a go-ical bump, entries need adding here only to KEEP legal nesting
+// that go-ical newly permits; a container it newly recurses into is already safe.
 var allowedChildren = map[string]map[string]bool{
-	ical.CompEvent:    {ical.CompAlarm: true},
-	ical.CompToDo:     {ical.CompAlarm: true},
-	ical.CompTimezone: {ical.CompTimezoneStandard: true, ical.CompTimezoneDaylight: true},
-	// go-ical forbids ANY nested component under VJOURNAL/VFREEBUSY (encoder.go),
-	// so an empty allow-set strips whatever a foreign object nested there.
-	ical.CompJournal:  {},
-	ical.CompFreeBusy: {},
-	// RFC 5545 gives these no sub-components; strip anything nested inside them so
-	// a phantom component can't reach (and fail) go-ical's recursive validation.
+	ical.CompEvent:            {ical.CompAlarm: true},
+	ical.CompToDo:             {ical.CompAlarm: true},
+	ical.CompTimezone:         {ical.CompTimezoneStandard: true, ical.CompTimezoneDaylight: true},
+	ical.CompJournal:          {},
+	ical.CompFreeBusy:         {},
 	ical.CompAlarm:            {},
 	ical.CompTimezoneStandard: {},
 	ical.CompTimezoneDaylight: {},
 }
 
 // stripForbiddenNesting removes illegally-nested child components so the object
-// stays encodable. An event/todo can only ever contain a VALARM; anything else
-// found nested there is corruption (never addressable as a real item, since Parse
-// only walks the calendar's direct children), and dropping it keeps the parent
-// item editable instead of making the whole resource unwritable.
+// stays encodable. Nothing it drops was ever addressable as a real item — Parse
+// surfaces only the calendar's direct VEVENT/VTODO children — so dropping the
+// corruption keeps the surviving top-level items editable instead of making the
+// whole resource unwritable. Only nested components are removed; a component's
+// own properties are never touched (the iron rule).
 func stripForbiddenNesting(cal *ical.Calendar) {
+	// A VCALENDAR is the iCalendar object itself, never a component inside one.
+	// go-ical recurses into a nested one and rejects it — empty ("calendar is
+	// empty") or otherwise held to the full VCALENDAR prop rules — so it bricks
+	// the resource. Its contents are invisible to Parse either way.
+	kept := cal.Children[:0]
+	for _, comp := range cal.Children {
+		if comp.Name == ical.CompCalendar {
+			continue
+		}
+		kept = append(kept, comp)
+	}
+	cal.Children = kept
+
 	for _, comp := range cal.Children {
 		stripForbiddenChildren(comp)
 	}
 }
 
+// encoderValidatedComponents is the set of component names go-ical's
+// checkComponent (encoder.go) has a switch case for. Membership is the strip
+// criterion for an unknown container's children, because it is exactly the set of
+// types that can FAIL an encode: checkComponent has no default case, so a
+// component whose name is outside this set gets nil exactlyOneProps/atMostOneProps
+// and always returns nil — it cannot brick the resource no matter how malformed
+// it looks. Stripping such a component would therefore destroy user data (a real
+// RFC 7953 VAVAILABILITY's AVAILABLE sub-components, a vendor's X- payload) to buy
+// nothing.
+//
+// VALARM is included even though its case is presently an empty TODO that rejects
+// nothing: it is a case go-ical intends to fill in, and a nested VALARM outside a
+// VEVENT/VTODO is meaningless anyway, so listing it costs nothing and survives the
+// bump that gives it rules. Re-diff this set against checkComponent's switch
+// whenever the go-ical dependency changes.
+var encoderValidatedComponents = map[string]bool{
+	ical.CompCalendar:         true,
+	ical.CompEvent:            true,
+	ical.CompToDo:             true,
+	ical.CompJournal:          true,
+	ical.CompFreeBusy:         true,
+	ical.CompTimezone:         true,
+	ical.CompTimezoneStandard: true,
+	ical.CompTimezoneDaylight: true,
+	ical.CompAlarm:            true,
+}
+
+// stripForbiddenChildren applies the deny-by-default rule to comp and,
+// recursively, to the children it keeps.
+//
+// A comp whose name HAS an allowedChildren entry keeps exactly the listed child
+// types — go-ical validates that nesting explicitly, so anything else is corruption.
+//
+// A comp whose name has NO entry is an unknown container (X-*, VAVAILABILITY, a
+// type from a spec that postdates this code). It keeps every child go-ical's
+// encoder does not validate and drops only those it does — the narrowest cut that
+// still closes the brick class, since an unvalidated child can never fail the
+// encode while a validated one nested there is unreachable corruption (Parse
+// surfaces only the calendar's direct children, so no such component was ever an
+// addressable item).
 func stripForbiddenChildren(comp *ical.Component) {
-	if allowed, ok := allowedChildren[comp.Name]; ok {
-		kept := comp.Children[:0]
-		for _, child := range comp.Children {
+	allowed, known := allowedChildren[comp.Name]
+	kept := comp.Children[:0]
+	for _, child := range comp.Children {
+		if known {
 			if allowed[child.Name] {
 				kept = append(kept, child)
 			}
+			continue
 		}
-		comp.Children = kept
+		if !encoderValidatedComponents[child.Name] {
+			kept = append(kept, child)
+		}
 	}
+	comp.Children = kept
+
 	for _, child := range comp.Children {
 		stripForbiddenChildren(child)
 	}
