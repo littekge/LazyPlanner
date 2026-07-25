@@ -14,6 +14,11 @@
 > adjudicate; this is the number that must reach zero before phase 2 closes. (A completeness-critic
 > pass re-scoped the `GRAB × Calendars/Tasks/Agenda overview` drop and added the 12 rows it found
 > missing — 517 → 529 — see §2.2 and §3.)
+>
+> **Post-phase-2 axis extension (2026-07-24, owner-requested).** Two further axes were verified
+> beyond the original key×context scaffold: the `:` command surface (35 rows, §7) and the mouse
+> contract (29 rows, §8). Verified-cell count is now 529 key×context + 35 command + 29 mouse =
+> **593 total.** Non-hold findings from both extension slices are triaged in §9.
 
 ---
 
@@ -1395,3 +1400,171 @@ All 20 findings approved for action. Judgment calls settled by the owner:
 **Note on #14 (Enter):** the doc fix is narrow — correct README:120's stale "cycle a day's events"
 clause. `help.go:27` and the `render.go:735` hint bar were already corrected in phase 1
 (controller-verified 2026-07-24).
+
+---
+
+## 7. `:` command axis
+
+Phase-2 axis-extension cells (owner-requested): 35 verified rows covering every `:` command,
+alias, and error/edge case dispatched from `internal/ui/command.go`, cross-checked against
+`main.md`, `README.md`, and `internal/ui/help.go`.
+
+| Command/alias | Case | Actual behavior (file:line) | main.md | README | :help | Verdict |
+|---|---|---|---|---|---|---|
+| `sync` | no-arg, accounts configured | Runs `triggerSync()` async (coalesces overlapping calls, flashes on failure, refreshes + `renderSyncStatus` on completion), then `a.echo(":sync")` immediately — `command.go:55-57`, `sync.go:14-41` | "manual `:sync` always available" (line 530) | `:sync` listed as first command (line 85); `r` = alias (line 146) | `"r"→"sync now (= :sync)"`; `": "` row lists `:sync` (help.go:101-102) | holds |
+| `sync` | no accounts configured (`a.syncFn == nil`) | Flashes `"Sync not configured — set [server] in config.toml"` — `sync.go:15-18` — referencing a config section removed in the v1.2.0 breaking change and now hard-rejected by the loader (`config.go:221-226`) | Config schema section documents `[server]` removed → `[[account]]` (line 365) | Sample config uses `[[account]]` only (lines ~25-44) | n/a | **inconsistent** (finding 1) |
+| `q`/`quit` | either | `a.tv.Stop()` — `command.go:58-59` | `:q` listed (line 288); aliases line lists `:q`/`:quit` (line 290) | `:q` listed (line 85); aliases line (line 85) | `": "` row + aliases row (help.go:102-103) | holds |
+| `view` | no-arg / invalid arg | `views` map lookup fails → `a.flash("view: month \| week \| day")`, no mode/echo change — `command.go:241-246` | `:view month\|week\|day` (line 288) | `:view month\|week\|day` (line 85) | `": "` row lists `:view` (help.go:102, no dedicated row) | holds |
+| `view` | valid arg (`month`/`week`/`day`, case-insensitive) | Sets `a.viewMode`, switches to `modeCalendar` if needed else rebuilds center + refocuses, `updateStatus`, echoes `":view <arg>"` — `command.go:240-256` | same | same | same | holds |
+| `goto` | no-arg | `a.flash("goto <date> (e.g. 'jul 20', 'tomorrow', 2026-07-20)")` — `command.go:260-263` | `:goto <date>` (smart-parsed) (line 288) | `:goto` listed (line 85); `gd` opens `:goto` prefilled (line 85) | `": "` row (help.go:102); `"g d"` row under Calendar section (help.go:93) | holds |
+| `goto` | unparseable arg | `model.ParseQuickAdd` finds no date → `a.flash("goto: couldn't read a date from " + arg)` — `command.go:264-268` | n/a (parsing rules "documented in `:help`", line 185) | n/a | Quick-add tokens section documents date grammar generally (help.go:51); no specific error text | holds (behavior traced + sane; no doc claims a specific error string, and an obscure error path needn't be documented — no divergence) |
+| `goto` | valid date (smart-parsed incl. `next …`/`in N …`) | Sets `a.anchor`, switches to `modeCalendar`/rebuilds, echoes `":goto <arg>"` — `command.go:258-279` | "`:goto` and `sd` gain the whole family automatically" (line 397) | same | same | holds |
+| `search`/`find` | no-arg | Both aliases hit the identical `case "search", "find":` — `a.flash("search <text>")`, returns before echo — `command.go:64-68` | `:search <text>` command form (line 235); aliases line (290) | `:search` listed (line 85); aliases line (85) | `": "` row (help.go:102); aliases row (help.go:103) | holds |
+| `search`/`find` | with text | `a.runSearch(args)`; if a query resulted, focuses the search widget; echoes `":search <args>"` (note: echo string always says `search`, even via `:find`) — `command.go:64-73` | `/` incremental search; `:search <text>` is "the command form" (line 235) | same | same | holds (alias behaves identically; echo text not alias-sensitive, undocumented either way) |
+| `account`/`acct` | no accounts configured | Echoes `":account"` **before** the check, then `a.flash("no accounts configured")` — `command.go:93-98` | `:account` with no accounts "errors cleanly" (line 371) | n/a explicit, but implied by "when more than one account is configured" framing (line 44) | `:account` row: "switch account... (multi-account)" (help.go:106) | holds (error text matches "errors cleanly"); eager-echo noted in finding 2 |
+| `account`/`acct` | bare, ≥1 account | `a.openAccountPicker()` — modal list, active marked — `command.go:99-101, 139-181` | "bare `:account` opens a picker modal" (line 371) | "bare `:account` to pick from a list" (line 87) | "or bare to pick from a list" (help.go:106) | holds |
+| `account`/`acct` | `<name>`, unknown | `switchAccount` case-insensitive match fails → `a.flash("unknown account: " + name)` — `command.go:109-121` | "an unknown name is an error flash" (line 371) | n/a explicit | n/a explicit | holds |
+| `account`/`acct` | `<name>`, already active | `a.flash("already on " + match)` — `command.go:122-124` | "Switching to the current account is a no-op flash" (line 371) | n/a explicit | n/a explicit | holds |
+| `account`/`acct` | `<name>`, valid switch | `requestSwitch` records target, `a.tv.Stop()`; `run`'s wind-down flushes pending pushes, main reopens the new account — `command.go:126-135`, corroborated by main.md's teardown/rebuild design | ":account <name> switches directly" + full teardown/rebuild design (lines 369-371, 558) | "flushes pending changes, then reopens on the chosen account's cache" (line 87) | help.go:106 | holds |
+| `config` | `editConfig == nil` (no config file) | Echoes `":config"` then `a.flash(":config unavailable (no config file)")` — `command.go:186-190` | implicit — config is always generated on first run (line 544); this is a defensive branch for the no-config-file case (e.g. tests/headless) | n/a | `:config` row: "edit config in $EDITOR, reload on exit" (help.go:104) — doesn't cover this case | holds (sane fallback; undocumented edge case, not contradicted) |
+| `config` | normal (opens `$EDITOR`, reloads) | `a.tv.Suspend` releases the screen, runs `editConfig()`, applies via `applyConfigReload` — reloads accounts list/active account, sync closure, color mode; flashes reload warning or "config reloaded" — `command.go:192-237` | "`:config` command that opens the file in `$EDITOR` and reloads on exit" incl. account-list/color_mode live-apply, connection-change caveat (lines 544, 373) | "`:config` opens config.toml in $EDITOR and reloads on exit..." (line 88) | `:config` row (help.go:104) | holds |
+| `calendar`/`cal` | `new` (both need no selection) | `strings.EqualFold(sub,"new")` matches before the id-selection check; opens create form — `command.go:289-293` | `:calendar new\|rename\|color\|hide\|show` (line 288) | same (line 85) | "new / rename / color / hide / show (`new` opens the create form...)" (help.go:105) | holds |
+| `calendar`/`cal` | `new`/`create` alias check | No `"create"` branch exists anywhere in code or docs | lists only `new` | lists only `new` | lists only `new` | holds (finding 4 — explicitly verified non-issue) |
+| `calendar`/`cal` | no calendar/tasklist highlighted, any sub other than `new` | `currentCalendarID()` returns `""` → `a.flash("select a calendar first")`, no echo — `command.go:295-299` | n/a explicit | n/a explicit | n/a explicit | holds (sane guard, undocumented but unsurprising) |
+| `calendar`/`cal` | `rename` no-arg | `a.flash("calendar rename <new name>")`, no echo — `command.go:302-305` | n/a explicit | n/a explicit | n/a explicit | holds |
+| `calendar`/`cal` | `rename` on read-only calendar | `guardWrite` blocks → `a.flash("That calendar is read-only")` — `command.go:306-308`, `calendar.go:33-39` | "Read-only calendars are never written to" (Hard invariant, CLAUDE.md) | n/a explicit re: `:calendar` | n/a explicit | holds |
+| `calendar`/`cal` | `rename <name>` success | `store.UpdateCalendarMeta`, rebuilds Calendars+Tasklists panes, `scheduleSyncDebounced`, echoes `":calendar rename"`, flashes "Renamed (pushes on next sync)" — `command.go:309-317` | "server-side via sync where applicable" (line 288); PROPPATCH design (line 187, 318) | "`:calendar` edits are offline-first and sync both ways — a rename/recolor pushes via PROPPATCH" (line 89) | help.go:105 | holds |
+| `calendar`/`cal` | `color` (no hex) | Echoes `":calendar color"` immediately, then `a.openColorPicker(id)` — opens swatch grid (re-checks calendar exists + `guardWrite` inside) — `command.go:318-323`, `calendar.go:236-248` | "`:calendar color` with no hex opens the swatch picker directly" (line 187, 288) | "`color` with no hex opens the swatch picker" (line 85) | "`color` with no hex opens the swatch picker" (help.go:105) | holds (mechanically correct; eager-echo noted in finding 2) |
+| `calendar`/`cal` | `color <bad-hex>` | `normalizeColor` fails → `a.flash("calendar color <#rrggbb>")` — `command.go:324-328`, but `":calendar color"` was already echoed at line 319 regardless of outcome | n/a explicit | n/a explicit | n/a explicit | **inconsistent** (finding 2) |
+| `calendar`/`cal` | `color #rrggbb`/`#rrggbbaa` valid | `normalizeColor` accepts 7/9-char hex, `applyCalendarColor` re-checks `guardWrite`, `UpdateCalendarMeta`, rebuilds Calendars, `scheduleSyncDebounced`, flashes "Color set (pushes on next sync)" — `command.go:324-329`, `calendar.go:252-263` | "accepts #rrggbb or #rrggbbaa (Apple calendar-color forms)" (normalizeColor doc, line 353 of command.go itself — mirrored in README) | "accept `#rrggbb` or `#rrggbbaa` (the alpha byte is accepted but ignored)" (line 97) | n/a explicit on alpha | holds |
+| `calendar`/`cal` | `hide` | `a.hidden[id] = true`; `afterVisibilityChange` persists state + rebuilds Calendars/Agenda/current view; echo `":calendar hide"` — `command.go:330-333` | listed as available sub-verb (line 288); local-only preference design (line 540: hiding stored in state file, not config) | listed (line 85) | listed (help.go:105) | holds |
+| `calendar`/`cal` | `show` | `delete(a.hidden, id)`; same rebuild path; echo `":calendar show"` — `command.go:334-337` | same | same | same | holds |
+| `calendar`/`cal` | any sub-verb while Tasks pane focused | `currentCalendarID()` returns the highlighted **task list**'s id instead of a calendar's (`command.go:343-350`), so rename/color/hide/show act on the task list | Not mentioned on the `:calendar` line; only implied by the unrelated `e`-key dual-target note (line 187) | Not mentioned on the `:calendar` line | Not mentioned on the `:calendar` row | **doc-stale** (finding 3) |
+| `calendar`/`cal` | unrecognized sub-verb (e.g. `:calendar bogus`) | Falls to `default:` → `a.flash("calendar new\|rename\|color\|hide\|show")` — `command.go:338-340` (only reached if a calendar/tasklist is selected; otherwise the id-empty guard fires first with "select a calendar first") | n/a explicit | n/a explicit | n/a explicit | holds |
+| `conflicts`/`conflict` | none pending | `a.flash("No conflicts to resolve")`, no echo (returns before `a.echo`) — `command.go:80-81`, `conflicts.go:22-26` | n/a explicit | n/a explicit | n/a explicit | holds |
+| `conflicts`/`conflict` | ≥1 pending | Echoes `":conflicts"`, opens modal list (Enter resolves, j/k/h/l move, Esc/q closes) — `conflicts.go:27-45` | "`:conflicts` (list/resolve conflicted items)" (line 288); conflict-keeping design (line 530 area / Hard invariants) | "resolve in-app with `:conflicts` — keep local / keep server" (line 162) | "`:conflicts`, resolve items... Enter resolves, j/k/h/l move, Esc/q closes" (help.go:107) | holds |
+| `help`/`h` | either | `a.showHelp()` then `a.echo(":help")` (echo text is literally `":help"` even via the `h` alias) — `command.go:82-84` | `:help` listed (line 288); aliases line lists `:help`/`:h` (line 290) | `:help` listed (line 85); aliases (85) | `"?"` row: "this help..." (help.go:108); `": "` row lists `:help` in the composite line but `:help` itself is not called out with its own row the way `:config`/`:calendar`/`:account`/`:conflicts` are | holds (minor completeness gap in help.go's own row-per-command pattern, not a contradiction) |
+| (unknown) | `:bogus` / any unrecognized `name` | `default:` case → `a.flash("unknown command: " + name)`, no echo — `command.go:85-87` | Not documented (no doc describes unknown-command behavior) | Not documented | Not documented | holds (nothing promised, nothing broken; noted per the audit brief's explicit ask) |
+| (empty) | `:` alone / blank line | `runCommand` trims, strips a leading `:`, and returns silently on `line == ""` — `command.go:45-50` | Not documented | Not documented | Not documented | holds |
+
+Note on aliases generally: every alias pair (`q`/`quit`, `search`/`find`,
+`account`/`acct`, `calendar`/`cal`, `conflicts`/`conflict`, `help`/`h`) is
+implemented as a shared `case` label in the same `switch`
+(`command.go:54-87`), so by construction no alias can diverge from its
+primary in behavior — only in what's echoed (`:help`/`:h` both echo the
+literal string `":help"`; `:search`/`:find` both echo `"search "+args`).
+Docs list all six pairs identically in main.md (line 290), README (line 85),
+and help.go (line 103) — this axis fully holds.
+
+---
+
+## 8. Mouse contract axis
+
+Phase-2 axis-extension cells (owner-requested): 29 verified rows covering every mouse action ×
+context dispatched from `internal/ui/mouse.go`, `internal/ui/agendaboard.go`, and the custom-drawn
+calendar grids' inherited `tview.Box` defaults, cross-checked against `main.md` §Mouse,
+`README.md` Usage, and `internal/ui/help.go` (no mouse content there at all).
+
+| Mouse action | Context | Actual behavior (file:line) | main.md | README | :help | Verdict |
+|---|---|---|---|---|---|---|
+| Left single-click | Calendars overview pane | `mouse.go:39-42` — `a.calendars.InRect` switches app mode to `modeCalendar` if not already; event still returned unmodified (`return ev, action`, line 91) so tview's native `List.MouseHandler` (`list.go:736-753`) also runs: selects the row and fires `SetSelectedFunc` (`app.go:601`, focuses the calendar primitive). | "Click focuses a pane and selects the item under it" (line 293) | "click focuses a pane and selects the item under it" (line 93) | — (no mouse mention anywhere in help.go) | holds |
+| Left single-click | Tasks overview pane | `mouse.go:43-46` — same pattern, switches to `modeTasks`; native `List` select fires `app.go:623` (`a.setFocus(a.tree)`). | same line 293 | same line 93 | — | holds |
+| Left single-click | Agenda overview list | `mouse.go:47-50` — switches to `modeAgenda`; native `List` select drives the board via its changed func. | same line 293 | same line 93 | — | holds |
+| Left single-click | Center Agenda board (Agenda mode) | `mouse.go:51-56` — `a.agenda.InRect(x,y) && a.mode == modeAgenda` (mode guard load-bearing per comment lines 52-53, since the board's `Box` rect is stale when hidden); `itemAtY(y)` (`agendaboard.go:140+`) maps row→item, `-1` on header/gap/out-of-range; on a hit, `a.agendaList.SetCurrentItem(idx)` drives the board's own selection via its changed func. | "including the row under the cursor on the center agenda board" (line 293) | "including the center agenda board" (line 93) | — | holds — regression: `TestAgendaBoardClickSelects` |
+| Left single-click | Task tree (Tasks mode) | No case in `mouse.go`'s `MouseLeftClick` switch at all for `a.tree` — relies entirely on tview's own routing. Since `Pages.MouseHandler` (`pages.go:314-321`) forwards only to the **visible** front page, the tree only ever receives the click while it's actually the front page (`modeTasks`), so no stale-rect exposure exists for single-click (unlike double-click, see below). Native `TreeView.MouseHandler` (`treeview.go:878-894`) selects the node and fires `SetSelectedFunc` = `app.go:640-641` (`node.SetExpanded(!node.IsExpanded())`) — this **is** the folder-click-expand mechanism. | folder-click-expand: "clicking a folder in the task tree expands/collapses it" (line 293-294) | not stated in README's mouse sentence (only click-focuses + double-click + wheel) | — | holds — regression: `TestTreeClickTogglesFolder` |
+| Left single-click | Calendar month/week/day grid | `calendarView`/`timeGridView` embed `*tview.Box` and define no `MouseHandler`, so `Box`'s default applies: `MouseLeftDown`→`setFocus(box)` only (`box.go:236-244`); no cell/event selection. Matches the deferred **Future-versions** item, not a present-day claim. | Not claimed as working today — main.md line 511 lists "Full-cell click mapping in the calendar grids" as a **deferred** Future-versions item (a click doesn't yet select the cell under it). | Not claimed. | — | holds (matches documented deferral) |
+| Left single-click | Detail pane | `a.detail` is a `*tview.TextView` (`app.go:468`) with no custom `MouseHandler`, no case in `mouse.go`. Native `TextView.MouseHandler` (`textview.go:1395-1419`): `MouseLeftDown`→`setFocus(t)`; `MouseLeftClick` only does region-highlight work if `regionTags`+`SetRegions` were set, which the Detail pane never does (`app.go:538` only sets `SetDynamicColors`/`SetWrap`) — so the click is effectively a no-op beyond taking tview focus. | Not mentioned in the Mouse section at all — Detail isn't named as a click target. | Not mentioned. | — | holds (no doc claims Detail is clickable; code matches: no-op selection-wise) |
+| Left single-click | Forms/modals | `mouse.go:23-25` — `a.modalOpen()` (front page ≠ `pageMain`) returns `ev, action` unmodified, i.e. app-level code does **not** reinterpret the click; tview's native per-widget click handling runs (form fields, `DropDown` lists — which already carry the theme-adaptive `selectionStyle` per the guardrail in `addDropDown` — buttons, the help `TextView`, etc). | Not explicitly itemized per-widget; implied by "click focuses a pane and selects the item" as the general mouse model, with modals "owning" input per the comment at `mouse.go:22`. | Not itemized. | — | holds |
+| Left double-click | Calendars overview pane | No case in `mouse.go`; `tview.List.MouseHandler` has no `MouseLeftDoubleClick` case at all (`list.go:736-775`) — inert beyond whatever the click portion of the gesture already did. | Doc scopes double-click to "tree or agenda board" only (line 294) — overview lists correctly excluded. | Same scoping (line 93). | — | holds (see Divergence #2 — untested but doc-consistent) |
+| Left double-click | Tasks overview pane | Same as above. | same | same | — | holds |
+| Left double-click | Agenda overview list | Same as above (`a.agendaList` is a plain `List`, distinct from the board `a.agenda`). | same | same | — | holds |
+| Left double-click | Center Agenda board (Agenda mode) | `mouse.go:77-88` — **whole case now mode-guarded** (`a.agenda.InRect(x,y) && a.mode == modeAgenda`, fixed 2026-07-24 per `log.md` "agenda-board double-click guarded by mode (Batch C, fix 2/4)" — previously the mode check was only *inside* the case body, gating re-select but not the trailing `editSelected()`, so a stale-rect click from another mode still opened the form). Re-targets via `itemAtY(y)` before `editSelected()` so the row actually clicked (not the previously-selected row) gets edited. | "double-click opens the edit form for the item under the cursor (tree or agenda board)" (line 294) | "double-click opens the edit form for the item under the cursor (tree or agenda)" (line 93) | — | holds — regression: `TestAgendaBoardDoubleClickEditsRowUnderCursor`, `TestAgendaBoardDoubleClickIgnoredOutsideAgendaMode` |
+| Left double-click | Task tree (Tasks mode) | `mouse.go:61-76` — **whole case mode-guarded** (`a.tree.InRect(x,y) && a.mode == modeTasks`), same 2026-07-24 fix applied to this sibling case (found vulnerable by the same audit, fixed alongside the board). Re-targets via `treeNodeAtY(y)` before `editSelected()`. `treeNodeAtY`'s upper bound (`idx >= len(visible)` → nil) is itself a pass-18-canary-closed regression (`TestTreeNodeAtYPastLastNode`, one row past the last node must not panic). | same line 294 | same line 93 | — | holds — regression: `TestDoubleClickEditsRowUnderCursor`, `TestTreeDoubleClickIgnoredOutsideTasksMode` |
+| Left double-click | Calendar month/week/day grid | No case in `mouse.go`; `Box` default has no `MouseLeftDoubleClick` handling either. Inert. | Not claimed (only tree/agenda board are named). | Not claimed. | — | holds |
+| Left double-click | Detail pane | No case in `mouse.go`; `TextView` has no `MouseLeftDoubleClick` case (`textview.go:1394-1419` lists only `MouseLeftDown`/`MouseLeftClick`/scroll). Inert. | Not claimed. | Not claimed. | — | holds |
+| Left double-click | Forms/modals | `modalOpen()` guard passes the event through unmodified — no app-level double-click reinterpretation inside a modal; whatever the modal's own widgets do natively (mostly nothing, per the List/TextView defaults above) is what happens. | Not itemized. | Not itemized. | — | holds |
+| Scroll wheel (up/down) | Calendars overview pane | Native `List.MouseHandler` `MouseScrollUp`/`MouseScrollDown` (`list.go:754-763`) adjusts `itemOffset`; `mouse.go` has no wheel case for any widget, so this always reaches tview's default untouched. | "the scroll wheel scrolls panes/lists" (line 294) | "Wheel scrolls." (line 93) | — | holds |
+| Scroll wheel (up/down) | Tasks overview pane | Same List default. | same | same | — | holds |
+| Scroll wheel (up/down) | Agenda overview list | Same List default. | same | same | — | holds |
+| Scroll wheel (up/down) | Center Agenda board (Agenda mode) | **No wheel handler** — `agendaBoard` embeds `*tview.Box`, defines no `MouseHandler` override, so `Box`'s default applies, which has *no* scroll case whatsoever (only `MouseLeftDown`→focus, `box.go:236-244`). The board's `scroll` field only moves by following the keyboard-driven selection (`agendaboard.go:23`, clamped in `Draw`/`layoutBlocks`). | Doc's blanket "the scroll wheel scrolls panes/lists" doesn't except the agenda board; the only wheel exception named is the calendar grid (line 294 parenthetical). | "Wheel scrolls." — same over-broad framing. | — | **doc-stale** — see Divergence #1 |
+| Scroll wheel (up/down) | Task tree (Tasks mode) | Native `TreeView.MouseHandler` `MouseScrollUp`/`MouseScrollDown` (`treeview.go:894-901`) sets `t.movement = treeScroll`; works whenever the tree is the visible front page (`modeTasks`), per `Pages.MouseHandler`'s visible-page-only routing. | "the scroll wheel scrolls panes/lists" (line 294) | "Wheel scrolls." (line 93) | — | holds |
+| Scroll wheel (up/down) | Calendar month/week/day grid | **Confirmed no wheel handler** — `calendarView`/`timeGridView` embed `*tview.Box`, no `MouseHandler` override, so `Box`'s default (no scroll case) applies. This is the case main.md explicitly documents as a deliberate drop. | "Wheel-paging the calendar month/week/day grid was considered and dropped — the keyboard `f`/`b` pages them; the custom grids take no wheel handler." (line 294, parenthetical) | Not mentioned (README's "Wheel scrolls." is the general claim; the calendar-grid exception lives only in main.md). | — | holds — the one explicit, fully-documented exception |
+| Scroll wheel (up/down) | Detail pane | Native `TextView.MouseHandler` scroll case (`textview.go:1420-1430`) — active because `a.detail` is scrollable by default (`scrollable: true` at construction, `app.go:538` never calls `SetScrollable(false)`). | "the scroll wheel scrolls panes/lists" (line 294) | "Wheel scrolls." (line 93) | — | holds |
+| Scroll wheel (up/down) | Forms/modals | `modalOpen()` passes the event through; whichever widget is under the cursor inside the modal (a `List`, `DropDown`'s embedded list, the help `TextView`, etc.) handles wheel per its own tview default. | Not itemized specifically, covered by the general claim. | Not itemized. | — | holds |
+| Folder-click-expand | Task tree (Tasks mode) | `app.go:640-641` — `a.tree.SetSelectedFunc` toggles `node.SetExpanded(!node.IsExpanded())`; fired by tview's native `TreeView` click-select (`treeview.go:878-894`, `t.selected(node)`), not by any app-level mouse.go code. Verified directly against `a.tree.MouseHandler()` (bypassing `mouseCapture`, since single-click has no app-level tree case). | "clicking a folder in the task tree expands/collapses it" (line 293-294) | Not stated in README's terse mouse sentence (click/double-click/wheel only — no folder-specific clause). | — | holds — regression: `TestTreeClickTogglesFolder` |
+| Folder-click-expand | All other contexts | N/A — no folder concept outside the task tree. | n/a | n/a | n/a | n/a |
+| (any action) | **SELECT mode swallow** | `mouse.go:19-21` — `if a.selecting { return nil, action }` runs **first**, before the `modalOpen()`/grab/resize checks and before the `switch action` on click-vs-wheel, so it swallows unconditionally regardless of action type (click, double-click, or either scroll direction). | "The mouse is fully inert during SELECT, GRAB, and the Ctrl-W resize sub-mode — every mouse action is swallowed, wheel included" (line 296) | Not covered in README (this is an internal-modal-state contract, not end-user-facing prose beyond the mode existing at all). | — | holds by code structure (unconditional pre-switch guard); **coverage gap**: `TestMouseSwallowedDuringModalFlagStates` (`mouse_test.go:50-77`) exercises only `grabbing`/`resizing`, not `a.selecting`, and only `MouseLeftClick` — not wheel. Behavior verified correct by direct code reading, not by a dedicated test. |
+| (any action) | **GRAB mode swallow** | `mouse.go:31-33` — `if a.grabbing \|\| a.resizing { return nil, action }`, same unconditional-before-switch structure; comment (lines 26-30) notes grab/resize are flag-only states with no overlay page, so `modalOpen()` is false throughout — the ordering (this check after the `modalOpen` early-return) is safe only because that invariant holds. | same line 296 | not covered | — | holds — regression: `TestMouseSwallowedDuringModalFlagStates` (click only, both flags) |
+| (any action) | **Ctrl-W RESIZE sub-mode swallow** | Same code path as GRAB (`a.resizing` in the same `if`). | same line 296 | not covered | — | holds — regression: `TestMouseSwallowedDuringModalFlagStates` |
+
+---
+
+## 9. Extension divergences — for owner triage
+
+All non-hold (and explicitly-flagged-for-verification) entries from both extension slices'
+"Divergences found" sections, deduped. Five findings total: three genuine non-holds from
+`slice-cmd.md`, one confirmed-holds entry from `slice-cmd.md` retained because the audit brief
+asked to explicitly verify it, and one genuine non-hold from `slice-mouse.md`.
+
+1. **`:sync` (no accounts configured) references a config section the loader now rejects.**
+   Command/case: `:sync` with `a.syncFn == nil`. Mismatch: `internal/ui/sync.go:15-18` flashes
+   `"Sync not configured — set [server] in config.toml"`, but `[server]` was removed in the v1.2.0
+   multi-account breaking change (`main.md` line 365) and `internal/config/config.go:221-226` now
+   hard-rejects a config file containing `[server]`. The message instructs the user to do something
+   the config loader itself refuses.
+   - Classification: **CODE BUG**.
+   - Recommended resolution: fix code — change the flash text to reference `[[account]]` (e.g.
+     `"Sync not configured — add an [[account]] block in config.toml"`); the message is simply
+     wrong post-v1.2.0, no doc supports the current text.
+
+2. **Eager-echo vs. echo-on-success is inconsistent across `:calendar`/`:account`/`:config`
+   sub-verbs.** Commands/cases: `:calendar color`/`:calendar new`, `:account`, `:config` all echo
+   the command **before** validation runs (`command.go:319`, `command.go:290`, `command.go:93-98`,
+   `command.go:186-190`); `:calendar rename` and `:view`/`:goto`/`:search`/`:find` echo only **on
+   success**. A rejected `:calendar color zzz` or a `:calendar color` on a read-only calendar still
+   shows `":calendar color"` in the status bar's command-echo slot even though nothing happened.
+   `main.md` line 132 describes the echo slot as showing "the most recently executed *action*" —
+   implying something that actually ran.
+   - Classification: **INCONSISTENCY**.
+   - Recommended resolution: fix code — move the `color`/`new`/`:account`/`:config` echoes to after
+     their success path, matching `rename`'s and `:view`'s pattern; the doc's "executed action"
+     wording is accurate for most sub-verbs, so aligning the outliers is less churn than softening
+     the doc for all of them.
+
+3. **`:calendar <sub>` also targets the focused task list from the Tasks pane — undocumented.**
+   Command/case: any `:calendar`/`:cal` sub-verb (`rename`/`color`/`hide`/`show`) issued while the
+   Tasks pane has focus. Mismatch: `currentCalendarID()` (`command.go:343-350`) returns
+   `a.selectedTasklistID()` when `a.mode == modeTasks`, so the command acts on the highlighted
+   **task list**, not a calendar — deliberately mirroring `e`'s dual behavior (`main.md` line 187).
+   Neither `main.md`'s, README's, nor help.go's `:calendar` line mentions this.
+   - Classification: **DOC GAP**.
+   - Recommended resolution: fix doc — add a one-clause note to main.md's/README's `:calendar` line
+     (e.g. "targets the focused pane's collection — a calendar or, from the Tasks pane, a task
+     list"); behavior is intentional and symmetric with `e`, so the code is correct as-is.
+
+4. **`:calendar new/create` — "create" alias check: confirmed non-issue, not a genuine divergence.**
+   Command/case: `:calendar new` vs. a hypothetical `:calendar create` alias. `command.go:289`
+   matches only `"new"` via `strings.EqualFold(sub, "new")`; there is no `"create"` branch anywhere
+   in code, and `main.md` (line 288), README (line 85), and help.go (line 105) all list only `new`.
+   Listed in `slice-cmd.md`'s "Divergences found" section (as finding 4 of 4) only because the
+   audit brief explicitly asked to check this case — the slice's own verdict on it is `holds`, so on
+   inspection this is **not** a real divergence, unlike findings 1-3 above.
+   - Classification: **NON-ISSUE (confirmed holds)** — does not fit CODE BUG/INCONSISTENCY/DOC GAP
+     because code and every doc surface already agree.
+   - Recommended resolution: no action needed — retained here for completeness per the audit
+     brief's explicit ask, not because it requires a fix.
+
+5. **Agenda-board scroll wheel is inert; the doc carve-out names only the calendar grid, and
+   README's blanket claim over-states the exception.** Command/case: scroll wheel over the center
+   Agenda board (Agenda mode). Mismatch: `agendaBoard` (`internal/ui/agendaboard.go:17-18`) embeds
+   `*tview.Box` and defines no `MouseHandler`, so it inherits `Box`'s default (`MouseLeftDown`→focus
+   only, no scroll case — `vendor/.../tview/box.go:236-244`) — the same "auto-follows-selection, no
+   direct wheel" design as the calendar grid. `main.md`'s parenthetical carve-out ("the custom
+   grids take no wheel handler") names only the calendar grid, not the agenda board; README's flat
+   "Wheel scrolls." then reads as over-claiming for this one pane if taken literally.
+   - Classification: **DOC GAP**.
+   - Recommended resolution: fix doc — extend main.md's parenthetical to name the agenda board
+     alongside the calendar grids (e.g. "...the custom grids and the agenda board take no wheel
+     handler — motion keys page/scroll them instead"); no code change, this is the deliberate,
+     already-tested (`agendaclick_test.go`) auto-follow design, just under-scoped in the doc's
+     exception clause.
