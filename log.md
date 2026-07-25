@@ -4,6 +4,32 @@
 
 ---
 
+## 2026-07-24 — Fix HIGH data-loss: undo of a co-resident multi-root move lost a root
+
+- Hardening Pass 19 HIGH finding: a multi-root move/paste where several selected roots
+  co-reside in the same `.ics` (e.g. two top-level VTODOs bundled in one resource) pushes one
+  undo op per root against that same resource — `moveSubtreeOps`'s source-side rewrite
+  (`internal/ui/yankpaste.go`) re-`Locate`s the resource per root, so root 2's op captures the
+  *intermediate* post-root-1-removal snapshot, not the true pre-operation one.
+  `deleteWholeObject`'s recursive removal (`internal/ui/edit.go`) has the identical shape for a
+  co-resident subtree delete. `undoLast` replayed all of a step's ops in append order, so the
+  last (intermediate) snapshot for that resource always won, permanently losing whichever root
+  it didn't contain.
+- Fix: `undoLast` (`internal/ui/edit.go`) now dedupes `step.ops` by `(calID, name)`, replaying
+  only the *first* op seen per resource. Ops are appended in write order, so the first op for a
+  given resource always carries its state from before the step touched it at all; later ops for
+  the same resource are redundant intermediates and are now skipped. One targeted fix in the
+  replay loop covers both the move and delete call sites without touching either.
+- Repro-first: `internal/ui/undo_multiroot_clobber_test.go` —
+  `TestReproUndoMultiRootMoveLosesRoot` — bulk-cuts two co-resident VTODOs into another list,
+  then undoes; confirmed RED (one root permanently gone) against the append-order replay and
+  GREEN after the dedupe fix.
+- Verified single-root undo and multi-item undo across distinct resources are unaffected (no
+  duplicate keys, dedupe is a no-op); full `go test ./...`, `go vet ./...`, `staticcheck ./...`,
+  `go build ./...` pass; `gofmt -l internal/ui` clean. Two unrelated pre-existing RED repros
+  from other Pass 19 findings (`TestSelectBulkOpDoesNotLeakCount`,
+  `TestReparentToDoesNotClobberConcurrentPull`) remain red as expected — out of scope for this fix.
+
 ## 2026-07-24 — Fix HIGH sync data-loss race: tombstone-412 resurrect clobbered a concurrent undo
 
 - Hardening Pass 19 HIGH finding, the DELETE-conflict twin of the pass-18 CommitPush

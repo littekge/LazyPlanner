@@ -747,7 +747,25 @@ func (a *app) undoLast() {
 	a.undo = a.undo[:len(a.undo)-1]
 
 	ctx := context.Background()
+	// Dedupe by resource: a multi-root move/delete pushes one op per moved/removed
+	// root, and several roots can co-reside in the same .ics (moveSubtreeOps's
+	// source-side rewrite, deleteWholeObject's recursive removal) — each such root
+	// pushes its own op against that SAME resource. Ops are appended in the order
+	// the writes happened, so the FIRST op for a given resource carries its prev
+	// snapshot from BEFORE this step touched it at all; every later op for that
+	// same resource is an intermediate state left by an earlier root's write in
+	// this same step. Replaying every one of them in append order would let the
+	// last (intermediate) snapshot clobber the true pre-step one, permanently
+	// losing whichever root(s) that intermediate state doesn't contain — so only
+	// the first occurrence per resource is replayed.
+	type resourceKey struct{ calID, name string }
+	seen := make(map[resourceKey]bool, len(step.ops))
 	for _, op := range step.ops {
+		key := resourceKey{op.calID, op.name}
+		if seen[key] {
+			continue
+		}
+		seen[key] = true
 		var err error
 		if op.prev == nil {
 			err = a.store.Delete(ctx, op.calID, op.name) // undo a creation
