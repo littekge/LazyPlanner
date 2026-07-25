@@ -4,6 +4,35 @@
 
 ---
 
+## 2026-07-25 — Fix Pass-23 MED: time-grid event blocks stay inside their day column and the pane rect
+
+- **Finding (Pass 23 MED, `internal/ui/timegridview.go`):** when a day had more overlap lanes than the
+  column had cells, `drawBlock`'s lane math painted event blocks into the **neighbouring day column and
+  outside the pane's own rect**. Old geometry: `laneW := (colW-1)/lanes` floors to 0, the `< 1` clamp
+  forces it to 1, and `bx := colX + p.Lane*laneW` then steps one cell per lane with **no upper bound** —
+  so lane *n* landed *n* cells right of the column start regardless of either edge. The width clamp was
+  the trigger; the missing x-clamp was the bug.
+- **Fix:** `contentW` is now `colW - columnSeparatorWidth` additionally clamped by `paneRight - colX`,
+  and `Draw` passes `x+w` so the pane bound is explicit and local rather than an implied consequence of
+  the caller's column arithmetic. The lane index goes through `clampIndex`, so a malformed `Placement`
+  with `Lane >= Lanes` can't walk out either. When `contentW/lanes < minLaneWidth` the block collapses to
+  one cell and lanes spread **proportionally**, so several lanes share a cell and overpaint rather than
+  any event being dropped. Named constants (`columnSeparatorWidth`, `minLaneWidth`) — no bare literals.
+  No app-lock call added on the Draw path (freeze trap #1).
+- **Repro → regression guards:** `internal/ui/lanebleed_test.go` — the two supplied repros
+  (`TestBlockNeverPaintsOutsideItsDayColumn`, `TestBlockNeverPaintsOutsideThePaneRect`, both RED before /
+  GREEN after) plus two class-closing siblings: `TestOverflowingLanesStillPaintTheWholeColumn` (the
+  degraded case must not degrade into blankness) and `TestTwoLaneDayKeepsFullBlockWidth` (a legitimate
+  2-lane day still tiles exactly, so the clamp can't silently shrink ordinary rendering). The agent
+  mutation-checked the new guard: piling collapsed lanes on the last cell makes the overflow test fail.
+- Gate: `internal/ui` green incl. `-race`, the display-stress suite (15 tests) green, vet/staticcheck/
+  gofmt clean.
+- **Carried residual:** only `drawBlock` was hardened. `drawTaskMarker` and the header/all-day-band
+  `printStyled` calls still rely on caller arithmetic rather than a local pane clamp (they stay in-column
+  today because `printStyled` truncates to `maxWidth`), and the other custom Draw paths were not swept.
+  Vertical geometry is reasoned sound but untested; the collapsed state's *legibility* (which event wins
+  a shared cell) is deliberate degradation with no assertion.
+
 ## 2026-07-25 — Fix Pass-23 HIGH: tombstone sidecar keys can no longer escape the cache root
 
 - **Finding (Pass 23 HIGH, `internal/store/sidecar.go`):** tombstone map keys are read straight out of

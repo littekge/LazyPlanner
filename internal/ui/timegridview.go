@@ -22,6 +22,13 @@ const (
 	// Bounds for the +/- hour-row zoom (rows per hour).
 	minRowsPerHour = 1
 	maxRowsPerHour = 12
+
+	// Lane geometry inside a day column. The column's final cell carries the next
+	// column's vertical separator, so a block may only paint colW-columnSeparatorWidth
+	// cells; minLaneWidth is the narrowest a lane may collapse to before the block
+	// would disappear entirely.
+	columnSeparatorWidth = 1
+	minLaneWidth         = 1
 )
 
 // clampRowsPerHour keeps a zoom value within the supported range.
@@ -667,7 +674,7 @@ func (tg *timeGridView) Draw(screen tcell.Screen) {
 			if !selected && model.SameDay(day, tg.selected) && p.Occ.Event != nil {
 				selected = inSelRange(p.Occ.Event.UID, p.Occ.Start)
 			}
-			tg.drawBlock(screen, p, day, colStart+di*colW, colW, vs, selected)
+			tg.drawBlock(screen, p, day, colStart+di*colW, colW, x+w, vs, selected)
 		}
 		// Timed due-task markers, drawn on top at their due time; the cycled task on
 		// the selected day is highlighted.
@@ -705,7 +712,11 @@ func (tg *timeGridView) drawTaskMarker(screen tcell.Screen, t *model.Todo, colX,
 	printStyled(screen, colX, row, colW-1, taskMarkerLabel(t, tg.folderTask(t)), style)
 }
 
-func (tg *timeGridView) drawBlock(screen tcell.Screen, p model.Placement, day time.Time, colX, colW int, vs vScale, selected bool) {
+// drawBlock paints one timed event as a filled block in the day column starting
+// at colX. paneRight is the first x outside the primitive's own rect; block
+// geometry is clamped to it as well as to the column, because a custom Draw path
+// that paints past its rect corrupts whatever pane sits beside it.
+func (tg *timeGridView) drawBlock(screen tcell.Screen, p model.Placement, day time.Time, colX, colW, paneRight int, vs vScale, selected bool) {
 	startT := p.Occ.Start.In(time.Local)
 	endT := p.Occ.End.In(time.Local)
 	// Clip the block to this day's column. A multi-day event begins at midnight
@@ -739,16 +750,37 @@ func (tg *timeGridView) drawBlock(screen tcell.Screen, p model.Placement, day ti
 		return
 	}
 
+	// Horizontal geometry. contentW is what this column may actually paint: its
+	// width less the next column's separator, and never past the pane's own edge.
+	contentW := colW - columnSeparatorWidth
+	if beforePaneEdge := paneRight - colX; contentW > beforePaneEdge {
+		contentW = beforePaneEdge
+	}
+	if contentW < minLaneWidth {
+		return // nothing of this column is paintable
+	}
+
 	lanes := p.Lanes
 	if lanes < 1 {
 		lanes = 1
 	}
-	laneW := (colW - 1) / lanes
-	if laneW < 1 {
-		laneW = 1
+	lane := clampIndex(p.Lane, lanes)
+	laneW := contentW / lanes
+	bx := colX + lane*laneW
+	if laneW < minLaneWidth {
+		// More overlap lanes than the column has cells. Rather than stepping one
+		// cell per lane — which walked the block into the neighbouring day and out
+		// of the pane — collapse to the narrowest visible block and spread the lanes
+		// proportionally across the cells that do exist. Several lanes then share a
+		// cell and overpaint each other, but every event stays inside its own day
+		// and none is silently dropped.
+		laneW = minLaneWidth
+		bx = colX + lane*contentW/lanes
 	}
-	bx := colX + p.Lane*laneW
 	bw := laneW
+	if bx+bw > colX+contentW {
+		bx = colX + contentW - bw // invariant guard: the block ends inside the column
+	}
 
 	style := tcell.StyleDefault.Background(blockColor).Foreground(tcell.ColorWhite)
 	spanStyle := style.Foreground(tcell.ColorSilver) // dimmed time line on the default block
