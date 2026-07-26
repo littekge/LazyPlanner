@@ -4,6 +4,65 @@
 
 ---
 
+## 2026-07-26 — Document-health design and plan written, then deliberately not built
+
+- Brainstormed the documentation problem and split it into **two orthogonal problems**: append-only
+  growth, and context clutter from reading long documents wholesale. Solving either does not solve the
+  other — a perfectly indexed document still grows without bound; a perfectly bounded one still floods
+  context if the ritual reads it whole.
+- Designed a mechanism for the **growth** half: `docs/superpowers/specs/2026-07-26-document-health-design.md`
+  (single-owner table, dangling-reference gate over *living* docs only, warn-only duplicate-span report,
+  growth ledger, compaction at `/cleanup` and at release). Implementation plan:
+  `docs/superpowers/plans/2026-07-26-document-health.md`, four tasks with complete Go source.
+- Measured baseline for the gate check: across the five living documents, **72 path references, 0
+  genuinely missing; 25 cited test names, 0 missing** — so it would have gone in green on day one.
+- **Owner decided not to implement it** (2026-07-26): the mechanism amortizes over many future sessions
+  and the project is reaching its final state. The plan carries a NOT IMPLEMENTED banner. A second design
+  for the context-clutter half was scoped and dropped for the same reason, never written up.
+- Both files are kept as the record of a considered decision. Files: the spec and plan above.
+
+## 2026-07-26 — Condense four documents against their charters, losing no rule
+
+- Measured the growth the owner had noticed: **CLAUDE.md +105% and main.md +104% in words since v1.0.0**,
+  invisible in line counts (CLAUDE.md moved 233→238 lines while its word count rose 61%, because growth
+  happened *inside* existing bullets). Worst offenders: a **645-word** single bullet in CLAUDE.md and a
+  **1,156-word** single paragraph in main.md.
+- Condensed all four against their roles in "The Documents", one agent per document, nothing committed
+  until a verification pass cleared it: **47,675 → ~32,400 words**.
+  - `docs/audit/COVERAGE.md` 19,032 → 5,849 (-69%) — finding narratives replaced by pointers into
+    `passes/`; all **50 surface rows** and **9 residuals** kept.
+  - `CLAUDE.md` 6,157 → 5,092 — 13 guardrails restructured to **rule → mechanism → pointer**; all 17
+    audit-pass references relocated to `docs/audit/passes/`.
+  - `main.md` 18,426 → 17,566 — the 1,156-word blob split into the per-pass bullet format the file
+    already used for passes 1–18.
+  - `README.md` 4,060 → 3,862 — 7 prose passages that re-narrated the keybindings table removed, their
+    concepts moved into table cells; all 35 rows kept.
+- **Verification**: 130 rules checked in CLAUDE.md, **0 lost, 0 weakened** (a hedge-word scan confirmed no
+  "never" softened to "prefer"); 50/50 coverage rows; 9/9 residuals byte-identical; 35/35 keybindings.
+- Two agents independently found the **same stale contradiction** — the agenda-board click-to-select fix
+  recorded as both shipped and not-shipped across `main.md` and `COVERAGE.md`. Now consistent everywhere,
+  verified against the source. Also fixed: a v1.3.0 UI description sitting beside the redesign that
+  superseded it, and a coverage row citing a pass file that never mentioned its subject.
+- **An honest correction to the diagnosis**: only ~1,065 words of CLAUDE.md's growth was narrative bloat;
+  the rest is six new guardrail classes. main.md's growth is mostly legitimate design for four feature
+  versions. The condensation cut 32% of total words but only **8%** of the per-session startup cost.
+- Files: `CLAUDE.md`, `main.md`, `README.md`, `docs/audit/COVERAGE.md`. Commits `81748a8`, `4bca80a`.
+
+## 2026-07-26 — Codify the TZID arc's two guardrail classes
+
+- Added a Hard-won guardrail: **a recurrence anchor and the rule it anchors must be authored in the same
+  zone.** Covers `setAnchorDateOrTime`/`anchorZone`, the `ensureVTimezone` obligation on any TZID-emitting
+  writer (three sibling writers missed it and only a whole-branch review caught them), the narrow
+  re-anchor gate, form seed/resolve symmetry, and `a.loc` vs `time.Local`.
+- Extended the existing "build test times in the zone the code under test uses" guardrail **in place**
+  rather than adding a near-duplicate, with three lessons this arc proved: shape a zone-parameterised
+  fixture so every zone can actually fail (ours left `America/New_York` — the reported zone — structurally
+  incapable of failing); never `t.Skip` an unavailable zone in a load-bearing guard; and prove every new
+  guard bites by mutation.
+- Corrected an unverifiable coverage figure that had been cited as fact: the full-IANA sweep was a
+  review-time verification run, not a committed test, and the committed guard samples named zones.
+- Files: `CLAUDE.md`. Commits `3d9e375`, `4bca80a`.
+
 ## 2026-07-26 — TZID arc: the whole-branch review's six findings, fixed in one pass
 
 The FINAL whole-branch review of the TZID-anchored-recurrence arc found six issues the per-task

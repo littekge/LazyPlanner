@@ -310,27 +310,44 @@ commits. Full detail: `docs/audit/passes/PASS-23.md` § Resolution.
    re-anchors. Residuals carried forward: already-UTC-anchored items keep wrong-day behavior until next
    rule edit; a Windows host without `$TZ` still writes UTC anchors; editing an Outlook-authored series now
    rewrites its Windows TZID to the IANA spelling.
-2. `internal/caldav` write paths — unswept for the bare-write class, **second consecutive pass**.
-3. **Race and fault-injection not exercised at all** this pass (last run pass 22).
-4. `go test -race ./internal/model/` fails on `TestAggregateRecurrenceCapBounded` — a pass-21 absolute
+2. **OPEN REGRESSION (HIGH, arc-introduced 2026-07-26) — a recurring item loses the day its zone's DST
+   change starts on.** rrule-go normalizes a non-existent local midnight *backwards*, so the gap day is
+   never generated; a recurring **task** additionally writes a skipped due date. Ticking a daily task due
+   `2026-03-07` in `America/Havana` rolls it to `03-09` — persisted locally and pushed to the server. Hits
+   `America/Havana`, `America/Santiago`, `Atlantic/Azores` every year. Reachable pre-arc only for
+   *server-authored* TZID items; the TZID arc widened it to app-authored ones by moving anchors out of
+   gapless UTC. **Does not affect `America/New_York`** (its transition is at 02:00, so local midnight
+   always exists). Fix must make anchor iteration gap-safe rather than trusting `time.Date` normalization.
+3. **OPEN REGRESSION (MED, arc-introduced 2026-07-26) — `store` and the UI disagree about the local zone.**
+   `store.loadResource` decodes with `time.Local` while `a.loc` is now `config.LocalZone()` (`86f594f`).
+   They diverge on `TZ=` set-but-empty, `TZ=:Asia/Tokyo`, `TZ=/abs/path`, and a stale-but-loadable
+   `/etc/timezone`. Symptoms: an all-day event rendering on two days, floating times off by the offset,
+   "today" resolving to the wrong day. Low impact on a host where both resolve identically. Fix touches a
+   core decode path — size it before committing to it; a documented residual is an acceptable outcome.
+4. **Pre-existing (MED) — local-midnight construction is unsafe in DST-gap zones.** `model.DayStart` and
+   quick-add's relative dates build local midnight with `time.Date`; in the same gap zones "tomorrow"
+   resolves to today and day-bucketing shifts an hour into the previous day. Not arc-introduced.
+5. `internal/caldav` write paths — unswept for the bare-write class, **second consecutive pass**.
+6. **Race and fault-injection not exercised at all** this pass (last run pass 22).
+7. `go test -race ./internal/model/` fails on `TestAggregateRecurrenceCapBounded` — a pass-21 absolute
    wall-clock budget that `-race` overhead exceeds. Pre-existing (fails at `ba274c1`), not a data race,
    not part of the official gate. Convert to the growth-ratio style adopted this pass.
-5. A full refresh still mints ~4 budgets (bounded constant, no longer day-scaled). Write-side `safeAfter`
+8. A full refresh still mints ~4 budgets (bounded constant, no longer day-scaled). Write-side `safeAfter`
    has no aggregate budget — bulk grab over N recurring items is N × 1M steps, the same class on the
    write path. Two pathological events still exhaust a redraw's 2M ceiling and starve later events.
-6. `internal/store` decodes with hard-coded `time.Local`. `internal/ui/conflicts.go` still does not
+9. `internal/store` decodes with hard-coded `time.Local`. `internal/ui/conflicts.go` still does not
    refresh on a failed resolve. `model.Decode` rejects a DTSTART-less VEVENT that RFC 5545 permits when
    the VCALENDAR carries METHOD.
-7. Decomposer asymmetry: `FREQ=WEEKLY;BYDAY=TU,TH` with a Monday anchor is accepted though the anchor is
+10. Decomposer asymmetry: `FREQ=WEEKLY;BYDAY=TU,TH` with a Monday anchor is accepted though the anchor is
    outside its own set; monthly/yearly reject the equivalent.
-8. ~~Owner decision outstanding: unparseable sidecar → read-only calendar.~~ **SETTLED (2026-07-25) —
+11. ~~Owner decision outstanding: unparseable sidecar → read-only calendar.~~ **SETTLED (2026-07-25) —
    reverted by the owner.** Locking a calendar because its sidecar is unreadable is wrong for an
    offline-first app: that is precisely when the user is working from the cache with no server to ask.
    Only the server's recorded privilege makes a calendar read-only. Data protection is unaffected —
    unrecovered resources still load Dirty and the original bytes are still quarantined. A future
    hardening pass must not "restore" the lock as an improvement; the reasoning is pinned in
    `TestUnsalvageableSidecarTreatsStateAsUnknown`.
-9. Surfaces deliberately skipped: ~37 of ~53 inventoried surfaces unexamined this pass.
+12. Surfaces deliberately skipped: ~37 of ~53 inventoried surfaces unexamined this pass.
 
 ### Note for the next pass
 

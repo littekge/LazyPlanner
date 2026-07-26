@@ -1,5 +1,13 @@
 # Document Health Implementation Plan
 
+> ## NOT IMPLEMENTED — deliberately deferred (owner decision, 2026-07-26)
+>
+> **Do not execute this plan.** It is complete and reviewed, and it is kept as the record of a considered
+> decision, not as pending work.
+>
+> The mechanism it describes prevents documentation growth over many future sessions. The project is
+> reaching its final state, so it would never amortize. Reopening it needs the owner's explicit say-so.
+
 > **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
 
 **Goal:** Stop illegitimate documentation growth — duplication and staleness — with a single-owner rule, a hard-failing dangling-reference check, a growth ledger, and two compaction triggers.
