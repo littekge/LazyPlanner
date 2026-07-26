@@ -24,7 +24,7 @@ func resolveDateTime(prop *ical.Prop, loc *time.Location) (time.Time, error) {
 		loc = time.Local
 	}
 	if t, err := prop.DateTime(loc); err == nil {
-		return t, nil
+		return gapSafeReading(prop, t), nil
 	}
 
 	// go-ical failed. If there is no TZID, the value itself is malformed — there
@@ -37,7 +37,7 @@ func resolveDateTime(prop *ical.Prop, loc *time.Location) (time.Time, error) {
 
 	if iana := windowsToIANA(tzid); iana != "" {
 		if z, err := time.LoadLocation(iana); err == nil {
-			if t, err := time.ParseInLocation(icalDateTimeLocal, prop.Value, z); err == nil {
+			if t, err := parseWallClockIn(icalDateTimeLocal, prop.Value, z); err == nil {
 				return t, nil
 			}
 		}
@@ -47,18 +47,70 @@ func resolveDateTime(prop *ical.Prop, loc *time.Location) (time.Time, error) {
 		// handle). Zone the wall-clock value directly rather than dropping it to
 		// the floating fallback below — which would silently mis-zone it by the
 		// TZID's UTC offset. Keeps the IANA path symmetric with the Windows one.
-		if t, err := time.ParseInLocation(icalDateTimeLocal, prop.Value, z); err == nil {
+		if t, err := parseWallClockIn(icalDateTimeLocal, prop.Value, z); err == nil {
 			return t, nil
 		}
 	}
 
 	// Last resort: keep the item by treating the wall-clock value as floating.
-	if t, err := time.ParseInLocation(icalDateTimeLocal, prop.Value, loc); err == nil {
+	if t, err := parseWallClockIn(icalDateTimeLocal, prop.Value, loc); err == nil {
 		return t, nil
 	}
 
 	_, err := prop.DateTime(loc)
 	return time.Time{}, err
+}
+
+// gapSafeReading re-resolves a zone-dependent value that Go's parser normalized
+// out of the calendar day it names.
+//
+// A DATE value names a day and midnight is its instant; a zone-less DATE-TIME
+// names a wall clock. In the zones whose DST transition lands ON 00:00 that
+// midnight does not exist, and time.ParseInLocation normalizes it *backwards*
+// into the previous day — so an all-day item due 2026-03-08 in America/Havana
+// reads as due 2026-03-07, one day before the date written in the file. The
+// recurrence fix in wallclock.go makes the app *write* the right day; without
+// this it would still display and act on the wrong one.
+//
+// The zone comes from t.Location() — whatever go-ical resolved — so go-ical's
+// TZID-vs-loc choice is never duplicated here, only its RFC 5545 value-type
+// reading, and only to recover the nominal wall clock the normalization lost. A
+// UTC-suffixed value names an absolute instant with no wall clock at risk.
+func gapSafeReading(prop *ical.Prop, t time.Time) time.Time {
+	w, ok := nominalWallClock(prop.Value)
+	if !ok {
+		return t
+	}
+	return resolveWallClock(w, t.Location())
+}
+
+// nominalWallClock returns an iCal DATE or floating DATE-TIME value as the wall
+// clock it names, stamped in UTC for resolveWallClock. ok is false for a
+// UTC-suffixed value (already absolute) or any shape neither layout matches, so
+// the caller keeps the reading it already has rather than guessing.
+func nominalWallClock(value string) (time.Time, bool) {
+	if strings.HasSuffix(value, "Z") {
+		return time.Time{}, false
+	}
+	for _, layout := range []string{dateOnlyLayout, icalDateTimeLocal} {
+		if len(value) != len(layout) {
+			continue
+		}
+		if w, err := time.Parse(layout, value); err == nil {
+			return w, true
+		}
+	}
+	return time.Time{}, false
+}
+
+// parseWallClockIn parses a zone-less iCal value as a wall clock and resolves it
+// in z gap-safely — the recovery-path twin of gapSafeReading.
+func parseWallClockIn(layout, value string, z *time.Location) (time.Time, error) {
+	w, err := time.Parse(layout, value)
+	if err != nil {
+		return time.Time{}, err
+	}
+	return resolveWallClock(w, z), nil
 }
 
 // resolveDateTimeValues resolves an RDATE/EXDATE property that may carry a

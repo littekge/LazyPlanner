@@ -6,7 +6,6 @@ import (
 	"time"
 
 	"github.com/emersion/go-ical"
-	"github.com/teambition/rrule-go"
 )
 
 // ReanchoredRecurrence returns the recurrence rule a grab day-move must write so
@@ -150,34 +149,31 @@ func masterAnchorProp(master *ical.Component, loc *time.Location) string {
 
 // componentRecurrenceSet builds the rrule.Set for comp anchored at the given
 // instant — the write-side twin of Event.recurrenceSet, usable for a VTODO too.
-func componentRecurrenceSet(comp *ical.Component, anchor time.Time) (*rrule.Set, error) {
-	set := &rrule.Set{}
-	set.DTStart(anchor)
+func componentRecurrenceSet(comp *ical.Component, anchor time.Time) (*wallClockSet, error) {
+	loc := anchor.Location()
+	set := newWallClockSet(loc)
+	set.dtStart(anchor)
 
 	roption, err := comp.Props.RecurrenceRule()
 	if err != nil {
 		return nil, fmt.Errorf("parsing RRULE: %w", err)
 	}
 	if roption != nil {
-		applyDateOnlyUntilBound(comp.Props, roption, anchor.Location())
-		roption.Dtstart = anchor
-		rule, err := rrule.NewRRule(*roption)
-		if err != nil {
+		applyDateOnlyUntilBound(comp.Props, roption, loc)
+		if err := set.rRule(*roption, anchor); err != nil {
 			return nil, fmt.Errorf("building recurrence: %w", err)
 		}
-		set.RRule(rule)
 	} else {
-		set.RDate(anchor)
+		set.rDate(anchor)
 	}
-	loc := anchor.Location()
 	for _, prop := range comp.Props.Values(ical.PropRecurrenceDates) {
 		if dt, err := resolveDateTime(&prop, loc); err == nil {
-			set.RDate(dt)
+			set.rDate(dt)
 		}
 	}
 	for _, prop := range comp.Props.Values(ical.PropExceptionDates) {
 		if dt, err := resolveDateTime(&prop, loc); err == nil {
-			set.ExDate(dt)
+			set.exDate(dt)
 		}
 	}
 	return set, nil
@@ -603,14 +599,11 @@ func rruleIterationsBefore(master *ical.Component, occ time.Time, loc *time.Loca
 		return 0
 	}
 	applyDateOnlyUntilBound(master.Props, roption, loc)
-	roption.Dtstart = anchor
-	rule, err := rrule.NewRRule(*roption)
-	if err != nil {
+	set := newWallClockSet(loc)
+	set.dtStart(anchor)
+	if err := set.rRule(*roption, anchor); err != nil {
 		return 0
 	}
-	set := &rrule.Set{}
-	set.DTStart(anchor)
-	set.RRule(rule)
 	// safeBetween (not set.Between) so a degenerate rule degrades to 0 rather than
 	// panicking during a this-and-future split (iron rule). This is a single
 	// write-side rule, so it gets the full per-event step cap and no shared budget.
@@ -665,7 +658,7 @@ func RewriteEventRule(obj *Parsed, uid string, d EventDraft, now time.Time, loc 
 // override that can't be resolved, or whose set can't be built, is kept — never
 // drop data on uncertainty (iron rule). Returns the dropped count.
 func reconcileOverrides(cal *ical.Calendar, uid string, removeAll bool, loc *time.Location) int {
-	var set *rrule.Set
+	var set *wallClockSet
 	if !removeAll {
 		if master := masterComponent(cal, uid); master != nil {
 			if _, anchor, _, ok := componentAnchor(master, loc); ok {
@@ -701,7 +694,7 @@ func reconcileOverrides(cal *ical.Calendar, uid string, removeAll bool, loc *tim
 // occursInSet reports whether the recurrence set generates an instant at rid. A
 // degenerate rule that panics rrule-go (ok=false from safeAfter) is treated as
 // "occurs" so the override is kept rather than dropped on uncertainty.
-func occursInSet(set *rrule.Set, rid time.Time) bool {
+func occursInSet(set *wallClockSet, rid time.Time) bool {
 	t, ok := safeAfter(set, rid.Add(-time.Second), true)
 	if !ok {
 		return true

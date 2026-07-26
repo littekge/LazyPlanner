@@ -149,23 +149,42 @@ func NewStepBudget() *StepBudget {
 // used, the number of steps actually consumed, so a shared StepBudget can be
 // drawn down across events. It also contains any panic rrule-go raises on a
 // degenerate rule (ok=false) so the caller can degrade instead of crashing.
-// Vendored code must not be hand-edited, so both guards live here at the call
-// boundary. Within the bounds the result is identical to set.Between(from, to, true).
-func safeBetween(set *rrule.Set, from, to time.Time, maxSteps int) (starts []time.Time, used int, ok bool) {
+// Vendored code must not be hand-edited, so all three guards — the bound, the
+// panic recover, and the wall-clock resolution — live here at the call boundary.
+// Within the bounds the result is identical to set.Between(from, to, true) for
+// every zone whose days rrule-go enumerates correctly.
+func safeBetween(set *wallClockSet, from, to time.Time, maxSteps int) (starts []time.Time, used int, ok bool) {
 	ok = true
 	defer func() {
 		if r := recover(); r != nil {
 			starts, ok = nil, false
 		}
 	}()
-	next := set.Iterator()
+	next := set.set.Iterator()
+	var last time.Time
+	haveLast := false
 	for used = 0; used < maxSteps; used++ {
 		v, valid := next()
-		if !valid || v.After(to) {
+		if !valid {
 			return
 		}
-		if !v.Before(from) {
-			starts = append(starts, v)
+		// Resolve before every comparison so from/to stay ordinary absolute times.
+		t := set.resolve(v)
+		// rrule-go dedupes in wall-clock space, one step too early: across a DST gap
+		// two distinct wall clocks can resolve to the same instant (an hourly series'
+		// 01:00 and 02:00 both land at 01:00 on a spring-forward day), so the dedupe
+		// has to happen after resolution to keep the yielded sequence as
+		// duplicate-free as it was before. `continue` still runs the loop's post
+		// statement, so a skipped duplicate is charged a step and cannot spin.
+		if haveLast && t.Equal(last) {
+			continue
+		}
+		last, haveLast = t, true
+		if t.After(to) {
+			return
+		}
+		if !t.Before(from) {
+			starts = append(starts, t)
 			if len(starts) >= maxOccurrencesPerEvent {
 				return
 			}
@@ -175,25 +194,32 @@ func safeBetween(set *rrule.Set, from, to time.Time, maxSteps int) (starts []tim
 }
 
 // safeAfter returns the first recurrence instant strictly after `after` (or at or
-// after `after` when inc is true), with the same bound and panic guards as
-// safeBetween — so a write-side caller (grab/complete/split of a recurring item)
-// degrades instead of crashing on a degenerate rule. ok is false when rrule-go
-// panics; a zero time with ok=true means the series has no such instant. Within
-// the bounds the result matches set.After(after, inc).
-func safeAfter(set *rrule.Set, after time.Time, inc bool) (t time.Time, ok bool) {
+// after `after` when inc is true), with the same bound, panic and wall-clock
+// guards as safeBetween — so a write-side caller (grab/complete/split of a
+// recurring item) degrades instead of crashing on a degenerate rule. ok is false
+// when rrule-go panics; a zero time with ok=true means the series has no such
+// instant. Within the bounds the result matches set.After(after, inc).
+func safeAfter(set *wallClockSet, after time.Time, inc bool) (t time.Time, ok bool) {
 	defer func() {
 		if r := recover(); r != nil {
 			t, ok = time.Time{}, false
 		}
 	}()
-	next := set.Iterator()
+	next := set.set.Iterator()
+	var last time.Time
+	haveLast := false
 	for steps := 0; steps < maxOccurrenceSteps; steps++ {
 		v, valid := next()
 		if !valid {
 			return time.Time{}, true
 		}
-		if v.After(after) || (inc && v.Equal(after)) {
-			return v, true
+		r := set.resolve(v)
+		if haveLast && r.Equal(last) {
+			continue
+		}
+		last, haveLast = r, true
+		if r.After(after) || (inc && r.Equal(after)) {
+			return r, true
 		}
 	}
 	return time.Time{}, true
@@ -223,10 +249,10 @@ func (e *Event) Duration() time.Duration {
 // DTSTART in the start's location so DST is handled correctly. With no RRULE,
 // DTSTART is added explicitly: it belongs to the recurrence set per RFC 5545,
 // but rrule-go emits it only through an RRULE.
-func (e *Event) recurrenceSet(hasRRULE bool) (*rrule.Set, error) {
+func (e *Event) recurrenceSet(hasRRULE bool) (*wallClockSet, error) {
 	loc := e.Start.Location()
-	set := &rrule.Set{}
-	set.DTStart(e.Start)
+	set := newWallClockSet(loc)
+	set.dtStart(e.Start)
 
 	var roption *rrule.ROption
 	if hasRRULE {
@@ -238,14 +264,11 @@ func (e *Event) recurrenceSet(hasRRULE bool) (*rrule.Set, error) {
 	}
 	if roption != nil {
 		applyDateOnlyUntilBound(e.Raw.Props, roption, loc)
-		roption.Dtstart = e.Start
-		rule, err := rrule.NewRRule(*roption)
-		if err != nil {
+		if err := set.rRule(*roption, e.Start); err != nil {
 			return nil, fmt.Errorf("event %q: building recurrence: %w", e.UID, err)
 		}
-		set.RRule(rule)
 	} else {
-		set.RDate(e.Start)
+		set.rDate(e.Start)
 	}
 
 	for _, prop := range e.Raw.Props.Values(ical.PropRecurrenceDates) {
@@ -258,7 +281,7 @@ func (e *Event) recurrenceSet(hasRRULE bool) (*rrule.Set, error) {
 			return nil, fmt.Errorf("event %q: parsing RDATE: %w", e.UID, err)
 		}
 		for _, dt := range dts {
-			set.RDate(dt)
+			set.rDate(dt)
 		}
 	}
 	for _, prop := range e.Raw.Props.Values(ical.PropExceptionDates) {
@@ -267,7 +290,7 @@ func (e *Event) recurrenceSet(hasRRULE bool) (*rrule.Set, error) {
 			return nil, fmt.Errorf("event %q: parsing EXDATE: %w", e.UID, err)
 		}
 		for _, dt := range dts {
-			set.ExDate(dt)
+			set.exDate(dt)
 		}
 	}
 	return set, nil
