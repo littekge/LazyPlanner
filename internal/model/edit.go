@@ -559,29 +559,37 @@ func ensureVTimezone(cal *ical.Calendar, around time.Time) {
 			}
 		}
 	}
-	// The item properties whose value may carry a TZID needing a definition.
-	anchorProps := []string{ical.PropDateTimeStart, ical.PropDateTimeEnd, ical.PropDue}
+	// The item properties whose value may carry a TZID needing a definition. The
+	// recurrence set's own dates belong here as much as the anchor does: an
+	// EXDATE/RDATE/RECURRENCE-ID is written in the master's anchor zone, and that zone
+	// is the *resolved IANA* one — so a master whose DTSTART still carries a Windows
+	// spelling ("Eastern Standard Time") ends up beside an EXDATE;TZID=America/New_York
+	// naming a zone no DTSTART/DTEND/DUE mentions.
+	anchorProps := []string{
+		ical.PropDateTimeStart, ical.PropDateTimeEnd, ical.PropDue,
+		ical.PropExceptionDates, ical.PropRecurrenceDates, ical.PropRecurrenceID,
+	}
 	for _, c := range cal.Children {
 		if !isItemComponent(c) {
 			continue
 		}
 		for _, name := range anchorProps {
-			p := c.Props.Get(name)
-			if p == nil {
-				continue
-			}
-			tzid := p.Params.Get(ical.ParamTimezoneID)
-			if tzid == "" || defined[tzid] {
-				continue
-			}
-			loc, err := time.LoadLocation(tzid)
-			if err != nil {
-				continue
-			}
-			if tz := BuildVTimezone(loc, around); tz != nil {
-				// VTIMEZONE must precede the components referencing it.
-				cal.Children = append([]*ical.Component{tz}, cal.Children...)
-				defined[tzid] = true
+			// EXDATE and RDATE may repeat, each line with its own TZID, so every
+			// occurrence of the property is scanned rather than just the first.
+			for _, p := range c.Props.Values(name) {
+				tzid := p.Params.Get(ical.ParamTimezoneID)
+				if tzid == "" || defined[tzid] {
+					continue
+				}
+				loc, err := time.LoadLocation(tzid)
+				if err != nil {
+					continue
+				}
+				if tz := BuildVTimezone(loc, around); tz != nil {
+					// VTIMEZONE must precede the components referencing it.
+					cal.Children = append([]*ical.Component{tz}, cal.Children...)
+					defined[tzid] = true
+				}
 			}
 		}
 	}

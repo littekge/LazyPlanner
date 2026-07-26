@@ -68,13 +68,13 @@ func TestItemLabelMultiDayTimedEvent(t *testing.T) {
 	it := model.AgendaItem{Start: start, End: end, Title: "Conference", Event: ev}
 	day := func(d int) time.Time { return time.Date(2026, 7, d, 0, 0, 0, 0, loc) }
 
-	startLbl := itemLabel(it, day(23), false, false)
+	startLbl := itemLabel(it, day(23), false, false, loc)
 	if !strings.Contains(startLbl, "11am") || !strings.Contains(startLbl, "Conference") {
 		t.Errorf("start day label = %q, want start time (11am) + title", startLbl)
 	}
 
 	for _, d := range []int{24, 25} {
-		mid := itemLabel(it, day(d), false, false)
+		mid := itemLabel(it, day(d), false, false, loc)
 		if strings.Contains(mid, "11am") {
 			t.Errorf("middle day 7/%d repeats the start time: %q", d, mid)
 		}
@@ -83,7 +83,7 @@ func TestItemLabelMultiDayTimedEvent(t *testing.T) {
 		}
 	}
 
-	endLbl := itemLabel(it, day(26), false, false)
+	endLbl := itemLabel(it, day(26), false, false, loc)
 	if strings.Contains(endLbl, "11am") {
 		t.Errorf("last day shows the start time instead of the end: %q", endLbl)
 	}
@@ -102,7 +102,7 @@ func TestItemLabelSingleDayTimedEventUnchanged(t *testing.T) {
 	it := model.AgendaItem{Start: start, End: end, Title: "Standup", Event: ev}
 	day := time.Date(2026, 7, 23, 0, 0, 0, 0, loc)
 
-	got := itemLabel(it, day, false, false)
+	got := itemLabel(it, day, false, false, loc)
 	if !strings.Contains(got, "2pm") || !strings.Contains(got, "Standup") {
 		t.Errorf("single-day timed label = %q, want start time (2pm) + title", got)
 	}

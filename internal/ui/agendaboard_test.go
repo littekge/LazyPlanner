@@ -3,6 +3,7 @@ package ui
 import (
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/gdamore/tcell/v2"
 
@@ -26,7 +27,7 @@ func TestAgendaBoardTaskGlyphs(t *testing.T) {
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			it := model.AgendaItem{Title: tt.todo.Summary, Todo: tt.todo}
-			lines := agendaItemLines(it, tcell.ColorWhite, false, tt.folder)
+			lines := agendaItemLines(it, tcell.ColorWhite, false, tt.folder, time.Local)
 			if len(lines) == 0 {
 				t.Fatal("no lines rendered")
 			}
@@ -44,7 +45,7 @@ func TestAgendaBoardTaskGlyphs(t *testing.T) {
 // Events carry no task marker.
 func TestAgendaBoardEventNoGlyph(t *testing.T) {
 	it := model.AgendaItem{Title: "Standup", Event: &model.Event{Summary: "Standup"}}
-	lines := agendaItemLines(it, tcell.ColorWhite, false, false)
+	lines := agendaItemLines(it, tcell.ColorWhite, false, false, time.Local)
 	title := lines[0].text
 	for _, mark := range []string{"[ ]", "[■]", "▸"} {
 		if strings.Contains(title, mark) {

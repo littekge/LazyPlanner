@@ -23,6 +23,10 @@ type agendaBoard struct {
 	scroll   int
 	clock24  bool // 24h time labels (from time_format)
 
+	// loc is the display zone — the app's a.loc, refreshed on every redraw. See
+	// calendarView.loc for why it is not simply time.Local.
+	loc *time.Location
+
 	// itemColor resolves an item to its calendar's color for the title line; ok is
 	// false when the calendar has none, so the default event/task color is used.
 	itemColor func(model.AgendaItem) (calColor, bool)
@@ -43,7 +47,7 @@ func (b *agendaBoard) folderItem(it model.AgendaItem) bool {
 }
 
 func newAgendaBoard() *agendaBoard {
-	return &agendaBoard{Box: tview.NewBox()}
+	return &agendaBoard{Box: tview.NewBox(), loc: time.Local}
 }
 
 func (b *agendaBoard) setData(date time.Time, items []model.AgendaItem) {
@@ -75,13 +79,13 @@ type styledLine struct {
 // an optional description). titleColor tints the title line (the item's calendar
 // color, or the default event/task color). folder marks a task with incomplete
 // children so its title carries the ▸ caret instead of a checkbox.
-func agendaItemLines(it model.AgendaItem, titleColor tcell.Color, use24, folder bool) []styledLine {
+func agendaItemLines(it model.AgendaItem, titleColor tcell.Color, use24, folder bool, loc *time.Location) []styledLine {
 	gray := tcell.StyleDefault.Foreground(adjacentColor)
 	plain := tcell.StyleDefault
 	if it.Todo != nil {
 		t := it.Todo
 		lines := []styledLine{
-			{whenLabel(it, use24) + "  " + todoMark(t, folder) + nonEmpty(t.Summary, "(untitled)"), tcell.StyleDefault.Foreground(titleColor)},
+			{whenLabel(it, use24, loc) + "  " + todoMark(t, folder) + nonEmpty(t.Summary, "(untitled)"), tcell.StyleDefault.Foreground(titleColor)},
 			{"task · " + statusText(t.Status) + " · priority " + priorityText(t.Priority), gray},
 		}
 		if t.Description != "" {
@@ -91,7 +95,7 @@ func agendaItemLines(it model.AgendaItem, titleColor tcell.Color, use24, folder 
 	}
 	e := it.Event
 	lines := []styledLine{
-		{whenLabel(it, use24) + "  " + nonEmpty(e.Summary, "(untitled)"), tcell.StyleDefault.Foreground(titleColor)},
+		{whenLabel(it, use24, loc) + "  " + nonEmpty(e.Summary, "(untitled)"), tcell.StyleDefault.Foreground(titleColor)},
 	}
 	if e.Location != "" {
 		lines = append(lines, styledLine{"at " + e.Location, gray})
@@ -126,7 +130,7 @@ func (b *agendaBoard) layoutBlocks() (blocks [][]styledLine, starts []int, total
 				tc = cc.fg
 			}
 		}
-		blocks[i] = agendaItemLines(it, tc, b.clock24, b.folderItem(it))
+		blocks[i] = agendaItemLines(it, tc, b.clock24, b.folderItem(it), b.loc)
 		starts[i] = line
 		line += len(blocks[i]) + 1 // block plus a one-row gap
 	}

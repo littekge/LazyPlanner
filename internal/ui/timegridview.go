@@ -59,6 +59,10 @@ type timeGridView struct {
 	selected time.Time
 	clock24  bool // 24h time labels (from time_format)
 
+	// loc is the display zone — the app's a.loc, refreshed on every redraw. See
+	// calendarView.loc for why it is not simply time.Local.
+	loc *time.Location
+
 	eventMode  bool // cycling the selected day's items (all-day, then timed events + tasks)
 	eventIndex int
 
@@ -137,7 +141,7 @@ func taskMarkerLabel(t *model.Todo, folder bool) string {
 }
 
 func newTimeGridView() *timeGridView {
-	return &timeGridView{Box: tview.NewBox()}
+	return &timeGridView{Box: tview.NewBox(), loc: time.Local}
 }
 
 func (tg *timeGridView) setData(days []time.Time, timed, allDay map[string][]model.Occurrence, selected, now time.Time) {
@@ -608,11 +612,11 @@ func (tg *timeGridView) newVScale(bodyY, bodyH int) vScale {
 // item's time, else the current time when a shown day is today, else mid-morning.
 func (tg *timeGridView) anchorHour() float64 {
 	if sel := tg.selectedItem(); sel != nil && !isAllDayItem(*sel) {
-		return hourFloat(sel.Start.In(time.Local))
+		return hourFloat(sel.Start.In(tg.loc))
 	}
 	for _, day := range tg.days {
 		if model.SameDay(day, tg.now) {
-			return hourFloat(tg.now.In(time.Local))
+			return hourFloat(tg.now.In(tg.loc))
 		}
 	}
 	return defaultAnchorHour
@@ -773,7 +777,7 @@ func isAllDayItem(it model.AgendaItem) bool {
 // task from the filled event blocks; it may sit over an event block at the same
 // time.
 func (tg *timeGridView) drawTaskMarker(screen tcell.Screen, t *model.Todo, colX, colW int, vs vScale, selected bool) {
-	due := t.Due.In(time.Local)
+	due := t.Due.In(tg.loc)
 	row := vs.row(hourFloat(due))
 	if row < vs.bodyY || row >= vs.bodyY+vs.bodyH {
 		return // due time is scrolled out of view
@@ -790,8 +794,8 @@ func (tg *timeGridView) drawTaskMarker(screen tcell.Screen, t *model.Todo, colX,
 // geometry is clamped to it as well as to the column, because a custom Draw path
 // that paints past its rect corrupts whatever pane sits beside it.
 func (tg *timeGridView) drawBlock(screen tcell.Screen, p model.Placement, day time.Time, colX, colW, paneRight int, vs vScale, selected bool) {
-	startT := p.Occ.Start.In(time.Local)
-	endT := p.Occ.End.In(time.Local)
+	startT := p.Occ.Start.In(tg.loc)
+	endT := p.Occ.End.In(tg.loc)
 	// Clip the block to this day's column. A multi-day event begins at midnight
 	// (the top) on the days after it started and runs to midnight (the bottom) on
 	// the days before it ends; only its true start/end days show its actual times.

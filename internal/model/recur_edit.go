@@ -135,6 +135,19 @@ func componentAnchor(comp *ical.Component, loc *time.Location) (name string, t t
 	return "", time.Time{}, false, false
 }
 
+// masterAnchorProp is the property a master's rule is anchored on — DTSTART, or DUE
+// for a VTODO that recurs on its due date alone. A RECURRENCE-ID or EXDATE names an
+// instant that rule generates, so it must be written in the *anchor's* zone;
+// hard-coding DTSTART writes a UTC exception against a TZID-anchored DUE, naming a
+// different instant than the one the rule produces. Falls back to DTSTART when the
+// component carries neither, so an undated master keeps the previous behaviour.
+func masterAnchorProp(master *ical.Component, loc *time.Location) string {
+	if name, _, _, ok := componentAnchor(master, loc); ok {
+		return name
+	}
+	return ical.PropDateTimeStart
+}
+
 // componentRecurrenceSet builds the rrule.Set for comp anchored at the given
 // instant — the write-side twin of Event.recurrenceSet, usable for a VTODO too.
 func componentRecurrenceSet(comp *ical.Component, anchor time.Time) (*rrule.Set, error) {
@@ -310,8 +323,9 @@ func AddOccurrenceOverride(obj *Parsed, uid string, occ time.Time, allDay bool, 
 		// be expressed in the master DTSTART's own value type and zone — the override
 		// has no anchor of its own yet, and writing UTC against a TZID-anchored master
 		// would name a different instant than the one the rule generates.
+		anchorName := masterAnchorProp(master, loc)
 		setAnchorDateOrTime(override, ical.PropRecurrenceID, occ, allDay,
-			anchorZone(master, ical.PropDateTimeStart, nil, allDay, occ))
+			anchorZone(master, anchorName, nil, allDay, occ))
 		clone.Calendar.Children = append(clone.Calendar.Children, override)
 	}
 	mutate(override)
@@ -339,9 +353,9 @@ func AddException(obj *Parsed, uid string, occ time.Time, allDay bool, now time.
 	}
 
 	// Like RECURRENCE-ID, an EXDATE names an instant the master's rule generates, so
-	// it takes the master DTSTART's zone rather than being flattened to UTC.
+	// it takes the master anchor's zone rather than being flattened to UTC.
 	ex := newAnchorDateOrTimeProp(ical.PropExceptionDates, occ, allDay,
-		anchorZone(master, ical.PropDateTimeStart, nil, allDay, occ))
+		anchorZone(master, masterAnchorProp(master, loc), nil, allDay, occ))
 	master.Props[ical.PropExceptionDates] = append(master.Props[ical.PropExceptionDates], *ex)
 	touch(master, now)
 
@@ -564,6 +578,9 @@ func NewSeriesFrom(obj *Parsed, uid string, occ time.Time, mutate func(*ical.Com
 	}
 
 	mutate(comp)
+	// The future half is a brand-new calendar object: it carries the master's (or
+	// mutate's) TZID-anchored DTSTART but none of the source object's VTIMEZONEs.
+	ensureVTimezone(cal, now)
 	return Parse(cal, loc)
 }
 
@@ -631,6 +648,10 @@ func RewriteEventRule(obj *Parsed, uid string, d EventDraft, now time.Time, loc 
 	}
 	applyEvent(master, d, now)
 	dropped := reconcileOverrides(clone.Calendar, uid, d.RecurRemove, loc)
+	// This is the primary scope=All rule-change path: applyEvent re-anchors the
+	// master in the zone the new rule was authored in, so the TZID it just wrote may
+	// be one the object does not define yet.
+	ensureVTimezone(clone.Calendar, now)
 	out, err := Parse(clone.Calendar, loc)
 	if err != nil {
 		return nil, 0, err
@@ -833,6 +854,10 @@ func DetachTodoOccurrence(obj *Parsed, uid string, d TodoDraft, now time.Time, l
 	setCompleted(one, d.Completed, now)
 	applyTodo(one, d, now)
 	cal.Children = append(cal.Children, one)
+
+	// Like NewSeriesFrom, this is a fresh calendar object carrying a TZID-anchored
+	// DTSTART/DUE cloned from the series but none of the source object's VTIMEZONEs.
+	ensureVTimezone(cal, now)
 
 	out, err := Parse(cal, loc)
 	if err != nil {

@@ -27,6 +27,13 @@ type calendarView struct {
 	mondayFirst bool
 	clock24     bool // 24h time labels (from time_format)
 
+	// loc is the display zone — the app's a.loc, refreshed on every redraw. It is
+	// not always time.Local: config.LocalZone() prefers a loadable /etc/timezone
+	// name, which can name a different zone than /etc/localtime resolves to. Forms
+	// parse and write in a.loc, so rendering in anything else shows an item at an
+	// hour the user never typed.
+	loc *time.Location
+
 	eventMode  bool // cycling events within the selected day
 	eventIndex int
 
@@ -50,7 +57,7 @@ type calendarView struct {
 }
 
 func newCalendarView() *calendarView {
-	return &calendarView{Box: tview.NewBox(), items: map[string][]model.AgendaItem{}}
+	return &calendarView{Box: tview.NewBox(), items: map[string][]model.AgendaItem{}, loc: time.Local}
 }
 
 func (cv *calendarView) setData(weeks [][]time.Time, items map[string][]model.AgendaItem, month time.Month, selected, now time.Time, mondayFirst bool) {
@@ -308,7 +315,7 @@ func (cv *calendarView) drawCell(screen tcell.Screen, day time.Time, cellX, cell
 				style = style.Reverse(true)
 			}
 		}
-		printStyled(screen, cx, row, cw, itemLabel(items[i], day, cv.folderItem(items[i]), cv.clock24), style)
+		printStyled(screen, cx, row, cw, itemLabel(items[i], day, cv.folderItem(items[i]), cv.clock24, cv.loc), style)
 	}
 	drawMore := func(row, count int) {
 		printStyled(screen, cx, row, cw, fmt.Sprintf("+%d more", count),
@@ -409,8 +416,8 @@ func (cv *calendarView) folderItem(it model.AgendaItem) bool {
 // checkbox. A timed event that spans several days shows its start time only on
 // the day it starts, its end time (prefixed →) on the day it ends, and the title
 // alone on the days it merely continues through — so the start time no longer
-// repeats on every covered day.
-func itemLabel(it model.AgendaItem, day time.Time, folder, use24 bool) string {
+// repeats on every covered day. loc is the display zone the hour is read in.
+func itemLabel(it model.AgendaItem, day time.Time, folder, use24 bool, loc *time.Location) string {
 	title := nonEmpty(it.Title, "(untitled)")
 	switch {
 	case it.IsTodo():
@@ -418,9 +425,9 @@ func itemLabel(it model.AgendaItem, day time.Time, folder, use24 bool) string {
 	case it.AllDay:
 		return title
 	case model.SameDay(day, it.Start):
-		return hourAxisLabel(it.Start.In(time.Local).Hour(), use24) + " " + title
+		return hourAxisLabel(it.Start.In(loc).Hour(), use24) + " " + title
 	case !it.End.IsZero() && model.SameDay(day, it.End):
-		return "→" + hourAxisLabel(it.End.In(time.Local).Hour(), use24) + " " + title
+		return "→" + hourAxisLabel(it.End.In(loc).Hour(), use24) + " " + title
 	default:
 		return title
 	}

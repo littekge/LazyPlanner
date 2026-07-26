@@ -33,6 +33,9 @@ const vtimezoneDateTimeLayout = "20060102T150405"
 // can ask about.
 const vtimezoneEpochOnset = "19700101T000000"
 
+// vtimezoneEpochYear is the year vtimezoneEpochOnset falls in; the two must agree.
+const vtimezoneEpochYear = 1970
+
 // IsNamedZone reports whether loc can be referenced by TZID. UTC is excluded
 // deliberately: a UTC value's correct serialization is the Z form, which needs no
 // TZID and no VTIMEZONE. A fixed-offset zone (time.FixedZone) carries an
@@ -69,29 +72,49 @@ func BuildVTimezone(loc *time.Location, around time.Time) *ical.Component {
 	if len(transitions) == 0 {
 		// No DST in the window: one STANDARD observance carrying the fixed offset.
 		_, off := around.In(loc).Zone()
-		tz.Children = append(tz.Children, observance(ical.CompTimezoneStandard, around.In(loc), off, off, false))
+		tz.Children = append(tz.Children, observance(ical.CompTimezoneStandard, around.In(loc), off, off, nil))
 		return tz
 	}
 
-	// Keep the most recent transition of each kind. Because the window ends at the
-	// anchor, that is the transition under whose rule the anchor itself falls — the
-	// one a reader needs — and the yearly RRULE projects it forward from there.
-	seen := map[string]bool{}
+	// Group the window's transitions by observance, most recent first. The most
+	// recent of each kind is the one whose rule the anchor itself falls under — the
+	// one a reader needs — and the yearly RRULE projects it forward from there; the
+	// earlier ones of the same kind are kept only as evidence for icalNthWeekday.
+	groups := map[string]*observanceGroup{}
+	var order []*observanceGroup
 	for i := len(transitions) - 1; i >= 0; i-- {
 		at := transitions[i].In(loc)
 		name := ical.CompTimezoneStandard
 		if at.IsDST() {
 			name = ical.CompTimezoneDaylight
 		}
-		if seen[name] {
-			continue
-		}
-		seen[name] = true
 		_, offTo := at.Zone()
 		_, offFrom := at.Add(-time.Second).In(loc).Zone()
-		tz.Children = append(tz.Children, observance(name, at, offFrom, offTo, true))
+		g := groups[name]
+		if g == nil {
+			g = &observanceGroup{name: name, at: at, offFrom: offFrom, offTo: offTo}
+			groups[name] = g
+			order = append(order, g)
+		}
+		// Each transition contributes the wall clock read in *its own* FROM offset,
+		// the only rendering an observance DTSTART may carry (see observanceWallClock).
+		g.onsets = append(g.onsets, observanceWallClock(at, offFrom))
+	}
+	for _, g := range order {
+		tz.Children = append(tz.Children, observance(g.name, g.at, g.offFrom, g.offTo, g.onsets))
 	}
 	return tz
+}
+
+// observanceGroup collects one observance's transitions from the lookback window,
+// most recent first. Only the most recent is emitted; the rest disambiguate its
+// yearly rule.
+type observanceGroup struct {
+	name    string
+	at      time.Time // most recent transition, in the zone (the TZNAME source)
+	offFrom int
+	offTo   int
+	onsets  []time.Time // wall clocks, most recent first
 }
 
 // zoneTransitions returns the instants in [from, to) at which loc changes offset,
@@ -122,14 +145,16 @@ func zoneTransitions(loc *time.Location, from, to time.Time) []time.Time {
 	return out
 }
 
-// observance builds one STANDARD/DAYLIGHT subcomponent.
-func observance(name string, at time.Time, offFrom, offTo int, recurring bool) *ical.Component {
+// observance builds one STANDARD/DAYLIGHT subcomponent. onsets are the observance's
+// wall-clock transitions, most recent first; an empty slice marks the "one rule,
+// always" case, which gets no RRULE.
+func observance(name string, at time.Time, offFrom, offTo int, onsets []time.Time) *ical.Component {
 	sub := ical.NewComponent(name)
 	// A non-recurring observance is the "one rule, always" case, so its onset belongs
 	// in the far past rather than at the transition-less anchor.
-	dtstart := vtimezoneEpochOnset
-	if recurring {
-		dtstart = observanceStart(at, offFrom)
+	dtstart := epochOnset(at)
+	if len(onsets) > 0 {
+		dtstart = onsets[0].Format(vtimezoneDateTimeLayout)
 	}
 	setTypedProp(sub.Props, ical.PropDateTimeStart, dtstart)
 	setTypedProp(sub.Props, ical.PropTimezoneOffsetFrom, icalUTCOffset(offFrom))
@@ -137,21 +162,43 @@ func observance(name string, at time.Time, offFrom, offTo int, recurring bool) *
 	if abbrev, _ := at.Zone(); abbrev != "" {
 		sub.Props.SetText(ical.PropTimezoneName, abbrev)
 	}
-	if recurring {
+	if len(onsets) > 0 {
+		// BYMONTH/BYDAY are read from the very wall clock the DTSTART above carries —
+		// never from `at` rendered in the zone, which is the TO offset. For a
+		// transition near local midnight the two land on different calendar days
+		// (Africa/Cairo's 20251031T000000 is a Friday in the FROM offset, a Thursday
+		// in the TO one), so a rule derived from the wrong one does not generate its
+		// own DTSTART: the project's "never leave DTSTART contradicting its own BY*"
+		// invariant, inside the generator.
 		setTypedProp(sub.Props, ical.PropRecurrenceRule,
-			fmt.Sprintf("FREQ=YEARLY;BYMONTH=%d;BYDAY=%s", int(at.Month()), icalNthWeekday(at)))
+			fmt.Sprintf("FREQ=YEARLY;BYMONTH=%d;BYDAY=%s",
+				int(onsets[0].Month()), icalNthWeekday(onsets[0], onsets[1:])))
 	}
 	return sub
 }
 
-// observanceStart renders the transition instant as the floating wall clock an
+// epochOnset dates a transition-less observance. The far-past vtimezoneEpochOnset is
+// the conventional answer, but it is only far-past relative to a modern anchor: for
+// an anchor before 1970 (a user typing a 1965 start into the form) the rule would
+// begin *after* the value it exists to describe, leaving a strict reader with no rule
+// in effect — the same defect as dating an observance after its anchor. Such an
+// anchor pulls the onset back to the start of its own year.
+func epochOnset(anchor time.Time) string {
+	if anchor.Year() < vtimezoneEpochYear {
+		return time.Date(anchor.Year(), time.January, 1, 0, 0, 0, 0, anchor.Location()).
+			Format(vtimezoneDateTimeLayout)
+	}
+	return vtimezoneEpochOnset
+}
+
+// observanceWallClock renders the transition instant as the floating wall clock an
 // observance DTSTART must carry. RFC 5545 §3.6.5 pins that wall clock to the offset
 // being switched *from*, not to: a US spring-forward is written 02:00 with
 // TZOFFSETFROM:-0500, which is the same instant as 03:00 EDT. Rendering it in the
 // new offset instead would read, to any conforming client, as an onset an hour late
 // — and would not match the shape NextCloud, Google and Apple emit.
-func observanceStart(at time.Time, offFrom int) string {
-	return at.In(time.FixedZone("", offFrom)).Format(vtimezoneDateTimeLayout)
+func observanceWallClock(at time.Time, offFrom int) time.Time {
+	return at.In(time.FixedZone("", offFrom))
 }
 
 // setTypedProp writes an already-serialized value for a property whose value type
@@ -175,12 +222,35 @@ func icalUTCOffset(seconds int) string {
 }
 
 // icalNthWeekday renders t's weekday as the BYDAY ordinal form ("2SU"), using -1
-// for a date in the final week of its month ("last Sunday") the way zone rules
-// are conventionally expressed.
-func icalNthWeekday(t time.Time) string {
+// for "last Sunday" the way zone rules are conventionally expressed. earlier holds
+// the same observance's onsets from previous years, most recent first.
+//
+// A date in the final seven days of its month is ambiguous — it is both the nth
+// <weekday> and the last one — and the two readings diverge in a year whose month
+// holds a fifth: a genuine 4th-Sunday rule rendered -1SU fires a week late whenever
+// October has five Sundays. A single date cannot settle it, so the earlier years do:
+// a year in which this observance fell on the same nth *without* being that month's
+// last proves the rule pins a positive nth, because a "last" rule could not have
+// produced it. Absent such evidence the last-week reading is kept — what the common
+// rule (the EU's last Sunday, Egypt's last Friday) means.
+func icalNthWeekday(t time.Time, earlier []time.Time) string {
 	abbrev := [...]string{"SU", "MO", "TU", "WE", "TH", "FR", "SA"}[t.Weekday()]
-	if t.AddDate(0, 0, 7).Month() != t.Month() {
-		return "-1" + abbrev
+	nth := weekOfMonth(t)
+	if !isLastWeekdayOfMonth(t) {
+		return fmt.Sprintf("%d%s", nth, abbrev)
 	}
-	return fmt.Sprintf("%d%s", (t.Day()-1)/7+1, abbrev)
+	for _, e := range earlier {
+		if e.Month() == t.Month() && e.Weekday() == t.Weekday() &&
+			weekOfMonth(e) == nth && !isLastWeekdayOfMonth(e) {
+			return fmt.Sprintf("%d%s", nth, abbrev)
+		}
+	}
+	return "-1" + abbrev
 }
+
+// weekOfMonth is t's 1-based position among its month's days of the same weekday.
+func weekOfMonth(t time.Time) int { return (t.Day()-1)/7 + 1 }
+
+// isLastWeekdayOfMonth reports whether t is the final occurrence of its weekday in
+// its month — i.e. seven days on lands in the next month.
+func isLastWeekdayOfMonth(t time.Time) bool { return t.AddDate(0, 0, 7).Month() != t.Month() }

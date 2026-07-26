@@ -4,6 +4,63 @@
 
 ---
 
+## 2026-07-26 — TZID arc: the whole-branch review's six findings, fixed in one pass
+
+The FINAL whole-branch review of the TZID-anchored-recurrence arc found six issues the per-task
+reviews structurally could not see. All six are fixed here, each with a regression test verified to
+go RED under a mutation and GREEN on revert.
+
+**Interop (the payload the arc exists to ship).**
+
+- Three anchor writers emitted a TZID no `VTIMEZONE` defined — `RewriteEventRule` (the *primary*
+  scope=All rule-change path), `NewSeriesFrom` (the this-and-future split's future half) and
+  `DetachTodoOccurrence` (the todo detach). An undefined TZID is rejected by Sabre/NextCloud
+  validation and read as floating by Apple/Thunderbird. All three now call `ensureVTimezone`.
+- `ensureVTimezone` scanned only `DTSTART`/`DTEND`/`DUE`, so a recurrence date in a zone the anchor
+  does not name went undefined (a Windows-spelled anchor beside an IANA-spelled `EXDATE` left both
+  undefined). It now scans `EXDATE`/`RDATE`/`RECURRENCE-ID` too, per value.
+
+**The generator contradicting itself.** `BuildVTimezone` rendered an observance `DTSTART` in the
+FROM offset (correct, RFC 5545 §3.6.5) but derived `BYMONTH`/`BYDAY` from the TO-offset rendering.
+For a transition near local midnight the two fall on different days, so the rule did not generate
+its own anchor — `Africa/Cairo` (`20251031T000000`, a Friday, with `BYDAY=-1TH`), `Asia/Beirut`,
+`America/Santiago`. Both now read the same wall clock. Folded in: `icalNthWeekday` inferred `-1`
+from "falls in the final 7 days", so a genuine 4th-weekday rule in a month's last week drifted in
+other years; earlier years of the same observance now resolve the ambiguity when one of them is
+decisive, and `-1` is kept otherwise.
+
+**Smaller fixes.**
+
+- `a.loc` can now diverge from `time.Local` (`config.LocalZone()` prefers a loadable
+  `/etc/timezone` name). Eight render sites still read `time.Local`, so an item entered at 20:00
+  could render at another hour. The month grid, time grid and agenda board now carry a `loc` field
+  refreshed on every redraw, and all eight sites read it.
+- `vtimezoneEpochOnset` dated a transition-less observance at 1970 — after a pre-1970 anchor
+  (reachable by typing a 1965 start in a no-DST named zone). A pre-1970 anchor now pulls the onset
+  back to the start of its own year.
+- `AddException`/`AddOccurrenceOverride` hard-coded `DTSTART` as the master's anchor, writing a UTC
+  exception against a TZID-anchored `DUE` on a recurring VTODO. They now resolve the anchor property
+  (`masterAnchorProp`).
+
+**Files**: `internal/model/{vtimezone,edit,recur_edit}.go`,
+`internal/ui/{calendarview,timegridview,agendaboard,render}.go`.
+**Tests added**: `internal/model/{vtimezone_selfconsistent,vtimezone_scan}_test.go`,
+`internal/ui/{vtimezone_writers_uipath,displayzone}_test.go`.
+**Tests touched**: six pre-existing call sites gained an explicit display-zone argument
+(`internal/ui/{multiday,agendaboard,taskcalendar}_test.go`) — mechanical, and each passes the
+`time.Local` the call previously implied, so no assertion changed.
+
+**Named accepted residual**: roughly a third of sampled zones still diverge on *forward* projection
+because their real rules are not expressible as one yearly rule (DST abolished, or lunar-political).
+That is inherent to the compact VTIMEZONE shape every other client emits; the new sweep asserts the
+achievable property — the emitted rule generates the emitted `DTSTART` — not projection fidelity.
+
+Gate green (`go test ./... && go vet ./... && staticcheck ./... && go build ./...`) plus a zone
+sweep over UTC, America/New_York, Europe/Berlin, Asia/Kolkata, Australia/Sydney, Pacific/Kiritimati,
+Asia/Kathmandu, Pacific/Chatham and America/St_Johns.
+
+---
+
 ## 2026-07-26 — Recurring items anchor in their own timezone, closing the Pass-23 carried lead
 
 Pass 23 carried an **unverified product-bug lead**: an agent killed mid-investigation by a session

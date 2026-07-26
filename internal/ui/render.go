@@ -106,6 +106,10 @@ func (a *app) selectedCalendarID() string {
 // --- Calendar center (month grid / time-grid) ---
 
 func (a *app) buildCenterCalendar() {
+	// Refresh the display zone every redraw rather than once at construction: a.loc
+	// is assigned after newApp (Run applies the configured zone), so a value copied
+	// in the constructor would be stale for the whole session.
+	a.month.loc, a.timegrid.loc = a.loc, a.loc
 	if a.viewMode == viewMonth {
 		weeks := model.MonthGrid(a.anchor, a.weekStartMonday)
 		a.month.setData(weeks, a.calItems(weeks), a.anchor.Month(), a.anchor, a.now, a.weekStartMonday)
@@ -526,6 +530,7 @@ func (a *app) showTreeNode(node *tview.TreeNode) {
 // buildAgendaCenter feeds today's items to the agenda board and syncs its
 // selection to the left Agenda list.
 func (a *app) buildAgendaCenter() {
+	a.agenda.loc = a.loc // see buildCenterCalendar: a.loc is set after construction
 	day := model.DayStart(a.now)
 	a.agenda.setData(day, a.dayItems(day))
 	a.agenda.setSelected(a.agendaList.GetCurrentItem())
@@ -547,7 +552,7 @@ func (a *app) setDayDetail(day time.Time) {
 		if it.IsTodo() {
 			kind = "task"
 		}
-		fmt.Fprintf(&b, "[gray]%-8s[-] %s  [gray](%s)[-]\n", whenLabel(it, a.clock24), tview.Escape(nonEmpty(it.Title, "(untitled)")), kind)
+		fmt.Fprintf(&b, "[gray]%-8s[-] %s  [gray](%s)[-]\n", whenLabel(it, a.clock24, a.loc), tview.Escape(nonEmpty(it.Title, "(untitled)")), kind)
 	}
 	a.setDetail(b.String())
 }
@@ -890,14 +895,15 @@ func (a *app) agendaLeftLabel(it model.AgendaItem) string {
 	if it.IsTodo() {
 		mark = todoMark(it.Todo, a.isFolder(it.Todo.UID))
 	}
-	return fmt.Sprintf("%-8s %s%s", whenLabel(it, a.clock24), mark, tview.Escape(nonEmpty(it.Title, "(untitled)")))
+	return fmt.Sprintf("%-8s %s%s", whenLabel(it, a.clock24, a.loc), mark, tview.Escape(nonEmpty(it.Title, "(untitled)")))
 }
 
-func whenLabel(it model.AgendaItem, use24 bool) string {
+// whenLabel is an agenda line's leading time column, read in the display zone loc.
+func whenLabel(it model.AgendaItem, use24 bool, loc *time.Location) string {
 	if it.AllDay {
 		return "all-day"
 	}
-	return clockStr(it.Start.In(time.Local), use24)
+	return clockStr(it.Start.In(loc), use24)
 }
 
 func (a *app) fmtWhen(t time.Time, allDay bool) string {
