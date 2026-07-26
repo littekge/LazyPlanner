@@ -5,6 +5,8 @@ import (
 	"strings"
 	"time"
 
+	"github.com/rivo/tview"
+
 	"github.com/littekge/LazyPlanner/internal/model"
 )
 
@@ -136,11 +138,12 @@ func (a *app) setDuePrompt() {
 		// A single-field set flashes any obvious-error warning instead of the
 		// keep-open re-prompt the quick-add creators use (main.md).
 		if len(qa.Warnings) > 0 {
-			a.flash("due: " + qa.Warnings[0])
+			// The warning quotes the offending token back at the user verbatim.
+			a.flash("due: " + tview.Escape(qa.Warnings[0]))
 			return
 		}
 		if !qa.HasDate && !qa.HasTime {
-			a.flash("due: couldn't read a date from " + text)
+			a.flash("due: couldn't read a date from " + tview.Escape(text))
 			return
 		}
 		when, allDay := qa.At(model.DayStart(a.now), a.loc)

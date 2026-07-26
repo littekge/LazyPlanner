@@ -795,7 +795,8 @@ func (a *app) undoLast() {
 	a.refreshKeepingDrill(step.selUID)
 	// Undo is itself a local change to push (it doesn't call pushUndo).
 	a.scheduleSyncDebounced()
-	a.flash("Undid " + step.label)
+	// step.label embeds an item summary, so it is not app-controlled text.
+	a.flash("Undid " + tview.Escape(step.label))
 }
 
 // --- refresh after a mutation ---
@@ -1119,16 +1120,33 @@ func modalWrap(prim tview.Primitive, width, height int) tview.Primitive {
 
 // flash shows a transient result/status message in the left section of the
 // status bar; it persists until the next updateStatus (i.e. the next action).
+//
+// It deliberately does NOT escape msg: a few callers (advanceRecurringTodo) wrap
+// their message in style tags on purpose. Text the app does not control must
+// therefore be passed through tview.Escape at the call site — see the tag-escape
+// guardrail in CLAUDE.md.
 func (a *app) flash(msg string) { a.statusLeft.SetText(msg) }
 
 // undoHint is appended to the result flash of every undoable action, so the undo
 // affordance is advertised consistently (all these paths call pushUndo).
 const undoHint = " (u to undo)"
 
+// failureMsg composes the one consistent failure line, "<Action> failed: <err>".
+// The error text is escaped: it routinely carries a file path, a server message,
+// or a calendar name, any of which may contain a '[' run the dynamic-color status
+// bar would otherwise eat. action is always an app literal, so it is not escaped.
+// Exposed separately from flashErr for the few callers that must run a rollback
+// before flashing (bulkComplete's fail).
+func failureMsg(action string, err error) string {
+	return action + " failed: " + tview.Escape(err.Error())
+}
+
 // flashErr shows a failure the one consistent way: "<Action> failed: <err>". Used
 // for store/model mutation failures (field-validation errors stay descriptive).
+// It is the funnel for every error-text flash in the package — route new ones
+// through it rather than concatenating err.Error() into a message by hand.
 func (a *app) flashErr(action string, err error) {
-	a.flash(action + " failed: " + err.Error())
+	a.flash(failureMsg(action, err))
 }
 
 // --- small helpers ---

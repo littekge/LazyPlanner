@@ -11,7 +11,7 @@ import (
 // (which refreshes the views via refresh("")) reset the task-tree highlight back
 // to the first task. The user's current position must survive a sync refresh.
 func TestSyncKeepsTreeHighlight(t *testing.T) {
-	now := time.Date(2026, 7, 5, 9, 0, 0, 0, time.UTC)
+	now := time.Date(2026, 7, 5, 9, 0, 0, 0, time.Local)
 	a := newWritableTestApp(t, now)
 	a.setMode(modeTasks)
 
@@ -47,11 +47,11 @@ func TestSyncKeepsTreeHighlight(t *testing.T) {
 // eventMode/eventIndex, kicking the user out of a day's event-cycling back to day
 // navigation on every sync. The day-drill must survive a position-agnostic refresh.
 func TestSyncKeepsCalendarDrill(t *testing.T) {
-	now := time.Date(2026, 7, 5, 9, 0, 0, 0, time.UTC)
+	now := time.Date(2026, 7, 5, 9, 0, 0, 0, time.Local)
 	a := newWritableTestApp(t, now)
 	a.setMode(modeCalendar)
 	a.viewMode = viewDay
-	a.anchor = time.Date(2026, 7, 5, 0, 0, 0, 0, time.UTC)
+	a.anchor = time.Date(2026, 7, 5, 0, 0, 0, 0, time.Local)
 
 	// Two timed events on the anchor day, so the drilled index (1) is non-zero and
 	// a reset-to-first regression is observable.
@@ -90,7 +90,7 @@ func TestSyncKeepsCalendarDrill(t *testing.T) {
 // reset-to-first class: its center highlight follows the agendaList's index, which
 // refresh restores, so a background sync's refresh("") preserves the position.
 func TestSyncKeepsAgendaHighlight(t *testing.T) {
-	now := time.Date(2026, 7, 5, 9, 0, 0, 0, time.UTC)
+	now := time.Date(2026, 7, 5, 9, 0, 0, 0, time.Local)
 	a := newRootedTestApp(t, now) // Agenda mode hides the Detail pane, which needs the full layout
 
 	// Two events today so the agenda has a non-zero selectable index.

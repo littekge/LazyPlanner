@@ -4,6 +4,8 @@ import (
 	"context"
 	"fmt"
 
+	"github.com/rivo/tview"
+
 	"github.com/littekge/LazyPlanner/internal/model"
 	"github.com/littekge/LazyPlanner/internal/store"
 )
@@ -44,7 +46,7 @@ func (a *app) setClip(cut bool) {
 	}
 	name := ""
 	if loc, ok := a.store.Locate(t.uid); ok {
-		name = " \"" + oneLine(summaryOf(loc.Object, t.uid)) + "\""
+		name = " \"" + tview.Escape(oneLine(summaryOf(loc.Object, t.uid))) + "\""
 	}
 	a.flash(verb + name + " — p paste under · P paste at top")
 }

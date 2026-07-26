@@ -71,7 +71,7 @@ func (a *app) guardComponent(calID, want string) bool {
 		if a.forceCreate {
 			return true // manual override (i!…) for an unconfirmed-type calendar
 		}
-		a.flash("\"" + cal.DisplayName + "\": unknown type — sync it first (i! to force)")
+		a.flash("\"" + tview.Escape(cal.DisplayName) + "\": unknown type — sync it first (i! to force)")
 		return false
 	}
 	if hasComponent(cal, want) {
@@ -79,9 +79,9 @@ func (a *app) guardComponent(calID, want string) bool {
 	}
 	// A known but wrong type is a genuine mismatch — force does not override it.
 	if want == compEvent {
-		a.flash("\"" + cal.DisplayName + "\" is a task list — can't add events")
+		a.flash("\"" + tview.Escape(cal.DisplayName) + "\" is a task list — can't add events")
 	} else {
-		a.flash("\"" + cal.DisplayName + "\" is an event calendar — can't add tasks")
+		a.flash("\"" + tview.Escape(cal.DisplayName) + "\" is an event calendar — can't add tasks")
 	}
 	return false
 }
@@ -172,7 +172,9 @@ func (a *app) showCalendarForm(editID string, defaultType int) {
 		a.refresh("")
 		a.closeModal(pageForm)
 		a.scheduleSyncDebounced()
-		a.flash(fmt.Sprintf("Created %q — syncs on next sync", name))
+		// Plain quotes rather than %q: %q backslash-escapes any quote in the name,
+		// so the user sees mangled text. Matches the sibling flashes above.
+		a.flash("Created \"" + tview.Escape(name) + "\" — syncs on next sync")
 	})
 	f.AddButton("Cancel", func() { a.closeModal(pageForm) })
 	f.SetCancelFunc(func() { a.closeModal(pageForm) })
@@ -338,7 +340,7 @@ func (a *app) promptDeleteCollection(id string, cal store.Calendar) *caretForm {
 		a.refresh("")
 		a.closeModal(pageForm)
 		a.scheduleSyncDebounced()
-		a.flash(fmt.Sprintf("Deleted %q", cal.DisplayName))
+		a.flash("Deleted \"" + tview.Escape(cal.DisplayName) + "\"")
 	})
 	f.AddButton("Cancel", func() { a.closeModal(pageForm) })
 	f.SetCancelFunc(func() { a.closeModal(pageForm) })

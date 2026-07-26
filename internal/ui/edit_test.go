@@ -14,6 +14,12 @@ import (
 
 // newWritableTestApp copies the store fixture into a temp dir and opens the app
 // over it, so editing tests can mutate the cache without touching the fixture.
+//
+// Build `now` (and any anchor/day derived from it) with time.Local, never
+// time.UTC: newApp hard-codes loc: time.Local, so a UTC-located clock makes the
+// test's day window [DayStart(now), +24h) disagree with the day the app buckets
+// locally-timed items into. That disagreement is invisible at or west of UTC and
+// fails east of it — a test that passes only because CI runs in UTC.
 func newWritableTestApp(t *testing.T, now time.Time) *app {
 	t.Helper()
 	dir := t.TempDir()
@@ -54,7 +60,7 @@ func copyTree(t *testing.T, src, dst string) {
 }
 
 func TestCreateTaskAndUndo(t *testing.T) {
-	now := time.Date(2026, 7, 5, 9, 0, 0, 0, time.UTC)
+	now := time.Date(2026, 7, 5, 9, 0, 0, 0, time.Local)
 	a := newWritableTestApp(t, now)
 	a.setMode(modeTasks)
 
@@ -85,7 +91,7 @@ func TestCreateTaskAndUndo(t *testing.T) {
 }
 
 func TestToggleCompleteAndUndo(t *testing.T) {
-	now := time.Date(2026, 7, 5, 9, 0, 0, 0, time.UTC)
+	now := time.Date(2026, 7, 5, 9, 0, 0, 0, time.Local)
 	a := newWritableTestApp(t, now)
 	a.setMode(modeTasks)
 	a.selectTreeByUID("grocery@lazyplanner.test")
@@ -110,7 +116,7 @@ func TestToggleCompleteAndUndo(t *testing.T) {
 // undoLast passed the mutation's non-empty selUID straight to plain refresh,
 // which only preserves drill when selUID == "" — dropping it here.
 func TestUndoWhileDrilledKeepsDrill(t *testing.T) {
-	now := time.Date(2026, 7, 5, 9, 0, 0, 0, time.UTC)
+	now := time.Date(2026, 7, 5, 9, 0, 0, 0, time.Local)
 	a := newWritableTestApp(t, now)
 	a.setMode(modeCalendar)
 	a.viewMode = viewDay
@@ -174,7 +180,7 @@ func TestUndoWhileDrilledKeepsDrill(t *testing.T) {
 }
 
 func TestReparentIndentAndUndo(t *testing.T) {
-	now := time.Date(2026, 7, 5, 9, 0, 0, 0, time.UTC)
+	now := time.Date(2026, 7, 5, 9, 0, 0, 0, time.Local)
 	a := newWritableTestApp(t, now)
 	a.setMode(modeTasks)
 	calID := a.selectedTasklistID()
@@ -207,7 +213,7 @@ func TestReparentIndentAndUndo(t *testing.T) {
 // task shown directly above — even a just-completed (sticky) one — rather than a
 // separately-rebuilt forest that omits it.
 func TestReparentUsesOnScreenSibling(t *testing.T) {
-	now := time.Date(2026, 7, 5, 9, 0, 0, 0, time.UTC)
+	now := time.Date(2026, 7, 5, 9, 0, 0, 0, time.Local)
 	a := newWritableTestApp(t, now)
 	a.setMode(modeTasks)
 	a.showCompleted = false
@@ -234,7 +240,7 @@ func TestReparentUsesOnScreenSibling(t *testing.T) {
 }
 
 func TestFolderBlocksCompletionUntilChildrenDone(t *testing.T) {
-	now := time.Date(2026, 7, 5, 9, 0, 0, 0, time.UTC)
+	now := time.Date(2026, 7, 5, 9, 0, 0, 0, time.Local)
 	a := newWritableTestApp(t, now)
 	a.setMode(modeTasks)
 	calID := a.selectedTasklistID()
@@ -265,7 +271,7 @@ func TestFolderBlocksCompletionUntilChildrenDone(t *testing.T) {
 }
 
 func TestStickyKeepsCompletedVisibleUntilLeavingList(t *testing.T) {
-	now := time.Date(2026, 7, 5, 9, 0, 0, 0, time.UTC)
+	now := time.Date(2026, 7, 5, 9, 0, 0, 0, time.Local)
 	a := newWritableTestApp(t, now)
 	a.setMode(modeTasks)
 	calID := a.selectedTasklistID()
@@ -291,7 +297,7 @@ func TestStickyKeepsCompletedVisibleUntilLeavingList(t *testing.T) {
 // TestCycleCalendar guards the [ / ] calendar cycling (the keys the misleading
 // "[/]" hint was about — it is not the / key).
 func TestCycleCalendar(t *testing.T) {
-	a := newWritableTestApp(t, time.Date(2026, 7, 5, 9, 0, 0, 0, time.UTC))
+	a := newWritableTestApp(t, time.Date(2026, 7, 5, 9, 0, 0, 0, time.Local))
 	a.setMode(modeCalendar)
 	if a.calendars.GetItemCount() < 2 {
 		t.Skip("need at least two calendars to cycle")
@@ -307,7 +313,7 @@ func TestCycleCalendar(t *testing.T) {
 // worked for the first task list: completing a task in a later list must keep it
 // visible too, despite the panel rebuild parking selection at index 0.
 func TestStickyWorksOnNonFirstList(t *testing.T) {
-	now := time.Date(2026, 7, 5, 9, 0, 0, 0, time.UTC)
+	now := time.Date(2026, 7, 5, 9, 0, 0, 0, time.Local)
 	a := newWritableTestApp(t, now)
 	a.setMode(modeTasks)
 	a.showCompleted = false
@@ -341,7 +347,7 @@ func TestStickyWorksOnNonFirstList(t *testing.T) {
 }
 
 func TestDescendants(t *testing.T) {
-	now := time.Date(2026, 7, 5, 9, 0, 0, 0, time.UTC)
+	now := time.Date(2026, 7, 5, 9, 0, 0, 0, time.Local)
 	a := newWritableTestApp(t, now)
 	a.setMode(modeTasks)
 	calID := a.selectedTasklistID()

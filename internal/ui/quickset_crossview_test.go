@@ -15,7 +15,7 @@ import (
 // also be quick-field-settable. Previously `s` was refused with "set: Tasks view
 // only" everywhere but the tree, even though its target resolver is view-agnostic.
 func TestQuickSetUngatedOutsideTasksView(t *testing.T) {
-	when := time.Date(2026, 7, 20, 12, 0, 0, 0, time.UTC)
+	when := time.Date(2026, 7, 20, 12, 0, 0, 0, time.Local)
 	a := newRootedTestApp(t, when)
 	if err := a.store.CreateCalendarLocal(context.Background(), "tl", store.CalendarMeta{DisplayName: "TL"}, []string{"VTODO"}); err != nil {
 		t.Fatal(err)

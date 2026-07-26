@@ -31,7 +31,7 @@ func completeTask(t *testing.T, a *app, uid string) {
 // and agenda, not only the tree — previously it was tree-only, so a completed task
 // showed permanently on the month/week/day grids and agenda.
 func TestHideCompletedAppliesToCalendarAndAgenda(t *testing.T) {
-	when := time.Date(2026, 7, 20, 12, 0, 0, 0, time.UTC)
+	when := time.Date(2026, 7, 20, 12, 0, 0, 0, time.Local)
 	a := newRootedTestApp(t, when)
 	if err := a.store.CreateCalendarLocal(context.Background(), "tl", store.CalendarMeta{DisplayName: "TL"}, []string{"VTODO"}); err != nil {
 		t.Fatal(err)
@@ -84,7 +84,7 @@ func TestHideCompletedAppliesToCalendarAndAgenda(t *testing.T) {
 // Space while completed are hidden pins it (stickyDone) regardless of view, so it
 // doesn't vanish instantly from the calendar/agenda.
 func TestCompleteWhileHiddenPinsStickyInAnyView(t *testing.T) {
-	when := time.Date(2026, 7, 20, 12, 0, 0, 0, time.UTC)
+	when := time.Date(2026, 7, 20, 12, 0, 0, 0, time.Local)
 	a := newRootedTestApp(t, when)
 	if err := a.store.CreateCalendarLocal(context.Background(), "tl", store.CalendarMeta{DisplayName: "TL"}, []string{"VTODO"}); err != nil {
 		t.Fatal(err)

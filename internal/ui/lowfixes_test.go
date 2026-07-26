@@ -57,7 +57,7 @@ func TestTimeGridDrilledAllDayTaskKeepsMarker(t *testing.T) {
 // names `v` only in calendar mode (where v cycles to week/day); in agenda mode v
 // is a no-op, so the hint must not name it.
 func TestGrabTimeHintIsModeAware(t *testing.T) {
-	a := newRootedTestApp(t, time.Date(2026, 7, 5, 9, 0, 0, 0, time.UTC))
+	a := newRootedTestApp(t, time.Date(2026, 7, 5, 9, 0, 0, 0, time.Local))
 
 	a.mode = modeCalendar
 	if h := a.grabTimeHint("change the time"); !strings.Contains(h, "(v)") {
@@ -75,7 +75,7 @@ func TestGrabTimeHintIsModeAware(t *testing.T) {
 // when they are already in week/day view — an all-day event simply has no
 // time to change or resize, regardless of which view is active.
 func TestGrabTimeHintAllDayEventAlreadyInWeekDayViewDoesNotSuggestSwitching(t *testing.T) {
-	a := newRootedTestApp(t, time.Date(2026, 7, 5, 9, 0, 0, 0, time.UTC))
+	a := newRootedTestApp(t, time.Date(2026, 7, 5, 9, 0, 0, 0, time.Local))
 	a.mode = modeCalendar
 	a.viewMode = viewWeek
 	a.grabAllDay = true
@@ -89,7 +89,7 @@ func TestGrabTimeHintAllDayEventAlreadyInWeekDayViewDoesNotSuggestSwitching(t *t
 // TestSpaceOnDrilledEventFlashes locks L5: Space on a drilled event flashes
 // (events can't be completed) instead of silently flipping a calendar's visibility.
 func TestSpaceOnDrilledEventFlashes(t *testing.T) {
-	when := time.Date(2026, 7, 20, 12, 0, 0, 0, time.UTC)
+	when := time.Date(2026, 7, 20, 12, 0, 0, 0, time.Local)
 	a := newRootedTestApp(t, when)
 	if err := a.store.CreateCalendarLocal(context.Background(), "ev", store.CalendarMeta{DisplayName: "EV"}, []string{"VEVENT"}); err != nil {
 		t.Fatal(err)
@@ -132,7 +132,7 @@ func TestSpaceOnDrilledEventFlashes(t *testing.T) {
 // in Agenda mode must flash "Can't complete an event", not silently no-op the
 // way toggleComplete used to for a non-task target.
 func TestSpaceOnAgendaEventFlashes(t *testing.T) {
-	when := time.Date(2026, 7, 20, 12, 0, 0, 0, time.UTC)
+	when := time.Date(2026, 7, 20, 12, 0, 0, 0, time.Local)
 	a := newRootedTestApp(t, when)
 	if err := a.store.CreateCalendarLocal(context.Background(), "ev", store.CalendarMeta{DisplayName: "EV"}, []string{"VEVENT"}); err != nil {
 		t.Fatal(err)
@@ -165,7 +165,7 @@ func TestSpaceOnAgendaEventFlashes(t *testing.T) {
 // focus (via the active closure) like the calendar day box, rather than being
 // hardwired to the focused color.
 func TestAgendaSelectionBoxFollowsFocus(t *testing.T) {
-	a := newRootedTestApp(t, time.Date(2026, 7, 5, 9, 0, 0, 0, time.UTC))
+	a := newRootedTestApp(t, time.Date(2026, 7, 5, 9, 0, 0, 0, time.Local))
 	if a.agenda.active == nil {
 		t.Fatal("agenda.active closure is not wired")
 	}

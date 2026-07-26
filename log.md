@@ -4,6 +4,50 @@
 
 ---
 
+## 2026-07-25 — Close the tag-escape class (9 more sites) and the zone-dependent tests; 2 new guardrails
+
+Two agents were cut off mid-task by a session limit; I verified what they had, finished both myself, and
+committed only what passes. Their partial state is **not** taken on trust — every claim below was re-run.
+
+- **Tag-escape class, 9 further sites.** Pass 23 reported 5 (fixed in `517eacc`); the sweep found the
+  class much wider. Now escaped: `calendar.go` ×5 (three raw `cal.DisplayName` flashes — already
+  inconsistent with `render.go:37/66`, which escapes the same names — plus the Created/Deleted flashes),
+  `edit.go:798` (`"Undid " + step.label`, which embeds a summary), `quickfield.go:139/143` (a parser
+  warning that quotes the user's token back, and the raw typed text), `yankpaste.go:49` (a task summary).
+  `edit.go` also gained `failureMsg`, so `flashErr` escapes the error text for its ~15 callers at once.
+- **`%q` is not a substitute for escaping** — it quotes and backslash-escapes but leaves a `[` run
+  intact, *and* mangles embedded quotes into `\"`. The two `calendar.go` `%q` flashes were converted to
+  plain quotes + `tview.Escape`, matching their siblings and rendering the name verbatim.
+- One guard case was adjusted, deliberately and narrowly: the `sd` parser-warning site renders `\"`
+  because **the model** formats the offending token with `%q` — a transformation independent of tview.
+  The property under test (the bracket run survives) holds, so the expectation now mirrors `%q` rather
+  than asserting a verbatim string the parser never produces. Not a weakened assertion.
+- **Guard verified to bite:** removing one `tview.Escape` drops the escape count 4→3 and turns
+  `TestStatusTextSurvivesHostileTagRuns` RED. (An earlier `sed`-based attempt silently failed to apply —
+  the "still passes" result was a no-op, not evidence. Re-done with a real edit.)
+- **Zone-dependent tests fixed.** `TestUndoWhileDrilledKeepsDrill` and
+  `TestHideCompletedAppliesToCalendarAndAgenda` failed under `Asia/Kolkata` and `Pacific/Kiritimati` and
+  passed in UTC — at HEAD as well, so pre-existing. Cause: the tests built clocks with `time.UTC` while
+  `newApp` hard-codes `loc: time.Local`, so the test's day window disagreed with the day the app buckets
+  into. Fixed by building test clocks in `time.Local` across six test files; assertions untouched.
+  **All four zones now green** for `internal/ui` and `internal/model`.
+- **Two new Hard-won guardrails** (PROTOCOL rule 9): the tag-escape rule (escape at the call site, never
+  centrally — one caller passes intentional tags; `%q` is not a substitute; `flashErr` is the funnel),
+  and the test-zone rule (build test times in the code's zone; run day-bucketing and recurrence tests
+  over several zones, since CI's UTC hides east-of-UTC failures).
+- **UNRESOLVED, carried to Pass 24 — an unverified product-bug claim.** The zone agent's final message
+  before it was killed said it had "confirmed a genuine product bug" that "reproduces with `TZ=UTC`, so
+  it is not a zone artifact", and that it was about to check whether the todo form shared it. I could not
+  reproduce or locate it: its committed edits are a coherent *test*-bug fix, and the whole suite is green
+  in four zones. Two possibilities remain open and I cannot distinguish them: it found a separate defect
+  elsewhere (likely in a create form), or its test edits mask something. **Treat as a live lead, not a
+  closed item** — this is the highest-value thing to re-open in Pass 24.
+- **Also recorded, not fixed:** `go test -race ./internal/model/` fails on
+  `TestAggregateRecurrenceCapBounded` — a pass-21 test with an **absolute 800 ms wall-clock budget** that
+  `-race` overhead exceeds. Verified pre-existing (fails identically at `ba274c1`). Not a data race, and
+  not part of the official gate, but it makes `-race` unusable on that package; it should be converted to
+  the growth-ratio style this pass adopted elsewhere.
+
 ## 2026-07-25 — Fix (NEW, found during the arc): Draw's inSelRange was quadratic with a SELECT range open
 
 - **Not an audit finding.** Measured by the agent that fixed the sibling `navCells` quadratic. Same class

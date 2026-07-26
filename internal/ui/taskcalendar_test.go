@@ -48,7 +48,7 @@ func todoIndexIn(items []model.AgendaItem) int {
 // TestSpaceChecksOffDrilledTaskInMonthGrid: drilling onto a due task in the month
 // grid and pressing Space checks it off (rather than toggling calendar visibility).
 func TestSpaceChecksOffDrilledTaskInMonthGrid(t *testing.T) {
-	when := time.Date(2026, 7, 20, 12, 0, 0, 0, time.UTC)
+	when := time.Date(2026, 7, 20, 12, 0, 0, 0, time.Local)
 	a := newRootedTestApp(t, when)
 	if err := a.store.CreateCalendarLocal(context.Background(), "tl", store.CalendarMeta{DisplayName: "TL"}, []string{"VTODO"}); err != nil {
 		t.Fatal(err)
@@ -89,7 +89,7 @@ func TestSpaceChecksOffDrilledTaskInMonthGrid(t *testing.T) {
 // TestSpaceChecksOffDrilledTaskInWeekGrid: same, in the week time-grid (tasks are
 // now selectable in its drill).
 func TestSpaceChecksOffDrilledTaskInWeekGrid(t *testing.T) {
-	when := time.Date(2026, 7, 20, 12, 0, 0, 0, time.UTC)
+	when := time.Date(2026, 7, 20, 12, 0, 0, 0, time.Local)
 	a := newRootedTestApp(t, when)
 	if err := a.store.CreateCalendarLocal(context.Background(), "tl", store.CalendarMeta{DisplayName: "TL"}, []string{"VTODO"}); err != nil {
 		t.Fatal(err)
@@ -125,7 +125,7 @@ func TestSpaceChecksOffDrilledTaskInWeekGrid(t *testing.T) {
 // TestSubtaskUnderSelectedTaskInCalendar: with a task drilled in the calendar
 // view, `is` creates a subtask under it, in the parent's own calendar.
 func TestSubtaskUnderSelectedTaskInCalendar(t *testing.T) {
-	when := time.Date(2026, 7, 20, 12, 0, 0, 0, time.UTC)
+	when := time.Date(2026, 7, 20, 12, 0, 0, 0, time.Local)
 	a := newRootedTestApp(t, when)
 	if err := a.store.CreateCalendarLocal(context.Background(), "tl", store.CalendarMeta{DisplayName: "TL"}, []string{"VTODO"}); err != nil {
 		t.Fatal(err)
@@ -174,7 +174,7 @@ func putChildTask(t *testing.T, a *app, calID, summary, parentUID string) {
 // becomes a folder and renders with a ▸ caret (not [ ]) in the month grid and
 // agenda, matching the tree — and still appears on the calendar (keeps its due).
 func TestFolderCaretInCalendarViews(t *testing.T) {
-	when := time.Date(2026, 7, 20, 12, 0, 0, 0, time.UTC)
+	when := time.Date(2026, 7, 20, 12, 0, 0, 0, time.Local)
 	a := newRootedTestApp(t, when)
 	if err := a.store.CreateCalendarLocal(context.Background(), "tl", store.CalendarMeta{DisplayName: "TL"}, []string{"VTODO"}); err != nil {
 		t.Fatal(err)
@@ -211,7 +211,7 @@ func TestFolderCaretInCalendarViews(t *testing.T) {
 // TestFBStaysDrilled: pressing f/b while drilled changes the period and re-enters
 // the drill on the new day (per the "stay drilled" decision).
 func TestFBStaysDrilled(t *testing.T) {
-	day1 := time.Date(2026, 7, 20, 12, 0, 0, 0, time.UTC)
+	day1 := time.Date(2026, 7, 20, 12, 0, 0, 0, time.Local)
 	a := newRootedTestApp(t, day1)
 	if err := a.store.CreateCalendarLocal(context.Background(), "tl", store.CalendarMeta{DisplayName: "TL"}, []string{"VTODO"}); err != nil {
 		t.Fatal(err)
