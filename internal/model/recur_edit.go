@@ -306,7 +306,12 @@ func AddOccurrenceOverride(obj *Parsed, uid string, occ time.Time, allDay bool, 
 	}
 	if override == nil {
 		override = cloneOverrideComponent(master)
-		setDateOrTime(override, ical.PropRecurrenceID, occ, allDay)
+		// A RECURRENCE-ID identifies an instance of the master's series, so it must
+		// be expressed in the master DTSTART's own value type and zone — the override
+		// has no anchor of its own yet, and writing UTC against a TZID-anchored master
+		// would name a different instant than the one the rule generates.
+		setAnchorDateOrTime(override, ical.PropRecurrenceID, occ, allDay,
+			anchorZone(master, ical.PropDateTimeStart, nil, allDay, occ))
 		clone.Calendar.Children = append(clone.Calendar.Children, override)
 	}
 	mutate(override)
@@ -329,7 +334,10 @@ func AddException(obj *Parsed, uid string, occ time.Time, allDay bool, now time.
 		return nil, fmt.Errorf("model: no recurring master with UID %q", uid)
 	}
 
-	ex := newDateOrTimeProp(ical.PropExceptionDates, occ, allDay)
+	// Like RECURRENCE-ID, an EXDATE names an instant the master's rule generates, so
+	// it takes the master DTSTART's zone rather than being flattened to UTC.
+	ex := newAnchorDateOrTimeProp(ical.PropExceptionDates, occ, allDay,
+		anchorZone(master, ical.PropDateTimeStart, nil, allDay, occ))
 	master.Props[ical.PropExceptionDates] = append(master.Props[ical.PropExceptionDates], *ex)
 	touch(master, now)
 
@@ -744,15 +752,23 @@ func AdvanceRecurringTodo(obj *Parsed, uid string, now time.Time, loc *time.Loca
 	rollProp := func(name string) {
 		if prop := comp.Props.Get(name); prop != nil {
 			if t, err := resolveDateTime(prop, loc); err == nil {
-				setDateOrTime(comp, name, t.Add(delta), isDateOnly(prop))
+				rolled := t.Add(delta)
+				// Preserve the anchor's serialization form. Rewriting a TZID-anchored
+				// DUE/DTSTART as UTC would re-interpret the rule's BY* parts against a
+				// different zone, so every completion of a recurring todo would walk the
+				// series onto the wrong weekday.
+				setAnchorDateOrTime(comp, name, rolled, isDateOnly(prop),
+					anchorZone(comp, name, nil, isDateOnly(prop), rolled))
 			}
 		}
 	}
 	rollProp(ical.PropDateTimeStart)
 	rollProp(ical.PropDue)
 	if comp.Props.Get(ical.PropDateTimeStart) == nil && comp.Props.Get(ical.PropDue) == nil {
-		// Neither paired prop existed except the anchor we found; set it directly.
-		setDateOrTime(comp, anchorName, next, allDay)
+		// Neither paired prop existed except the anchor we found; set it directly,
+		// keeping whatever serialization form it already had.
+		setAnchorDateOrTime(comp, anchorName, next, allDay,
+			anchorZone(comp, anchorName, nil, allDay, next))
 	}
 	if roption != nil && roption.Count > 1 {
 		roption.Count--

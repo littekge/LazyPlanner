@@ -72,6 +72,7 @@ func NewTodoObject(d TodoDraft, now time.Time) *Parsed {
 	cal, comp := newObject(ical.CompToDo, now)
 	setCompleted(comp, d.Completed, now)
 	applyTodo(comp, d, now)
+	ensureVTimezone(cal, now)
 	// Built from known-valid parts, so Parse cannot fail here.
 	p, _ := Parse(cal, time.Local)
 	return p
@@ -81,13 +82,14 @@ func NewTodoObject(d TodoDraft, now time.Time) *Parsed {
 func NewEventObject(d EventDraft, now time.Time) (*Parsed, error) {
 	cal, comp := newObject(ical.CompEvent, now)
 	applyEvent(comp, d, now)
+	ensureVTimezone(cal, now)
 	return Parse(cal, time.Local)
 }
 
 // EditTodo returns a clone of obj with the todo identified by uid updated to d,
 // leaving every other property (and every other component) untouched.
 func EditTodo(obj *Parsed, uid string, d TodoDraft, now time.Time, loc *time.Location) (*Parsed, error) {
-	return editComponent(obj, uid, loc, func(comp *ical.Component) {
+	return editComponent(obj, uid, now, loc, func(comp *ical.Component) {
 		// Only rewrite the completion trio when the completed-ness actually changes.
 		// TodoDraft.Completed is a single bool, but VTODO STATUS is quad-state
 		// (NEEDS-ACTION / IN-PROCESS / COMPLETED / CANCELLED). A quick field-set
@@ -105,7 +107,7 @@ func EditTodo(obj *Parsed, uid string, d TodoDraft, now time.Time, loc *time.Loc
 
 // EditEvent returns a clone of obj with the event identified by uid updated to d.
 func EditEvent(obj *Parsed, uid string, d EventDraft, now time.Time, loc *time.Location) (*Parsed, error) {
-	return editComponent(obj, uid, loc, func(comp *ical.Component) {
+	return editComponent(obj, uid, now, loc, func(comp *ical.Component) {
 		applyEvent(comp, d, now)
 	})
 }
@@ -113,7 +115,7 @@ func EditEvent(obj *Parsed, uid string, d EventDraft, now time.Time, loc *time.L
 // SetTodoCompleted flips just the completion state of the todo identified by
 // uid, preserving all other fields — the target of the Space shortcut.
 func SetTodoCompleted(obj *Parsed, uid string, completed bool, now time.Time, loc *time.Location) (*Parsed, error) {
-	return editComponent(obj, uid, loc, func(comp *ical.Component) {
+	return editComponent(obj, uid, now, loc, func(comp *ical.Component) {
 		setCompleted(comp, completed, now)
 		touch(comp, now)
 	})
@@ -122,7 +124,7 @@ func SetTodoCompleted(obj *Parsed, uid string, completed bool, now time.Time, lo
 // SetTodoParent sets (or clears, when parentUID is "") the PARENT relationship of
 // the todo identified by uid, preserving any non-parent RELATED-TO links.
 func SetTodoParent(obj *Parsed, uid, parentUID string, now time.Time, loc *time.Location) (*Parsed, error) {
-	return editComponent(obj, uid, loc, func(comp *ical.Component) {
+	return editComponent(obj, uid, now, loc, func(comp *ical.Component) {
 		setParent(comp, parentUID)
 		touch(comp, now)
 	})
@@ -134,7 +136,7 @@ func SetTodoParent(obj *Parsed, uid, parentUID string, now time.Time, loc *time.
 // keeps its fields, tags, notes, and any unknown props. Used by yank/paste's copy
 // mode; descendants are copied by the caller, remapping each child's parent link.
 func CopyTodo(obj *Parsed, uid, newUID, newParentUID string, now time.Time, loc *time.Location) (*Parsed, error) {
-	return editComponent(obj, uid, loc, func(comp *ical.Component) {
+	return editComponent(obj, uid, now, loc, func(comp *ical.Component) {
 		comp.Props.SetText(ical.PropUID, newUID)
 		setParent(comp, newParentUID)
 		touch(comp, now)
@@ -222,7 +224,7 @@ func newObject(compName string, now time.Time) (*ical.Calendar, *ical.Component)
 // editComponent clones obj (via encode/decode, so the store's snapshot is never
 // mutated), applies mutate to the child component with the given UID, and
 // re-parses so the typed fields match the edited raw component.
-func editComponent(obj *Parsed, uid string, loc *time.Location, mutate func(*ical.Component)) (*Parsed, error) {
+func editComponent(obj *Parsed, uid string, now time.Time, loc *time.Location, mutate func(*ical.Component)) (*Parsed, error) {
 	if loc == nil {
 		loc = time.Local
 	}
@@ -235,6 +237,7 @@ func editComponent(obj *Parsed, uid string, loc *time.Location, mutate func(*ica
 		return nil, fmt.Errorf("model: no event or todo with UID %q", uid)
 	}
 	mutate(comp)
+	ensureVTimezone(clone.Calendar, now)
 	return Parse(clone.Calendar, loc)
 }
 
@@ -276,7 +279,8 @@ func applyTodo(comp *ical.Component, d TodoDraft, now time.Time) {
 	setCategories(comp, d.Categories)
 
 	if d.HasDue {
-		setDateOrTime(comp, ical.PropDue, d.Due, d.DueAllDay)
+		zone := anchorZone(comp, ical.PropDue, d.Recur, d.DueAllDay, d.Due)
+		setAnchorDateOrTime(comp, ical.PropDue, d.Due, d.DueAllDay, zone)
 	} else {
 		comp.Props.Del(ical.PropDue)
 	}
@@ -292,13 +296,16 @@ func applyEvent(comp *ical.Component, d EventDraft, now time.Time) {
 	setTextOrDel(comp, ical.PropDescription, d.Description)
 	setTextOrDel(comp, ical.PropLocation, d.Location)
 
-	setDateOrTime(comp, ical.PropDateTimeStart, d.Start, d.AllDay)
+	// The zone is decided once, from DTSTART: it is the rule's anchor, and DTEND
+	// must keep the same value type and zone as the DTSTART it bounds.
+	zone := anchorZone(comp, ical.PropDateTimeStart, d.Recur, d.AllDay, d.Start)
+	setAnchorDateOrTime(comp, ical.PropDateTimeStart, d.Start, d.AllDay, zone)
 	// DTEND and DURATION are mutually exclusive; a set End writes DTEND (dropping
 	// any inherited DURATION), a zero End clears both (zero-duration / point) —
 	// symmetric with how applyTodo handles DUE.
 	comp.Props.Del(ical.PropDuration)
 	if !d.End.IsZero() {
-		setDateOrTime(comp, ical.PropDateTimeEnd, d.End, d.AllDay)
+		setAnchorDateOrTime(comp, ical.PropDateTimeEnd, d.End, d.AllDay, zone)
 	} else {
 		comp.Props.Del(ical.PropDateTimeEnd)
 	}
@@ -438,6 +445,114 @@ func newDateOrTimeProp(name string, t time.Time, allDay bool) *ical.Prop {
 		prop.SetDateTime(t.UTC())
 	}
 	return prop
+}
+
+// setAnchorDateOrTime writes a value that a recurrence rule may be anchored to.
+//
+// It differs from setDateOrTime in one respect: when zone is non-nil the value is
+// written as local wall clock + TZID rather than the UTC Z form. That matters
+// because RFC 5545 evaluates a rule's BY* parts in its anchor's own zone, so a
+// UTC-anchored rule authored from a local weekday fires on the wrong day whenever
+// the local and UTC dates differ — and drifts an hour across DST.
+//
+// go-ical's SetDateTime already emits the TZID form for any non-UTC location, so
+// the zone choice is expressed entirely by which location t carries.
+func setAnchorDateOrTime(comp *ical.Component, name string, t time.Time, allDay bool, zone *time.Location) {
+	comp.Props.Set(newAnchorDateOrTimeProp(name, t, allDay, zone))
+}
+
+// newAnchorDateOrTimeProp builds the property setAnchorDateOrTime stores. It is
+// separate so the multi-valued EXDATE writer — which appends rather than replaces
+// — can apply the same zone rule.
+func newAnchorDateOrTimeProp(name string, t time.Time, allDay bool, zone *time.Location) *ical.Prop {
+	prop := ical.NewProp(name)
+	switch {
+	case allDay:
+		prop.SetDate(t)
+	case zone != nil:
+		prop.SetDateTime(t.In(zone))
+	default:
+		prop.SetDateTime(t.UTC())
+	}
+	return prop
+}
+
+// anchorZone returns the zone a recurrence anchor should be written in, or nil for
+// the UTC form.
+//
+// Two cases produce a zoned anchor, and the order matters:
+//
+//   - The component's existing anchor already carries a resolvable TZID — keep
+//     writing in THAT zone. It may be a server's own zone, and re-expressing its
+//     data in ours would churn it (iron rule); flattening it to UTC, which this
+//     code did before, silently broke the rule the server authored.
+//   - This call is authoring the rule itself (recur != nil) and t is in a zone
+//     another client can resolve — anchor in it, so the BY* parts being derived
+//     from t agree with the anchor by construction.
+//
+// Anything else keeps the UTC form, including every non-recurring value and every
+// edit that leaves an existing rule alone. That last exclusion is deliberate:
+// re-anchoring a series without re-deriving its BY* would move it.
+func anchorZone(comp *ical.Component, name string, recur *RecurSpec, allDay bool, t time.Time) *time.Location {
+	if allDay {
+		return nil
+	}
+	if existing := comp.Props.Get(name); existing != nil {
+		if tzid := existing.Params.Get(ical.ParamTimezoneID); tzid != "" {
+			if loc, err := time.LoadLocation(tzid); err == nil {
+				return loc
+			}
+		}
+	}
+	if recur != nil && IsNamedZone(t.Location()) {
+		return t.Location()
+	}
+	return nil
+}
+
+// ensureVTimezone adds a VTIMEZONE for every TZID the object's items reference
+// and that the object does not already define. Additive only: an existing
+// VTIMEZONE (ours or a foreign server's) is never replaced or removed — per the
+// iron rule, and because a server's own definition is the authority for its data.
+//
+// The defined-set is why this is cheap enough to sit on every write path:
+// BuildVTimezone probes the zone database ~1100 times, so it must run once per
+// newly-referenced TZID and never for one the object already carries.
+func ensureVTimezone(cal *ical.Calendar, around time.Time) {
+	defined := map[string]bool{}
+	for _, c := range cal.Children {
+		if c.Name == ical.CompTimezone {
+			if p := c.Props.Get(ical.PropTimezoneID); p != nil {
+				defined[p.Value] = true
+			}
+		}
+	}
+	// The item properties whose value may carry a TZID needing a definition.
+	anchorProps := []string{ical.PropDateTimeStart, ical.PropDateTimeEnd, ical.PropDue}
+	for _, c := range cal.Children {
+		if !isItemComponent(c) {
+			continue
+		}
+		for _, name := range anchorProps {
+			p := c.Props.Get(name)
+			if p == nil {
+				continue
+			}
+			tzid := p.Params.Get(ical.ParamTimezoneID)
+			if tzid == "" || defined[tzid] {
+				continue
+			}
+			loc, err := time.LoadLocation(tzid)
+			if err != nil {
+				continue
+			}
+			if tz := BuildVTimezone(loc, around); tz != nil {
+				// VTIMEZONE must precede the components referencing it.
+				cal.Children = append([]*ical.Component{tz}, cal.Children...)
+				defined[tzid] = true
+			}
+		}
+	}
 }
 
 func setDateTimeUTC(comp *ical.Component, name string, t time.Time) {
