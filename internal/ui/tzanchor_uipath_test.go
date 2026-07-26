@@ -3,6 +3,10 @@ package ui
 import (
 	"testing"
 	"time"
+	// Embed the IANA database in the test binary. internal/ui does not import it
+	// (only cmd/lazyplanner does), so on a host without system zoneinfo the zone
+	// lookup below would fail and this guard would skip its way to a vacuous green.
+	_ "time/tzdata"
 
 	"github.com/emersion/go-ical"
 
@@ -22,9 +26,11 @@ import (
 // serialization; this one proves the form actually produces an anchor carrying
 // the zone, since a.loc is where that derivation lives.
 func TestWeeklyPresetKeepsItsWeekdayViaRealUIPath(t *testing.T) {
+	// Fatal, not Skip: tzdata is embedded just above, so a failure here means the
+	// guard is not running — which is exactly how this class hides.
 	ny, err := time.LoadLocation("America/New_York")
 	if err != nil {
-		t.Skipf("zone unavailable: %v", err)
+		t.Fatalf("America/New_York must load (tzdata is embedded): %v", err)
 	}
 	a := newRootedTestApp(t, time.Date(2026, 8, 1, 9, 0, 0, 0, ny))
 	// The app resolves every form value in a.loc; pin it so the test does not

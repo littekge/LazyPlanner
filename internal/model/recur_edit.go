@@ -315,6 +315,10 @@ func AddOccurrenceOverride(obj *Parsed, uid string, occ time.Time, allDay bool, 
 		clone.Calendar.Children = append(clone.Calendar.Children, override)
 	}
 	mutate(override)
+	// The RECURRENCE-ID just written may reference a zone the object does not yet
+	// define — it inherits the master's TZID, which a foreign object can carry
+	// without a matching VTIMEZONE.
+	ensureVTimezone(clone.Calendar, now)
 	return Parse(clone.Calendar, loc)
 }
 
@@ -353,6 +357,9 @@ func AddException(obj *Parsed, uid string, occ time.Time, allDay bool, now time.
 		kept = append(kept, c)
 	}
 	clone.Calendar.Children = kept
+	// The EXDATE just written inherits the master's TZID, which a foreign object can
+	// carry without a matching VTIMEZONE.
+	ensureVTimezone(clone.Calendar, now)
 	return Parse(clone.Calendar, loc)
 }
 

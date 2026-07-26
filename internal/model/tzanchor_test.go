@@ -382,3 +382,269 @@ func TestExistingVTimezoneIsPreservedNotReplaced(t *testing.T) {
 		t.Error("foreign observance gained an RRULE; it was rebuilt rather than preserved")
 	}
 }
+
+// occurrenceStarts renders a series' starts in loc, for comparing two objects'
+// occurrence sets.
+func occurrenceStarts(t *testing.T, ev *Event, loc *time.Location, from, to time.Time) []string {
+	t.Helper()
+	occs, err := ev.Occurrences(from, to)
+	if err != nil {
+		t.Fatal(err)
+	}
+	out := make([]string, 0, len(occs))
+	for _, o := range occs {
+		out = append(out, o.Start.In(loc).Format("Mon 2006-01-02 15:04"))
+	}
+	return out
+}
+
+// A rule-authoring edit must anchor in the zone the BY* was derived from, even
+// when the component already carries a FOREIGN TZID.
+//
+// The reviewer's repro: a server-authored DTSTART;TZID=Europe/Berlin:20260826T020000
+// is the very same instant as Tuesday 20:00 in New York. A New York user edits it
+// and picks the form's own "Weekly on Tue", so BYDAY=TU is derived from the New
+// York Tuesday. If the existing Berlin TZID wins, the anchor stays a Berlin
+// WEDNESDAY while the rule says TU — and every occurrence fires Monday 20:00 New
+// York, with the first occurrence not being the event's own start. That is this
+// task's original defect, reproduced on the edit path.
+func TestRuleAuthoringEditOverridesForeignAnchorZone(t *testing.T) {
+	ny := mustZone(t, "America/New_York")
+	berlin := mustZone(t, "Europe/Berlin")
+
+	ics := "BEGIN:VCALENDAR\r\nVERSION:2.0\r\nPRODID:-//foreign//EN\r\nBEGIN:VEVENT\r\n" +
+		"UID:foreign-tz-1\r\nDTSTAMP:20260101T000000Z\r\n" +
+		"DTSTART;TZID=Europe/Berlin:20260826T020000\r\n" +
+		"DTEND;TZID=Europe/Berlin:20260826T030000\r\nSUMMARY:old\r\nEND:VEVENT\r\nEND:VCALENDAR\r\n"
+	obj, err := Decode([]byte(ics), berlin)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	// Sanity: the stored instant IS Tuesday 20:00 in New York, so the user is not
+	// moving the event — only choosing a rule.
+	start := obj.Events[0].Start.In(ny)
+	if start.Weekday() != time.Tuesday || start.Hour() != 20 {
+		t.Fatalf("fixture start = %v in NY, want a Tuesday at 20:00", start)
+	}
+
+	edited, err := EditEvent(obj, "foreign-tz-1", EventDraft{
+		Summary: "renamed", Start: start, End: start.Add(time.Hour),
+		Recur: &RecurSpec{Freq: FreqWeekly, Weekdays: []time.Weekday{time.Tuesday}},
+	}, start, ny)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	dtstart := propOf(t, edited, ical.PropDateTimeStart)
+	if got := dtstart.Params.Get(ical.ParamTimezoneID); got != "America/New_York" {
+		t.Errorf("DTSTART TZID = %q, want America/New_York (the zone BYDAY was derived from)", got)
+	}
+	if got := dtstart.Value; got != "20260825T200000" {
+		t.Errorf("DTSTART = %q, want the New York wall clock 20260825T200000", got)
+	}
+
+	raw, err := edited.Encode()
+	if err != nil {
+		t.Fatal(err)
+	}
+	reparsed, err := Decode(raw, ny)
+	if err != nil {
+		t.Fatal(err)
+	}
+	occs, err := reparsed.Events[0].Occurrences(
+		time.Date(2026, 8, 20, 0, 0, 0, 0, ny), time.Date(2026, 11, 20, 0, 0, 0, 0, ny))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(occs) == 0 {
+		t.Fatal("no occurrences")
+	}
+	if !occs[0].Start.Equal(start) {
+		t.Errorf("first occurrence = %v, want the event's own start %v", occs[0].Start, start)
+	}
+	for _, o := range occs {
+		local := o.Start.In(ny)
+		if local.Weekday() != time.Tuesday || local.Hour() != 20 {
+			t.Errorf("occurrence %v is a %v at %02d:00, want Tuesday 20:00",
+				local, local.Weekday(), local.Hour())
+		}
+	}
+}
+
+// The flip side of the branch order: when the rule IS being authored but the
+// draft's own zone cannot be named, the existing foreign TZID is still preserved
+// rather than flattened to UTC. Destroying the server's zone would buy nothing —
+// a UTC anchor agrees with the new BY* no better than the Berlin one — and the
+// iron rule says do not churn data we did not author.
+func TestRuleAuthoringEditKeepsForeignZoneWhenDraftZoneIsUnnameable(t *testing.T) {
+	berlin := mustZone(t, "Europe/Berlin")
+	ics := "BEGIN:VCALENDAR\r\nVERSION:2.0\r\nPRODID:-//foreign//EN\r\nBEGIN:VEVENT\r\n" +
+		"UID:foreign-tz-2\r\nDTSTAMP:20260101T000000Z\r\n" +
+		"DTSTART;TZID=Europe/Berlin:20260826T020000\r\n" +
+		"DTEND;TZID=Europe/Berlin:20260826T030000\r\nSUMMARY:old\r\nEND:VEVENT\r\nEND:VCALENDAR\r\n"
+	obj, err := Decode([]byte(ics), berlin)
+	if err != nil {
+		t.Fatal(err)
+	}
+	// A draft carrying time.UTC: IsNamedZone rejects it, so branch 1 cannot fire.
+	start := obj.Events[0].Start.UTC()
+	edited, err := EditEvent(obj, "foreign-tz-2", EventDraft{
+		Summary: "renamed", Start: start, End: start.Add(time.Hour),
+		Recur: &RecurSpec{Freq: FreqWeekly},
+	}, start, berlin)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got := propOf(t, edited, ical.PropDateTimeStart).Params.Get(ical.ParamTimezoneID); got != "Europe/Berlin" {
+		t.Errorf("DTSTART TZID = %q, want the preserved Europe/Berlin", got)
+	}
+}
+
+// A Windows/Outlook TZID must RESOLVE, not fall through to the UTC form.
+//
+// Outlook writes DTSTART;TZID=Eastern Standard Time:20260825T200000 with BYDAY=TU.
+// time.LoadLocation cannot read that name, so before the windowsToIANA mapping the
+// anchor was flattened to 20260826T000000Z — a Wednesday in UTC — while BYDAY=TU
+// stayed put, silently walking every Outlook-authored series from Tuesday to
+// Monday on a summary-only edit. This is the exact property
+// TestEditWithoutRuleChangeKeepsAnchorForm guards, for the Windows spelling.
+func TestWindowsTZIDIsResolvedNotFlattenedToUTC(t *testing.T) {
+	ny := mustZone(t, "America/New_York")
+	ics := "BEGIN:VCALENDAR\r\nVERSION:2.0\r\nPRODID:-//Microsoft Corporation//Outlook//EN\r\n" +
+		"BEGIN:VEVENT\r\nUID:outlook-1\r\nDTSTAMP:20260101T000000Z\r\n" +
+		"DTSTART;TZID=Eastern Standard Time:20260825T200000\r\n" +
+		"DTEND;TZID=Eastern Standard Time:20260825T210000\r\n" +
+		"RRULE:FREQ=WEEKLY;BYDAY=TU\r\nSUMMARY:old\r\nEND:VEVENT\r\nEND:VCALENDAR\r\n"
+	obj, err := Decode([]byte(ics), ny)
+	if err != nil {
+		t.Fatal(err)
+	}
+	from := time.Date(2026, 8, 20, 0, 0, 0, 0, ny)
+	to := time.Date(2026, 11, 20, 0, 0, 0, 0, ny)
+	before := occurrenceStarts(t, obj.Events[0], ny, from, to)
+	if len(before) == 0 {
+		t.Fatal("fixture produced no occurrences")
+	}
+
+	// A summary-only edit, in the shape production builds it (readEventDraft
+	// resolves the form's fields in a.loc).
+	edited, err := EditEvent(obj, "outlook-1", EventDraft{
+		Summary: "renamed",
+		Start:   obj.Events[0].Start.In(ny),
+		End:     obj.Events[0].End.In(ny),
+	}, time.Date(2026, 8, 1, 0, 0, 0, 0, ny), ny)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	dtstart := propOf(t, edited, ical.PropDateTimeStart)
+	if strings.HasSuffix(dtstart.Value, "Z") {
+		t.Errorf("Windows TZID was flattened to the UTC form (%q); the rule's BYDAY now names a different day",
+			dtstart.Value)
+	}
+	// The IANA spelling is the point: it is the same zone in the form every other
+	// client — and ensureVTimezone — can resolve.
+	if got := dtstart.Params.Get(ical.ParamTimezoneID); got != "America/New_York" {
+		t.Errorf("DTSTART TZID = %q, want the resolved America/New_York", got)
+	}
+	if got := dtstart.Value; got != "20260825T200000" {
+		t.Errorf("DTSTART = %q, want the unchanged wall clock 20260825T200000", got)
+	}
+
+	after := occurrenceStarts(t, edited.Events[0], ny, from, to)
+	if len(before) != len(after) {
+		t.Fatalf("occurrence count changed: %d → %d\nbefore %v\nafter  %v", len(before), len(after), before, after)
+	}
+	for i := range before {
+		if before[i] != after[i] {
+			t.Errorf("occurrence %d moved: %s → %s", i, before[i], after[i])
+		}
+	}
+
+	// The resolved zone must now be defined in the object.
+	var found bool
+	for _, c := range edited.Calendar.Children {
+		if c.Name == ical.CompTimezone && text(c.Props, ical.PropTimezoneID) == "America/New_York" {
+			found = true
+		}
+	}
+	if !found {
+		t.Error("no VTIMEZONE for the resolved America/New_York")
+	}
+}
+
+// An EXDATE written in TZID form must not reference a zone the object does not
+// define — a foreign object can carry DTSTART;TZID=X with no VTIMEZONE.
+func TestAddExceptionDefinesReferencedTimezone(t *testing.T) {
+	ny := mustZone(t, "America/New_York")
+	ics := "BEGIN:VCALENDAR\r\nVERSION:2.0\r\nPRODID:-//foreign//EN\r\nBEGIN:VEVENT\r\n" +
+		"UID:no-vtz-1\r\nDTSTAMP:20260101T000000Z\r\n" +
+		"DTSTART;TZID=America/New_York:20260825T200000\r\n" +
+		"DTEND;TZID=America/New_York:20260825T210000\r\n" +
+		"RRULE:FREQ=WEEKLY;BYDAY=TU\r\nSUMMARY:s\r\nEND:VEVENT\r\nEND:VCALENDAR\r\n"
+	obj, err := Decode([]byte(ics), ny)
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, c := range obj.Calendar.Children {
+		if c.Name == ical.CompTimezone {
+			t.Fatal("fixture already defines a VTIMEZONE; the test would be vacuous")
+		}
+	}
+	victim := time.Date(2026, 9, 1, 20, 0, 0, 0, ny)
+
+	out, err := AddException(obj, "no-vtz-1", victim, false, victim, ny)
+	if err != nil {
+		t.Fatal(err)
+	}
+	assertDefinesZoneFor(t, out, ical.PropExceptionDates)
+}
+
+// The same for a RECURRENCE-ID, which inherits the master's TZID.
+func TestAddOccurrenceOverrideDefinesReferencedTimezone(t *testing.T) {
+	ny := mustZone(t, "America/New_York")
+	ics := "BEGIN:VCALENDAR\r\nVERSION:2.0\r\nPRODID:-//foreign//EN\r\nBEGIN:VEVENT\r\n" +
+		"UID:no-vtz-2\r\nDTSTAMP:20260101T000000Z\r\n" +
+		"DTSTART;TZID=America/New_York:20260825T200000\r\n" +
+		"DTEND;TZID=America/New_York:20260825T210000\r\n" +
+		"RRULE:FREQ=WEEKLY;BYDAY=TU\r\nSUMMARY:s\r\nEND:VEVENT\r\nEND:VCALENDAR\r\n"
+	obj, err := Decode([]byte(ics), ny)
+	if err != nil {
+		t.Fatal(err)
+	}
+	target := time.Date(2026, 9, 1, 20, 0, 0, 0, ny)
+
+	out, err := AddOccurrenceOverride(obj, "no-vtz-2", target, false, func(c *ical.Component) {
+		c.Props.SetText(ical.PropSummary, "moved")
+	}, target, ny)
+	if err != nil {
+		t.Fatal(err)
+	}
+	assertDefinesZoneFor(t, out, ical.PropRecurrenceID)
+}
+
+// assertDefinesZoneFor checks that the TZID carried by prop `name` somewhere in
+// obj is backed by a VTIMEZONE in the same object.
+func assertDefinesZoneFor(t *testing.T, obj *Parsed, name string) {
+	t.Helper()
+	var tzid string
+	defined := map[string]bool{}
+	for _, c := range obj.Calendar.Children {
+		if c.Name == ical.CompTimezone {
+			defined[text(c.Props, ical.PropTimezoneID)] = true
+			continue
+		}
+		for _, p := range c.Props.Values(name) {
+			if v := p.Params.Get(ical.ParamTimezoneID); v != "" {
+				tzid = v
+			}
+		}
+	}
+	if tzid == "" {
+		t.Fatalf("%s carries no TZID; the test would be vacuous", name)
+	}
+	if !defined[tzid] {
+		t.Errorf("%s references TZID %q but the object defines no VTIMEZONE for it", name, tzid)
+	}
+}

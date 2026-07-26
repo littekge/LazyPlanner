@@ -480,15 +480,24 @@ func newAnchorDateOrTimeProp(name string, t time.Time, allDay bool, zone *time.L
 // anchorZone returns the zone a recurrence anchor should be written in, or nil for
 // the UTC form.
 //
-// Two cases produce a zoned anchor, and the order matters:
+// Two cases produce a zoned anchor, and the order between them is the whole
+// correctness argument:
 //
-//   - The component's existing anchor already carries a resolvable TZID — keep
-//     writing in THAT zone. It may be a server's own zone, and re-expressing its
-//     data in ours would churn it (iron rule); flattening it to UTC, which this
-//     code did before, silently broke the rule the server authored.
-//   - This call is authoring the rule itself (recur != nil) and t is in a zone
-//     another client can resolve — anchor in it, so the BY* parts being derived
-//     from t agree with the anchor by construction.
+//  1. This call is authoring the rule itself (recur != nil) and t is in a zone
+//     another client can resolve — anchor in it. The BY* parts are being derived
+//     from t's own weekday/day-of-month in this same call, so anchoring in t's zone
+//     is the only way the rule and its anchor agree. This must be checked FIRST,
+//     even against an existing TZID: a foreign DTSTART;TZID=Europe/Berlin edited by
+//     a New York user who picks "Weekly on Tue" would otherwise keep the Berlin
+//     Wednesday anchor while carrying a BYDAY=TU derived from the New York Tuesday
+//     — reproducing, on the edit path, the very defect this function exists to fix.
+//  2. Otherwise the component's existing anchor already carries a resolvable TZID —
+//     keep writing in THAT zone. It may be a server's own, and re-expressing its
+//     data in ours would churn it (iron rule); flattening it to UTC, which this code
+//     did before, silently broke the rule the server authored. This still covers a
+//     rule-authoring edit whose own zone cannot be named, where preserving the
+//     server's zone beats destroying it for a UTC form that agrees with the new BY*
+//     no better.
 //
 // Anything else keeps the UTC form, including every non-recurring value and every
 // edit that leaves an existing rule alone. That last exclusion is deliberate:
@@ -497,17 +506,40 @@ func anchorZone(comp *ical.Component, name string, recur *RecurSpec, allDay bool
 	if allDay {
 		return nil
 	}
-	if existing := comp.Props.Get(name); existing != nil {
-		if tzid := existing.Params.Get(ical.ParamTimezoneID); tzid != "" {
-			if loc, err := time.LoadLocation(tzid); err == nil {
-				return loc
-			}
-		}
-	}
 	if recur != nil && IsNamedZone(t.Location()) {
 		return t.Location()
 	}
+	if existing := comp.Props.Get(name); existing != nil {
+		if loc := zoneForTZID(existing.Params.Get(ical.ParamTimezoneID)); loc != nil {
+			return loc
+		}
+	}
 	return nil
+}
+
+// zoneForTZID resolves a TZID parameter to a location, or nil when the name is
+// one no client could resolve.
+//
+// A Windows/Outlook name ("Eastern Standard Time") is mapped to its IANA
+// equivalent, mirroring what resolveDateTime already does on the read side.
+// Without that mapping an Outlook-authored series falls through to the UTC form
+// on every edit, which moves a day-pinned rule (TZID=Eastern Standard Time 20:00
+// Tuesday flattens to Wednesday 00:00Z while BYDAY=TU stays put) — the exact
+// breakage the anchor rules exist to prevent. Rewriting the param to the IANA name
+// is the point, not a side effect: it is the same zone, expressed in the form every
+// other client can resolve and the form ensureVTimezone can define.
+func zoneForTZID(tzid string) *time.Location {
+	if tzid == "" {
+		return nil
+	}
+	if iana := windowsToIANA(tzid); iana != "" {
+		tzid = iana
+	}
+	loc, err := time.LoadLocation(tzid)
+	if err != nil {
+		return nil
+	}
+	return loc
 }
 
 // ensureVTimezone adds a VTIMEZONE for every TZID the object's items reference
