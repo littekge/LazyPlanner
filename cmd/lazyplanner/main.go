@@ -257,6 +257,7 @@ func openAccountAndRun(cfg config.Config, acct config.Account) (ui.RunResult, er
 		Accounts:            accountNames(cfg),
 		ActiveAccount:       acct.Name,
 		Sync:                syncFn,
+		Location:            config.LocalZone(),
 		SyncIntervalMinutes: cfg.Behavior.SyncIntervalMinutes,
 		LeftWidth:           uiState.LeftWidth,
 		DetailWidth:         uiState.DetailWidth,

@@ -330,6 +330,9 @@ type Options struct {
 	Accounts      []string
 	ActiveAccount string
 	Sync          func(context.Context) (sync.SyncResult, error)
+	// Location is the zone times are displayed in and recurrence anchors are
+	// written in. Nil keeps newApp's time.Local default.
+	Location *time.Location
 	// SyncIntervalMinutes runs a periodic background sync at this cadence; 0 = off.
 	SyncIntervalMinutes int
 	LeftWidth           int      // remembered left-column width (0 = default)
@@ -386,6 +389,9 @@ func Run(opts Options) (RunResult, error) {
 	a := newApp(opts.Store, opts.Title, time.Now())
 	defer a.cancel() // on quit, unwind any in-flight background sync cleanly
 	defer a.stopSyncTimer()
+	if opts.Location != nil {
+		a.loc = opts.Location
+	}
 	a.syncFn = opts.Sync
 	a.saveState = opts.SaveState
 	a.editConfig = opts.EditConfig

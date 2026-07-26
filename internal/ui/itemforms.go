@@ -131,6 +131,11 @@ func (a *app) newTodoRepeat(td *model.Todo) *model.RepeatChoices {
 			anchor = td.Due
 		}
 	}
+	// readTodoDraft resolves the dropdown against a.loc-anchored times
+	// (a.now or a local Due), so the seed must agree — otherwise an item
+	// stored with a UTC anchor seeds on the UTC weekday, disagrees with the
+	// local resolve, and an untouched dropdown reports a rewrite.
+	anchor = anchor.In(a.loc)
 	if raw == nil {
 		return model.NewRepeatChoices(nil, anchor, a.loc)
 	}
@@ -329,7 +334,14 @@ func (a *app) readEventDraft(f *eventFields) (model.EventDraft, error) {
 
 // newEventRepeat builds the Repeat dropdown state for an event (nil ev = a create
 // form), anchored at the given seed start/occurrence.
+//
+// The anchor is converted to the app's zone because readEventDraft resolves the
+// dropdown against the form's start, which parseDateField builds in a.loc. Seeding
+// from the raw anchor instead let the two disagree on the weekday whenever the
+// item's local and UTC dates differ, so an UNTOUCHED dropdown compared unequal to
+// its own seed and reported a rewrite — silently moving the series a day.
 func (a *app) newEventRepeat(ev *model.Event, anchor time.Time) *model.RepeatChoices {
+	anchor = anchor.In(a.loc)
 	if ev == nil {
 		return model.NewRepeatChoices(nil, anchor, a.loc)
 	}
