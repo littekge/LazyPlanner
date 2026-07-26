@@ -387,7 +387,7 @@ Heal-set strip rewritten to deny-by-default-restricted (the old "enumerate every
 5. A full refresh still mints ~4 budgets (bounded constant, no longer day-scaled); write-side `safeAfter` has no aggregate budget (bulk grab = N × 1M steps).
 6. `internal/store` decodes with hard-coded `time.Local`; `allowedChildren` is not covered by the drift tripwire (go-ical's nesting rules aren't an extractable table); `internal/ui/conflicts.go` still does not refresh on a failed resolve.
 7. Decomposer asymmetry: `FREQ=WEEKLY;BYDAY=TU,TH` with a Monday anchor is accepted though the anchor is outside its own set — monthly/yearly reject the equivalent.
-8. **Owner decision outstanding:** a calendar with an unparseable sidecar becomes temporarily **read-only in the UI** until the next sync. Protects against editing a genuinely read-only calendar offline, but blocks offline edits in an offline-first app. One line to revert.
+8. ~~Owner decision outstanding: unparseable sidecar → read-only calendar.~~ **SETTLED (2026-07-25) — reverted by the owner.** Locking the calendar is wrong for an offline-first app: an unreadable sidecar is exactly when the user is most likely to be working from the cache. Only the server's recorded privilege makes a calendar read-only. The data protection is untouched — unrecovered resources still load Dirty and the original bytes are still quarantined.
 
 ### Honest note on scope
 

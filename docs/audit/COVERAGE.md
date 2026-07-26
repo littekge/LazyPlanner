@@ -880,9 +880,13 @@ Full detail: `docs/audit/passes/PASS-23.md` § Resolution.
    the VCALENDAR carries METHOD.
 7. Decomposer asymmetry: `FREQ=WEEKLY;BYDAY=TU,TH` with a Monday anchor is accepted though the anchor is
    outside its own set; monthly/yearly reject the equivalent.
-8. **Owner decision outstanding:** an unparseable sidecar makes its calendar temporarily **read-only in
-   the UI** until the next sync — protects against discarded offline edits on a genuinely read-only
-   calendar, but blocks offline editing in an offline-first app. One line to revert.
+8. ~~Owner decision outstanding: unparseable sidecar → read-only calendar.~~ **SETTLED (2026-07-25) —
+   reverted by the owner.** Locking a calendar because its sidecar is unreadable is wrong for an
+   offline-first app: that is precisely when the user is working from the cache with no server to ask.
+   Only the server's recorded privilege makes a calendar read-only. Data protection is unaffected —
+   unrecovered resources still load Dirty and the original bytes are still quarantined. A future
+   hardening pass must not "restore" the lock as an improvement; the reasoning is pinned in
+   `TestUnsalvageableSidecarTreatsStateAsUnknown`.
 9. Surfaces deliberately skipped: ~37 of ~53 inventoried surfaces unexamined this pass.
 
 ### Note for the next pass

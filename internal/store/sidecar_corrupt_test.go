@@ -231,8 +231,13 @@ func TestCleanSidecarKeepsCleanResourcesClean(t *testing.T) {
 
 // TestUnsalvageableSidecarTreatsStateAsUnknown covers the worst case — bytes that
 // aren't even a JSON object (a truncated or overwritten file). Nothing can be
-// recovered, so every resource must load as a possibly-unsynced edit and the
-// calendar must stay unwritable until a sync re-reads the server's privileges.
+// recovered, so every resource must load as a possibly-unsynced edit.
+//
+// The calendar deliberately stays WRITABLE: an unparseable sidecar is exactly when
+// the user is most likely to be working offline from the cache, so locking the
+// calendar would block editing in an offline-first app. Loading every resource
+// Dirty is what protects the data — nothing is pushed over silently. Only the
+// server's recorded privilege makes a calendar read-only.
 func TestUnsalvageableSidecarTreatsStateAsUnknown(t *testing.T) {
 	ctx := context.Background()
 	original := "{\"display_name\": \"Personal\", \"resources\": {\"u1.ic"
@@ -252,8 +257,8 @@ func TestUnsalvageableSidecarTreatsStateAsUnknown(t *testing.T) {
 	if u1 := resourceByName(t, cal, "u1.ics"); !u1.Dirty {
 		t.Error("u1.ics Dirty=false, want true — with the sync state unknown the local .ics may be an unsynced edit")
 	}
-	if !cal.ReadOnly {
-		t.Error("ReadOnly=false, want true — an unknown write privilege must not be read as writable")
+	if cal.ReadOnly {
+		t.Error("ReadOnly=true, want false — a corrupt sidecar must not lock the user out of editing offline")
 	}
 	quarantined, err := os.ReadFile(filepath.Join(dir, sidecarFile+".corrupt"))
 	if err != nil || string(quarantined) != original {

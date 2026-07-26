@@ -4,6 +4,23 @@
 
 ---
 
+## 2026-07-25 — Owner decision: a corrupt sidecar no longer makes its calendar read-only
+
+- The Pass-23 corrupt-sidecar fix (`d55c1f3`) treated an *unparseable* sidecar as "write privilege
+  unknown" and gated the calendar read-only until the next sync re-read the server's privileges.
+  **Owner reverted it.** Locking the calendar is wrong for an offline-first app: an unreadable sidecar is
+  exactly when the user is most likely to be working from the cache with no server to ask, and the only
+  explanation the UI offered was a red `!1`.
+- `internal/store/store.go` — `cs.readOnly = sc.ReadOnly` (was `|| sc.unparseable`). Only the server's
+  recorded privilege makes a calendar read-only, restoring the hard invariant's original meaning.
+- **The data protection is unaffected**, which is why this is safe to drop: the salvage path still loads
+  every unrecovered resource **Dirty**, so nothing is silently pushed over, and the original bytes are
+  still quarantined to `.lazyplanner.json.corrupt`. The `unparseable` flag remains — it drives the
+  dirty-loading and salvage decisions, just not the write gate.
+- `TestUnsalvageableSidecarTreatsStateAsUnknown` now asserts the calendar stays **writable**, with the
+  reasoning recorded in the test so a later pass doesn't "restore" the lock as a hardening improvement.
+  Gate green, incl. `Asia/Kolkata`.
+
 ## 2026-07-25 — Close the tag-escape class (9 more sites) and the zone-dependent tests; 2 new guardrails
 
 Two agents were cut off mid-task by a session limit; I verified what they had, finished both myself, and

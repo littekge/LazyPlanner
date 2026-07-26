@@ -178,13 +178,13 @@ func (s *Store) loadCalendar(ctx context.Context, id string) (*calState, []LoadE
 	cs.pendingName = sc.PendingName || sc.PendingProps
 	cs.pendingColor = sc.PendingColor || sc.PendingProps
 	cs.components = sc.Components
-	// A sidecar that yielded nothing leaves the write privilege unknown, and the
-	// hard invariant is that a read-only calendar is never written to — so treat
-	// unknown as read-only until the next sync re-reads the server's privileges
-	// (SetCalendarReadOnly). This gates UI writes only; the reconcile path reads
-	// the server's live flag, so it cannot turn into a one-way mirror that
-	// discards local changes.
-	cs.readOnly = sc.ReadOnly || sc.unparseable
+	// Only the server's recorded privilege makes a calendar read-only. An
+	// unparseable sidecar leaves the privilege unknown, but locking the calendar
+	// on that basis would block editing offline — unacceptable in an offline-first
+	// app, where an unreadable sidecar is exactly when the user is most likely to
+	// be working from the cache. The salvage path already protects the data by
+	// loading unrecovered resources Dirty, so nothing is pushed over silently.
+	cs.readOnly = sc.ReadOnly
 
 	entries, err := os.ReadDir(dir)
 	if err != nil {
