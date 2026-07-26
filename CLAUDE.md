@@ -334,6 +334,19 @@ Guards: `internal/model/{multivalue_dates,recur_split_exdate,recur_split_rdate}_
 - When adding any flash/echo, ask: "did the app write every character of this string?" If not, escape it.
 - Guards: `internal/ui/tagescape_sweep_test.go` (table-driven over every site, hostile `[red]`/`[white:black]`/`[""]`/`[-]` runs, plus a byte-identical assertion that escaping does not alter ordinary text) and `internal/ui/statusbar_tagescape_test.go`.
 
+### A wall clock is not an instant, and the process has exactly one zone
+
+Two halves of the same trap: mixing wall-clock arithmetic with absolute instants, and having more than one answer to "what zone are we in".
+
+- **Never trust `time.Date`/`AddDate` normalization for a date that must stay on its own day.** In the 11 zones whose DST transition lands *at* 00:00, local midnight does not exist and Go normalizes it **backwards into the previous day** — silently, with no error. `time.Date(2026,3,8,0,0,0,0,Havana)` is `2026-03-07T23:00-05:00`.
+- **Mechanism**: RFC 5545 §3.8.5.3 generates a recurrence set from *local* time, so wall clocks come first and zone resolution last. rrule-go conflates them (`firstyday.AddDate(0, 0, i)` on local Jan-1 midnight), which is why a gap day collapsed into a duplicate its own `Set.Iterator` then dropped — losing the day at **every** frequency and for **any** anchor time of day.
+- **Required pattern**: expand recurrence in wall-clock space and resolve back with `model.resolveWallClock` (`internal/model/wallclock.go`); resolve a DATE or zone-less DATE-TIME value through `gapSafeReading`/`parseWallClockIn` (`internal/model/tz.go`), never a bare `ParseInLocation`. A translation must be **total**: the anchor, RDATEs, EXDATEs *and* the RRULE's `UNTIL` all move into the same space, or the rule's own comparisons run against instants from a different one.
+- **Resolve duplicates after resolution, not before.** rrule-go dedupes in wall-clock space, one step too early: across a gap two distinct wall clocks can resolve to the same instant, so `safeBetween`/`safeAfter` dedupe post-resolution — and charge each skipped duplicate a step so a pathological rule cannot spin.
+- **`resolveWallClock` deliberately preserves `time.Date`'s reading whenever the day is unchanged**, so only the broken zones change. Widening it to always snap forward would move 02:00-anchored series in nearly every DST zone — an owner decision, not a refactor. Don't "improve" it silently.
+- **One zone per process.** `run()` installs `config.LocalZone()` as `time.Local` (`installProcessZone`). Nine sites across `store`/`sync`/`model` decode against `time.Local` while the UI renders against `a.loc`; a second zone source is a divergence, not a convenience. **Never reintroduce one** — and `LocalZone()` must keep mirroring Go's own `$TZ` handling (empty ⇒ UTC, leading colon stripped, absolute zoneinfo path reduced to its name), or an explicit user setting is silently overridden.
+- **Still open, deliberately** (`docs/audit/COVERAGE.md` item 4): `model.DayStart` and quick-add's relative dates still build local midnight with `time.Date`, so day *bucketing* is not gap-safe. Don't assume this class is closed.
+- Guards: `internal/model/dstgap_test.go`, `internal/ui/dstgap_uipath_test.go`, `cmd/lazyplanner/processzone_test.go`, `internal/config/zone_test.go`.
+
 ### A test must build its times in the zone the code under test uses
 
 - **Mechanism**: `newApp` hard-codes `loc: time.Local`, so a test building `now`/`anchor`/due dates in `time.UTC` makes its own day window disagree with the day the app buckets locally-timed items into. The disagreement is **invisible at or west of UTC and fails east of it** — CI runs UTC, so the suite goes green while `make check` from an east-of-UTC zone reds out on clean code.

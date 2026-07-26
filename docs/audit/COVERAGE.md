@@ -310,23 +310,41 @@ commits. Full detail: `docs/audit/passes/PASS-23.md` § Resolution.
    re-anchors. Residuals carried forward: already-UTC-anchored items keep wrong-day behavior until next
    rule edit; a Windows host without `$TZ` still writes UTC anchors; editing an Outlook-authored series now
    rewrites its Windows TZID to the IANA spelling.
-2. **OPEN REGRESSION (HIGH, arc-introduced 2026-07-26) — a recurring item loses the day its zone's DST
-   change starts on.** rrule-go normalizes a non-existent local midnight *backwards*, so the gap day is
-   never generated; a recurring **task** additionally writes a skipped due date. Ticking a daily task due
-   `2026-03-07` in `America/Havana` rolls it to `03-09` — persisted locally and pushed to the server. Hits
-   `America/Havana`, `America/Santiago`, `Atlantic/Azores` every year. Reachable pre-arc only for
-   *server-authored* TZID items; the TZID arc widened it to app-authored ones by moving anchors out of
-   gapless UTC. **Does not affect `America/New_York`** (its transition is at 02:00, so local midnight
-   always exists). Fix must make anchor iteration gap-safe rather than trusting `time.Date` normalization.
-3. **OPEN REGRESSION (MED, arc-introduced 2026-07-26) — `store` and the UI disagree about the local zone.**
-   `store.loadResource` decodes with `time.Local` while `a.loc` is now `config.LocalZone()` (`86f594f`).
-   They diverge on `TZ=` set-but-empty, `TZ=:Asia/Tokyo`, `TZ=/abs/path`, and a stale-but-loadable
-   `/etc/timezone`. Symptoms: an all-day event rendering on two days, floating times off by the offset,
-   "today" resolving to the wrong day. Low impact on a host where both resolve identically. Fix touches a
-   core decode path — size it before committing to it; a documented residual is an acceptable outcome.
-4. **Pre-existing (MED) — local-midnight construction is unsafe in DST-gap zones.** `model.DayStart` and
-   quick-add's relative dates build local midnight with `time.Date`; in the same gap zones "tomorrow"
-   resolves to today and day-bucketing shifts an hour into the previous day. Not arc-introduced.
+2. ~~OPEN REGRESSION (HIGH, arc-introduced 2026-07-26) — a recurring item loses the day its zone's DST
+   change starts on.~~ **RESOLVED (2026-07-26, `47dab30`)** — and **wider than recorded on three axes**.
+   The root cause is in rrule-go's day enumeration, not `time.Date` at the anchor: it derives each
+   occurrence's date as `firstyday.AddDate(0, 0, i).Date()` on local Jan-1 **midnight**, so a missing
+   midnight collapses the date into the previous day, the instant duplicates the previous occurrence, and
+   rrule-go's own `Set.Iterator` drops it as a duplicate. Therefore (a) **11 zones lose a day**, not 3 —
+   add Coyhaique, Punta_Arenas, Palmer, Scoresbysund, Sao_Paulo, Asuncion, Campo_Grande, Cuiaba; (b) it is
+   **independent of the anchor's time of day** (firstyday is always midnight) and of frequency, so it hit
+   recurring **events on the read path** too, not only the todo advance; (c) eight further midnight-gap
+   zones (Cairo, Beirut, Amman, Damascus, Gaza, Hebron, Tehran, Casey) normalize *forward* and never lost
+   the day. Fixed by expanding in wall-clock space and resolving back into the real zone
+   (`internal/model/wallclock.go`), plus gap-safe decoding of DATE / zone-less DATE-TIME values — without
+   the second half the app wrote `DUE;VALUE=DATE:20260308` and immediately read it back as 03-07. Verified
+   over all 485 IANA zones: recovered gap days are the only day-level difference, no instant-level
+   differences elsewhere. Guards `internal/model/dstgap_test.go`, `internal/ui/dstgap_uipath_test.go`.
+   **Deliberately not changed**: a 02:00-anchored series in an ordinary spring-forward zone still reads
+   back an hour earlier, as today. More correct handling exists but would move existing events in nearly
+   every DST zone — an owner decision, not a side effect of this fix.
+3. ~~OPEN REGRESSION (MED, arc-introduced 2026-07-26) — `store` and the UI disagree about the local zone.~~
+   **RESOLVED (2026-07-26, `7fca8a2`)**. Sizing (as the owner asked) changed the fix's shape: there are
+   **nine** divergent decode sites, not the one recorded — `internal/store/{store.go,conflict.go}`,
+   `internal/sync/sync.go` ×4, `internal/sync/import.go`, `internal/model/edit.go` ×2. Threading a location
+   would touch 3 production + ~104 test call sites across 48 files and leave nine places free to drift, so
+   `run()` installs `config.LocalZone()` as the process `time.Local` before any dispatch. Second half found
+   while verifying the first: making them agree was not enough, they agreed on the **wrong** zone —
+   `LocalZone()` resolved `$TZ` with `LoadLocation` alone, so `TZ=` empty, `TZ=:Asia/Tokyo` and
+   `TZ=/abs/path` all fell through to `/etc/timezone` and silently overrode an explicit setting. All three
+   confirmed divergent before and agreeing after. Guards `cmd/lazyplanner/processzone_test.go`,
+   `internal/config/zone_test.go`.
+4. **Pre-existing (MED) — local-midnight construction is unsafe in DST-gap zones, at *day-bucketing*.**
+   The *decode* half of this was fixed with item 2 (a DATE value now names its own day). Still open:
+   `model.DayStart` and quick-add's relative dates build local midnight with `time.Date`, so in the 11 gap
+   zones "tomorrow" can resolve to today and a day window is shifted an hour at its edges. Not
+   arc-introduced; fixing it means reworking `DayStart` + `AddDate(0,0,1)` day-window semantics across the
+   calendar views, judged too wide for a pre-release fix.
 5. `internal/caldav` write paths — unswept for the bare-write class, **second consecutive pass**.
 6. **Race and fault-injection not exercised at all** this pass (last run pass 22).
 7. `go test -race ./internal/model/` fails on `TestAggregateRecurrenceCapBounded` — a pass-21 absolute
@@ -335,9 +353,10 @@ commits. Full detail: `docs/audit/passes/PASS-23.md` § Resolution.
 8. A full refresh still mints ~4 budgets (bounded constant, no longer day-scaled). Write-side `safeAfter`
    has no aggregate budget — bulk grab over N recurring items is N × 1M steps, the same class on the
    write path. Two pathological events still exhaust a redraw's 2M ceiling and starve later events.
-9. `internal/store` decodes with hard-coded `time.Local`. `internal/ui/conflicts.go` still does not
-   refresh on a failed resolve. `model.Decode` rejects a DTSTART-less VEVENT that RFC 5545 permits when
-   the VCALENDAR carries METHOD.
+9. ~~`internal/store` decodes with hard-coded `time.Local`.~~ **Resolved with item 3** — `time.Local` is
+   now the app's own zone process-wide, so the hard-coding is no longer a divergence. Still open:
+   `internal/ui/conflicts.go` does not refresh on a failed resolve; `model.Decode` rejects a DTSTART-less
+   VEVENT that RFC 5545 permits when the VCALENDAR carries METHOD.
 10. Decomposer asymmetry: `FREQ=WEEKLY;BYDAY=TU,TH` with a Monday anchor is accepted though the anchor is
    outside its own set; monthly/yearly reject the equivalent.
 11. ~~Owner decision outstanding: unparseable sidecar → read-only calendar.~~ **SETTLED (2026-07-25) —

@@ -4,6 +4,94 @@
 
 ---
 
+## 2026-07-26 — Fix both TZID-arc regressions; both were wider than recorded
+
+Picked up the two open regressions `notes.md` carried. Both were fixed repro-first with a green full
+gate, and **both turned out materially wider than the previous session had recorded** — the sizing work
+changed the shape of each fix.
+
+### HIGH — a recurring item lost the day its zone's DST change starts on (`47dab30`)
+
+- **The recorded cause was wrong in a way that mattered.** It is not `time.Date` at the anchor: rrule-go
+  derives every occurrence's date as `firstyday.AddDate(0, 0, i).Date()` where `firstyday` is January 1
+  **midnight** in the anchor's zone. A missing midnight collapses the date into the previous day, the
+  generated instant duplicates the previous occurrence, and rrule-go's own `Set.Iterator` drops it as a
+  duplicate. Confirmed by reading the vendored iterator and reproducing it standalone.
+- **Three ways wider than recorded.** (1) **11 zones**, not 3 — a sweep of the whole IANA database added
+  Coyhaique, Punta_Arenas, Palmer, Scoresbysund, Sao_Paulo, Asuncion, Campo_Grande, Cuiaba. (2)
+  **Independent of the anchor's time of day** (firstyday is always midnight) and of frequency, so it hit
+  recurring **events on the calendar read path**, not just the todo advance. (3) Eight further
+  midnight-gap zones (Cairo, Beirut, Amman, Damascus, Gaza, Hebron, Tehran, Casey) normalize *forward*
+  and never lost the day — deliberately excluded rather than "fixed".
+- **Fix**: expand in wall-clock space (`internal/model/wallclock.go`) and resolve each generated wall
+  clock back into the real zone as `safeBetween`/`safeAfter` yield it. The translation is total — anchor,
+  RDATEs, EXDATEs and the RRULE's `UNTIL` all move together, so the rule's own comparisons stay in one
+  space. Duplicate collapsing moves out of rrule-go's wall-clock space into post-resolution, charging
+  each skipped duplicate a step so nothing can spin.
+- **Second half, required for the first to be observable.** The app began writing
+  `DUE;VALUE=DATE:20260308` correctly and then **misread it as 03-07**, because the same missing midnight
+  breaks decoding. Caught only because the UI-path test still failed after the model tests went green.
+  `resolveDateTime` now resolves DATE and zone-less DATE-TIME values gap-safely, taking the zone from
+  whatever go-ical already resolved so no zone-selection logic is duplicated.
+- **Minimal blast radius by design.** `resolveWallClock` reproduces `time.Date`'s reading — backwards
+  normalization included — whenever that keeps the occurrence on its own day, and snaps forward only when
+  the day would move. A sweep over all 485 IANA zones × 4 anchor hours × 12 years found the recovered gap
+  days as the only day-level difference and **zero** instant-level differences elsewhere.
+- **Deliberately not changed**: a 02:00-anchored series in an ordinary spring-forward zone still reads
+  back an hour earlier, as it does today. Snapping it forward is more correct and matches other clients,
+  but would move existing events in nearly every DST zone — an owner decision, not a side effect.
+- Also fixed by construction: `COUNT=10` across a gap day now yields 10 occurrences, not 9 (the dropped
+  duplicate had consumed one).
+- Files: `internal/model/{wallclock.go,recurrence.go,recur_edit.go,tz.go}`. Guards:
+  `internal/model/dstgap_test.go`, `internal/ui/dstgap_uipath_test.go`.
+
+### MED — `store` and the UI disagreed about the local zone (`7fca8a2`)
+
+- The owner asked for this to be **sized before being committed to**. Sizing found **nine** divergent
+  decode sites, not the one recorded: `internal/store/{store.go,conflict.go}`, `internal/sync/sync.go`
+  ×4, `internal/sync/import.go`, `internal/model/edit.go` ×2.
+- Threading a location through `Store.Open`, the sync engine, import and the model's object builders
+  would touch 3 production + ~104 test call sites across 48 files **and leave nine places free to drift
+  apart again**. Instead `run()` installs `config.LocalZone()` as the process's `time.Local` before any
+  dispatch — one line of wiring, all nine sites, and no second zone to disagree with.
+- **Making them agree was not enough: they agreed on the wrong zone.** `LocalZone()` resolved `$TZ` with
+  `LoadLocation` alone, which rejects three forms Go itself accepts, so each fell through to
+  `/etc/timezone` and silently overrode an explicit user setting — `TZ=` empty (Go reads UTC),
+  `TZ=:Asia/Tokyo` (POSIX colon escape), `TZ=/usr/share/zoneinfo/Asia/Tokyo` (absolute path). All three
+  verified divergent against the real resolver before the fix and agreeing after.
+- Accepted cost, documented: an absolute `$TZ` path outside every known zoneinfo root is still not
+  honoured — it yields no IANA name, and an unnameable zone cannot be written as a TZID.
+- Files: `cmd/lazyplanner/main.go`, `internal/config/zone.go`. Guards:
+  `cmd/lazyplanner/processzone_test.go`, `internal/config/zone_test.go`. The four pre-existing zone tests
+  pass unmodified.
+
+### Verification
+
+- **Every guard mutation-checked** — RED under the injected bug, GREEN reverted. The two halves of the
+  recurrence fix kill *different* subsets of the guards, which is how I confirmed both are load-bearing
+  rather than one masking the other.
+- Fixture premises are asserted, not assumed: each gap-zone subtest `t.Fatal`s if a tzdata update ever
+  moves its transition off midnight, so the guard cannot go vacuously green. Zones load via
+  `time/tzdata` with `t.Fatal`, never `t.Skip`.
+- Full gate (`go test ./...`, vet, staticcheck, build) green, plus the whole suite under `TZ=` UTC,
+  America/New_York, Asia/Kolkata, Pacific/Kiritimati, America/Havana, America/Santiago, Atlantic/Azores
+  and all three previously-divergent `TZ` forms. Fuzz targets clean. Binary smoke-tested.
+- **Scale invariants hold** (measured against a clean-HEAD worktree): a realistic 60-event month
+  expansion is ~**1.5× faster** (iterating in UTC costs fewer zone lookups inside rrule-go), the
+  budget-exhausting worst case ~27% slower with ~3× headroom on its wall-clock bound, and the
+  bounded n=50-vs-n=250 ratio is unchanged.
+- One new Hard-won guardrail in `CLAUDE.md` ("A wall clock is not an instant, and the process has exactly
+  one zone") — this is the third zone-normalization defect class, so the rule is codified rather than
+  left as a fixed bug.
+
+### Still open, deliberately
+
+`COVERAGE.md` item 4's remaining half: `model.DayStart` and quick-add's relative dates still build local
+midnight with `time.Date`, so day *bucketing* is not gap-safe in those 11 zones. Pre-existing, not
+arc-introduced; fixing it means reworking day-window semantics across the calendar views, which is too
+wide for a pre-release fix. Recorded in `main.md` and `COVERAGE.md`, not in `notes.md` — it is a residual,
+not an in-progress task.
+
 ## 2026-07-26 — Document-health design and plan written, then deliberately not built
 
 - Brainstormed the documentation problem and split it into **two orthogonal problems**: append-only
