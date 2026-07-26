@@ -64,10 +64,26 @@ Commits: `1bbd338`, `c156480` (Task 1); `bb11b75`, `5c63075` (Task 2); `89ba317`
 - A Windows host without `$TZ` set cannot resolve an IANA zone name, so it keeps writing UTC anchors.
 - Editing an Outlook-authored series now rewrites its Windows TZID to the resolved IANA spelling — the
   instant and wall clock are unchanged, only the TZID text on the wire.
-- Several deferred minors from the per-task reviews (negative-DST label inversion on Europe/Dublin,
-  `AddException`/`AddOccurrenceOverride` not calling `ensureVTimezone` directly, `SetTodoCompleted`/
-  `SetTodoParent`/`CopyTodo` now adding a VTIMEZONE to foreign objects) — none reachable via the UI
-  today, all noted in the task reports under `.superpowers/sdd/2026-07-26-tzid-anchored-recurrence/`.
+- Several narrower items were deliberately left open during the per-task reviews (full detail in
+  the task reports under `.superpowers/sdd/2026-07-26-tzid-anchored-recurrence/`):
+  - `zoneInfoRoots` (`internal/config/zone.go`) is a package-level var slice; both reviewers judged
+    the immutable-lookup-table use conventional despite CLAUDE.md's mutable-package-var guardrail,
+    and left it as-is.
+  - `BuildVTimezone`: negative-DST zones (e.g. `Europe/Dublin`) invert the generated STANDARD/DAYLIGHT
+    observance labels (offsets stay correct); `icalNthWeekday` infers "last week of the month" from
+    "falls in the final 7 days," so a genuine 4th-weekday rule in a month's final week renders as
+    `-1` instead of `4`; the transition-bisection's minute truncation is unguarded (empirically safe
+    across the 486 zones tested); a pre-1970 anchor in a fixed-offset zone yields a 1970 onset placed
+    after the anchor.
+  - `SetTodoCompleted`/`SetTodoParent`/`CopyTodo` — ordinary, UI-reachable actions — now add a
+    VTIMEZONE to a foreign object on these flip-one-field paths; iron-rule-safe, but a contract
+    change, costing ~69µs/object in bulk loops.
+  - `recur_edit.go`'s `AddException`/`AddOccurrenceOverride` hard-code `DTSTART` as the master's
+    anchor, so either one on a **DUE-anchored recurring VTODO** writes a UTC exception date against a
+    TZID anchor — unreachable via the UI today (exported API only).
+  - `ensureVTimezone` only scans `DTSTART`/`DTEND`/`DUE`; a foreign object whose `EXDATE` carries a
+    different TZID than its own `DTSTART` would leave that TZID undefined — sufficient today because
+    every write LazyPlanner itself makes inherits the master's zone by construction.
 
 `README.md` needed no change: it makes no UTC-storage claim to correct.
 
