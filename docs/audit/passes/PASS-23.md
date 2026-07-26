@@ -325,3 +325,73 @@ Suggested order for the fix arc (repro-first, one commit per fix, full gate each
 Next pass's targets should include: the escaped-canary surface (override partitioning at the split point),
 the `internal/store` CommitPush mid-push-EDIT hole, `internal/caldav` write paths for the bare-write class,
 and a race/fault-injection sweep over whatever the fix arc touches.
+
+---
+
+## Resolution (2026-07-25)
+
+All 15 confirmed findings were fixed repro-first in the same session as the audit, plus the escaped
+canary, two coverage holes, and **four defects the audit did not find** (surfaced by the fix arc itself).
+Full gate green; additionally verified across four timezones. 18 commits.
+
+### The 15 findings
+
+| Sev | Finding | Commit | Resolution |
+|-----|---------|--------|------------|
+| HIGH | Tombstone keys escape the cache root | `0a36ef3` | Mirrors the pass-9 traversal guard via a shared `validPathElement`; `readSidecar` drops unsafe keys at the single load choke point, individually rather than failing the load. |
+| HIGH | Corrupt sidecar discards all sync state | `d55c1f3` | Field-by-field salvage + "unknown ≠ empty" (partial entries load Dirty) + quarantine of the original bytes to `.lazyplanner.json.corrupt`. Surfaced via the existing `LoadError` channel. |
+| HIGH | A failed resolve still resolves in memory | `daaef8d` | Restores resource + stashed conflict on write failure, per the package's `revertMutation` idiom. `ResolveKeepServer` did not share it but got guards; `MarkConflict` deliberately left (reverting there is the data-losing direction). |
+| HIGH | `allowedChildren` allow-by-default (4th reopening) | `0151ebd` | Deny-by-default **restricted to `encoderValidatedComponents`**. Blanket deny was implemented first and rejected: it dropped valid RFC 7953 VAVAILABILITY/AVAILABLE data. |
+| HIGH | `YEARLY;BYMONTHDAY` without BYMONTH | `33b3f42` | Decomposer rejects it (→ *Custom rule (kept)*). It fires 12×/year; a grab day-move had made the event vanish. |
+| HIGH | `LayoutDay` O(n²) | `1ec474d` `524c6e4` `311139c` | **Three** quadratics, not one: model lane packing → sweep line (~90–405×); `navCells` per-keypress scan → index (~40×); `Draw`'s `inSelRange` → index (15.5×→4.2× growth). Each found while fixing the previous. |
+| MED | StepBudget minted per store call | `e236972` | Batched to one range query per redraw. Threading the budget through the per-day loop was rejected — it would have truncated legitimate calendars (~33M steps vs a 2M ceiling). |
+| MED | Pass-22 timed-UNTIL never reaches production | `836bc6c` | Both `wireRepeatCustom` anchorFns read only the date field; `recurAnchor` now folds in the time field. |
+| MED | Negative `INTERVAL` accepted | `33b3f42` | Rejected. Boundary verified against vendored rrule-go: negative is unbuildable, `0` normalizes to 1. |
+| MED | Conflict stash not byte-lossless | `b6a105b` | Base64 (`server_data_b64`) with read-only legacy-field migration. |
+| MED | Lane bleed past column/pane | `a669f19` | Geometry clamped to column and pane rect; overflow collapses proportionally rather than dropping events. |
+| MED | Zero-length all-day dropped from band | `d1750ce` | `splitOccs`'s hand-rolled day walk replaced by the shared `OverlapsDay` predicate. |
+| LOW ×3 | Blank search · stale `searchIdx` · unescaped status text | `517eacc` | One `blankQuery` decision point; `n`/`N` re-derive position by UID; `tview.Escape` at the boundary. |
+
+### Test-net work
+
+| Item | Commit | Resolution |
+|------|--------|------------|
+| Escaped canary — `NewSeriesFrom` split boundary | `96179a2` | All three positions pinned (before / **at** / after); split-point occurrence must carry the draft's summary. |
+| Hole — `internal/store` blind to a `CommitPush` lost update | `96179a2` | Store-local deterministic + race tests. Soft spot: the race sibling is vacuously green under a fixed launch order. |
+| Hole — four hand-mirrored go-ical tables untested | `96179a2` | `encoderdrift_test.go` parses vendored `encoder.go` with go/ast and fails on drift. **This converts the manual re-diff that failed in three of four heal-set reopenings into a gate check.** |
+| Tag-escape class — 9 further sites | `bb76bd1` | The audit cited 5; the class spanned `calendar.go`, `edit.go`, `quickfield.go`, `yankpaste.go`. |
+| Zone-dependent tests | `bb76bd1` | Two tests failed east of UTC at HEAD; CI's UTC hid them. |
+
+### Four defects the audit did NOT find
+
+1. **All-day "Ends on date D" dropped D** (`e079e50`) — **two** bugs whose signs flip with the UTC offset: a DATE `UNTIL` read as UTC midnight, and `dateOnlyUntil` truncating the *UTC* render (storing the wrong day in the `.ics`). Two further sites in the family; fixing only the read side would have made a split emit D **twice**. The recurring-todo twin reported its series exhausted and marked itself done. **This falsifies the pass-22 close-out**, which recorded all-day as correct.
+2. **`navCells` quadratic** (`524c6e4`) and 3. **`inSelRange` quadratic** (`311139c`) — the reported `LayoutDay` HIGH was one of three.
+4. **Two zone-dependent tests** (`bb76bd1`) — green in CI, red for any developer east of UTC.
+
+### Divergences from the audit's stated fix direction
+
+- **Heal-set:** narrowed to encoder-validated types rather than blanket deny-by-default. `checkComponent` has **no default case**, so a type it lacks a case for cannot fail encoding — stripping it destroys valid data for nothing. Premise re-verified against `encodeProp`'s other failure paths (param double-quote rejected at decode; CR/LF healed by `sanitizePropValues`).
+- **StepBudget:** batched rather than threaded, to avoid starving legitimate calendars.
+- **`MarkConflict`:** deliberately not "fixed" — reverting there discards the server's stashed version. Self-heals via the next 412.
+
+### Guardrails codified (PROTOCOL rule 9)
+
+Heal-set strip rewritten to deny-by-default-restricted (the old "enumerate every container" wording was **unsatisfiable**, which is *why* the class reopened four times) · Scale invariants now four hot paths, plus "bounding what a stage produces does not bound what the next stage does with it" · **a UI-reachable bug's regression test must drive the real entry point** (confirmed twice consecutively: pass-21 StepBudget, pass-22 UNTIL) · escape uncontrolled text at the call site · build test times in the code's zone.
+
+### Carried residual — Pass 24 targets
+
+1. **UNVERIFIED PRODUCT-BUG LEAD (highest value).** The zone agent, killed mid-investigation by a session limit, reported it had "confirmed a genuine product bug" reproducing under `TZ=UTC` and was about to check the todo form. Not reproduced or located; its committed edits are a coherent *test*-bug fix and the suite is green in four zones. Either a separate defect exists (likely in a create form) or the test edits mask something. **Not a closed item.**
+2. `internal/caldav` write paths — unswept for the bare-write class for a **second** consecutive pass.
+3. Race and fault-injection not exercised at all this pass.
+4. `go test -race ./internal/model/` fails on `TestAggregateRecurrenceCapBounded` — a pass-21 **absolute wall-clock** budget that `-race` overhead exceeds. Pre-existing (fails at `ba274c1`); convert to growth-ratio style.
+5. A full refresh still mints ~4 budgets (bounded constant, no longer day-scaled); write-side `safeAfter` has no aggregate budget (bulk grab = N × 1M steps).
+6. `internal/store` decodes with hard-coded `time.Local`; `allowedChildren` is not covered by the drift tripwire (go-ical's nesting rules aren't an extractable table); `internal/ui/conflicts.go` still does not refresh on a failed resolve.
+7. Decomposer asymmetry: `FREQ=WEEKLY;BYDAY=TU,TH` with a Monday anchor is accepted though the anchor is outside its own set — monthly/yearly reject the equivalent.
+8. **Owner decision outstanding:** a calendar with an unparseable sidecar becomes temporarily **read-only in the UI** until the next sync. Protects against editing a genuinely read-only calendar offline, but blocks offline edits in an offline-first app. One line to revert.
+
+### Honest note on scope
+
+Nine of the items above were **not** in the audit's finding list. The arc expanded past its brief because
+each verification surfaced more, and it was stopped deliberately rather than on exhaustion: from the
+`inSelRange` fix onward, further discoveries were **recorded here rather than fixed**. The finding list a
+pass produces is a floor, not a ceiling.

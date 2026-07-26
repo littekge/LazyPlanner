@@ -63,7 +63,12 @@ not hidden. See `PROTOCOL.md`.
 
 ## Declared blind spots (not covered by any pass)
 
-### Pass 23 — 15 CONFIRMED findings (6 HIGH / 6 MED / 3 LOW), ALL UNFIXED
+### Pass 23 — 15 CONFIRMED findings (6 HIGH / 6 MED / 3 LOW) — **ALL FIXED (2026-07-25)**
+
+> **Resolution:** every finding below was fixed repro-first the same session, together with the escaped
+> canary, two coverage holes, and **four defects the audit did not find**. See "Pass 23 — RESOLUTION" at
+> the end of this file for the commit-by-commit table and the carried residual. The per-finding
+> `UNFIXED` wording in the rows below is the *state at audit time* and is superseded by that section.
 
 Every one carries a repro test that was written, **run RED**, and **left in the tree** — so
 `go test ./...` / `make check` is currently RED until the fixes land (or the owner gates/deletes the
@@ -796,3 +801,93 @@ No known Locate→Put clobber sites remain after this exhaustive sweep.
 
 > The workflow updates this table and this list at the end of each pass. Hand-edits
 > are welcome — it's a plain table on purpose.
+
+---
+
+## Pass 23 — RESOLUTION (2026-07-25)
+
+All 15 confirmed findings fixed repro-first, plus the escaped canary, two coverage holes, and **four
+defects the audit did not find**. Full gate green (`go build`, `go test ./...`, `vet`, `staticcheck`,
+`gofmt`), additionally verified across four timezones (UTC / New_York / Kolkata / Kiritimati). 18 commits.
+Full detail: `docs/audit/passes/PASS-23.md` § Resolution.
+
+### Findings → commits
+
+| Sev | Finding | Commit |
+|-----|---------|--------|
+| HIGH | Tombstone keys escape the cache root | `0a36ef3` |
+| HIGH | Corrupt sidecar discards all sync state | `d55c1f3` |
+| HIGH | Failed resolve still resolves in memory | `daaef8d` |
+| HIGH | `allowedChildren` allow-by-default (4th reopening) | `0151ebd` |
+| HIGH | `YEARLY;BYMONTHDAY` without BYMONTH | `33b3f42` |
+| HIGH | `LayoutDay` O(n²) — **three** quadratics, not one | `1ec474d` `524c6e4` `311139c` |
+| MED | StepBudget minted per store call, not per redraw | `e236972` |
+| MED | Pass-22 timed-UNTIL never reaches production | `836bc6c` |
+| MED | Negative `INTERVAL` accepted as representable | `33b3f42` |
+| MED | Conflict stash not byte-lossless | `b6a105b` |
+| MED | Lane bleed past column / pane rect | `a669f19` |
+| MED | Zero-length all-day dropped from the band | `d1750ce` |
+| LOW ×3 | Blank search · stale `searchIdx` · unescaped status text | `517eacc` |
+
+### Test net
+
+| Item | Commit |
+|------|--------|
+| Escaped canary — `NewSeriesFrom` split-instant boundary | `96179a2` |
+| Hole — `internal/store` blind to a `CommitPush` lost update | `96179a2` |
+| Hole — four hand-mirrored go-ical tables untested → **go/ast drift tripwire** | `96179a2` |
+| Tag-escape class — 9 sites beyond the 5 reported | `bb76bd1` |
+| Zone-dependent tests (green in CI's UTC, red east of it) | `bb76bd1` |
+
+### Found by the fix arc, not the audit
+
+| Defect | Commit |
+|--------|--------|
+| All-day "Ends on date D" dropped D — **two** bugs whose signs flip with the UTC offset, across four sites; recurring-todo twin marked itself done. **Falsifies the pass-22 close-out.** | `e079e50` |
+| `navCells` per-keypress quadratic | `524c6e4` |
+| `Draw`'s `inSelRange` quadratic (only with a SELECT range open) | `311139c` |
+| Two zone-dependent tests | `bb76bd1` |
+
+### Surface status changes
+
+- **go-ical heal set / `checkComponent` mirror** — now **guarded by the gate**, not by manual re-diff:
+  `internal/model/encoderdrift_test.go` parses the vendored encoder with go/ast and fails on drift.
+  This is the first pass where this class is machine-checked; it had reopened four times, and the manual
+  step is what failed in three of them. *Not* covered: `allowedChildren` (go-ical's nesting rules live in
+  ad-hoc `if` guards, not an extractable table).
+- **Day agenda + time-grid layout** — `never` → `recent`, and now benchmark/growth-ratio guarded at three
+  levels (model lane packing, `navCells`, `inSelRange`).
+- **Conflict-resolution store paths** — `never` → `recent`; UI orchestration half still uncovered.
+- **Sidecar parse** — `never` → `recent`; salvage + quarantine + byte-lossless stash.
+
+### Carried residual → Pass 24 targets
+
+1. **UNVERIFIED PRODUCT-BUG LEAD — highest value.** An agent killed mid-investigation reported it had
+   "confirmed a genuine product bug" reproducing under `TZ=UTC`, and was about to check the todo form.
+   Not reproduced or located; its committed edits are a coherent *test*-bug fix and the suite is green in
+   four zones. Either a separate defect exists (likely in a create form) or the test edits mask it.
+   **Open, not closed.**
+2. `internal/caldav` write paths — unswept for the bare-write class, **second consecutive pass**.
+3. **Race and fault-injection not exercised at all** this pass (last run pass 22).
+4. `go test -race ./internal/model/` fails on `TestAggregateRecurrenceCapBounded` — a pass-21 absolute
+   wall-clock budget that `-race` overhead exceeds. Pre-existing (fails at `ba274c1`), not a data race,
+   not part of the official gate. Convert to the growth-ratio style adopted this pass.
+5. A full refresh still mints ~4 budgets (bounded constant, no longer day-scaled). Write-side `safeAfter`
+   has no aggregate budget — bulk grab over N recurring items is N × 1M steps, the same class on the
+   write path. Two pathological events still exhaust a redraw's 2M ceiling and starve later events.
+6. `internal/store` decodes with hard-coded `time.Local`. `internal/ui/conflicts.go` still does not
+   refresh on a failed resolve. `model.Decode` rejects a DTSTART-less VEVENT that RFC 5545 permits when
+   the VCALENDAR carries METHOD.
+7. Decomposer asymmetry: `FREQ=WEEKLY;BYDAY=TU,TH` with a Monday anchor is accepted though the anchor is
+   outside its own set; monthly/yearly reject the equivalent.
+8. **Owner decision outstanding:** an unparseable sidecar makes its calendar temporarily **read-only in
+   the UI** until the next sync — protects against discarded offline edits on a genuinely read-only
+   calendar, but blocks offline editing in an offline-first app. One line to revert.
+9. Surfaces deliberately skipped: ~37 of ~53 inventoried surfaces unexamined this pass.
+
+### Note for the next pass
+
+Nine resolved items were **not** in the audit's finding list. Five of six targets were `never`-audited
+rows and all five produced findings, including a HIGH that wrote outside the cache root. **`never` rows
+are high-yield, not low-yield.** The pass-19→22 downward severity trend described repeatedly-hardened
+surfaces, not the codebase. `more_passes_recommended` stands.
