@@ -13,6 +13,7 @@ import (
 	"os/exec"
 	"path/filepath"
 	"strings"
+	"time"
 
 	// Embed the IANA time-zone database in the binary so time.LoadLocation
 	// resolves zones even where the OS ships none (a minimal Pi image, Windows),
@@ -46,10 +47,40 @@ func versionString() string { return fmt.Sprintf("%s %s", appName, appVersion) }
 
 func main() { os.Exit(run(os.Args[1:])) }
 
+// installProcessZone makes the zone LazyPlanner authors and displays times in —
+// config.LocalZone() — the process's own time.Local.
+//
+// Go resolves time.Local from $TZ alone and names it "Local"; config.LocalZone()
+// additionally reads /etc/timezone and /etc/localtime to recover a real IANA name
+// (which the write path needs, since DTSTART;TZID=Local is meaningless to other
+// CalDAV clients). The two therefore disagree whenever $TZ is set but empty,
+// carries a leading colon (TZ=:Asia/Tokyo) or names a path, and whenever a
+// stale-but-loadable /etc/timezone shadows the symlink.
+//
+// That divergence mattered because nine decode sites across internal/store,
+// internal/sync and internal/model resolve floating and date-only values against
+// time.Local, while the UI renders and authors against config.LocalZone(): an
+// all-day event could render on two days, floating times land an offset out, and
+// "today" resolve to the wrong day.
+//
+// Installing one resolved zone as time.Local is preferred over threading a
+// location through Store.Open, the sync engine, import and the model's object
+// builders: those nine sites cannot drift apart if the program only has one zone.
+// It must run before anything reads time.Local or calls time.Now, hence first in
+// run ahead of all dispatch, config and store work — every subcommand needs it,
+// not just the TUI. Nothing in the program captures time.Local at package-init
+// time, so no earlier reader can miss it, and when LocalZone falls back to
+// time.Local the assignment is a no-op. It is idempotent.
+func installProcessZone() { time.Local = config.LocalZone() }
+
 // run dispatches the CLI and returns a process exit code. Kept separate from main
 // (which only wraps os.Exit) so the dispatch — unknown-command, help, version — is
 // testable without spawning a process. All real work lives in the internal packages.
 func run(args []string) int {
+	// Before any dispatch: every subcommand decodes cached or server data against
+	// time.Local somewhere below, so the app's own zone must be installed first.
+	installProcessZone()
+
 	if len(args) == 0 {
 		return report(runTUI())
 	}
