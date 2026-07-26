@@ -4,6 +4,73 @@
 
 ---
 
+## 2026-07-26 — Recurring items anchor in their own timezone, closing the Pass-23 carried lead
+
+Pass 23 carried an **unverified product-bug lead**: an agent killed mid-investigation by a session
+limit reported it had "confirmed a genuine product bug" but was cut off before locating it. Its
+transcript was recovered rather than re-auditing from scratch, and the lead turned out to be real —
+**three linked recurrence-anchor defects**, all reproduced end-to-end through the real forms before
+any fix landed (plan: `docs/superpowers/plans/2026-07-26-tzid-anchored-recurrence.md`).
+
+**The three defects, one root cause.** LazyPlanner derived a rule's `BY*` parts from the user's local
+anchor but serialized `DTSTART`/`DUE` in UTC. RFC 5545 evaluates `BY*` in the anchor's own zone, so
+the two disagreed whenever the local and UTC dates differed:
+
+- **The lead itself.** Opening the edit form on a recurring item and pressing Save **without
+  touching the Repeat dropdown** silently rewrote the rule (`BYDAY=MO`→`BYDAY=TU`), shifting the
+  series a day and dropping orphaned per-occurrence overrides. Hit both the event and todo forms.
+- **Wrong-day series.** A New York user creating a Tue 20:00 weekly meeting via the dropdown labelled
+  "Weekly on Tue" got a series firing every **Monday**, whose first occurrence was not the event's
+  own start.
+- **DST drift.** That same series moved from 20:00 EDT to 19:00 EST after the November transition —
+  a UTC-anchored series has no zone to hold its wall-clock time against.
+
+**Owner's chosen direction: TZID-anchored recurrence, not a narrower patch.** A recurring item's
+anchor (`DTSTART`, or `DUE` for a VTODO) is now written as **local time with a `TZID`**, with a
+matching generated `VTIMEZONE` component, so the rule and its anchor agree by construction.
+
+**The re-anchor gate is deliberately narrow**, and this is the whole safety argument: the TZID form
+is written only when (a) the anchor already carries a resolvable TZID — keep writing in that zone, or
+(b) this same call is authoring the rule (creating or rewriting it) and the draft's own zone is
+nameable. An edit that leaves the rule alone never re-anchors — re-interpreting `BY*` against a
+different zone would silently move an existing series, so a correct legacy Berlin event must not
+start firing Mondays because someone renamed it.
+
+**VTIMEZONE shape**: the conventional compact form other clients emit — one STANDARD and (if the
+zone observes DST) one DAYLIGHT observance, each dated at or before the anchor with a yearly `RRULE`
+derived from the most recent real transition, satisfying the app's own ingest-heal usability check so
+it is never stripped back out. Additive only: an existing foreign VTIMEZONE is never replaced.
+
+**Work breakdown** (5 tasks, one commit per task plus fix rounds, full gate every commit):
+
+- `internal/config/zone.go` — resolves the host's IANA zone name (`$TZ`, then `/etc/timezone`/
+  `/etc/localtime`), since Go only exposes `time.Local`'s real name when `$TZ` is set.
+- `internal/model/vtimezone.go` — generates a conformant `VTIMEZONE` for a named zone.
+- `internal/model/edit.go`, `recur_edit.go` — the anchor-serialization gate and its four writers
+  (event/todo apply, EXDATE, RECURRENCE-ID, recurring-todo advance).
+- `internal/ui/itemforms.go`, `app.go`, `cmd/lazyplanner/main.go` — the Repeat dropdown now seeds and
+  resolves on the same anchor basis (fixing the lead for existing UTC-anchored items too), and
+  `config.LocalZone()` is wired into production.
+- This document set (`main.md`, `docs/audit/COVERAGE.md`).
+
+Commits: `1bbd338`, `c156480` (Task 1); `bb11b75`, `5c63075` (Task 2); `89ba317`, `9299ec3` (Task 3);
+`86f594f`, `680f10a` (Task 4).
+
+**Known residuals** (recorded in `main.md`'s Timezones & recurrence section):
+
+- Items already stored with a UTC anchor keep their existing, possibly wrong-day behavior until their
+  rule is next authored or rewritten — a blanket migration would have to re-derive every `BY*` and was
+  judged riskier than the defect.
+- A Windows host without `$TZ` set cannot resolve an IANA zone name, so it keeps writing UTC anchors.
+- Editing an Outlook-authored series now rewrites its Windows TZID to the resolved IANA spelling — the
+  instant and wall clock are unchanged, only the TZID text on the wire.
+- Several deferred minors from the per-task reviews (negative-DST label inversion on Europe/Dublin,
+  `AddException`/`AddOccurrenceOverride` not calling `ensureVTimezone` directly, `SetTodoCompleted`/
+  `SetTodoParent`/`CopyTodo` now adding a VTIMEZONE to foreign objects) — none reachable via the UI
+  today, all noted in the task reports under `.superpowers/sdd/2026-07-26-tzid-anchored-recurrence/`.
+
+`README.md` needed no change: it makes no UTC-storage claim to correct.
+
 ## 2026-07-25 — Owner decision: a corrupt sidecar no longer makes its calendar read-only
 
 - The Pass-23 corrupt-sidecar fix (`d55c1f3`) treated an *unparseable* sidecar as "write privilege

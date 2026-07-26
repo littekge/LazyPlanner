@@ -862,11 +862,21 @@ Full detail: `docs/audit/passes/PASS-23.md` § Resolution.
 
 ### Carried residual → Pass 24 targets
 
-1. **UNVERIFIED PRODUCT-BUG LEAD — highest value.** An agent killed mid-investigation reported it had
-   "confirmed a genuine product bug" reproducing under `TZ=UTC`, and was about to check the todo form.
-   Not reproduced or located; its committed edits are a coherent *test*-bug fix and the suite is green in
-   four zones. Either a separate defect exists (likely in a create form) or the test edits mask it.
-   **Open, not closed.**
+1. ~~UNVERIFIED PRODUCT-BUG LEAD — highest value.~~ **RESOLVED (2026-07-26)** — located by recovering the
+   killed agent's transcript, not by re-auditing. It was **three linked recurrence-anchor defects, not
+   one**, all rooted in `BY*` being derived from the user's local anchor while `DTSTART`/`DUE` was
+   serialized in UTC (RFC 5545 evaluates `BY*` in the anchor's own zone): (a) the lead itself — pressing
+   Save on a recurring item's edit form **without touching the Repeat dropdown** silently rewrote the rule
+   (`BYDAY=MO`→`BYDAY=TU`), shifting the series a day and dropping orphaned overrides, in both the event
+   and todo forms; (b) a New York user creating a Tue 20:00 weekly meeting via the "Weekly on Tue" dropdown
+   got a series firing every **Monday**, whose first occurrence was not the event's own start; (c) that
+   series drifted 20:00 EDT → 19:00 EST after the November DST transition. Fixed across
+   `docs/superpowers/plans/2026-07-26-tzid-anchored-recurrence.md`'s five tasks (commits `1bbd338`, `c156480`,
+   `bb11b75`, `5c63075`, `89ba317`, `9299ec3`, `86f594f`, `680f10a`) by writing a recurring item's anchor as
+   local-time-with-`TZID` plus a generated `VTIMEZONE`, gated so an edit that leaves the rule alone never
+   re-anchors. Residuals carried forward: already-UTC-anchored items keep wrong-day behavior until next
+   rule edit; a Windows host without `$TZ` still writes UTC anchors; editing an Outlook-authored series now
+   rewrites its Windows TZID to the IANA spelling.
 2. `internal/caldav` write paths — unswept for the bare-write class, **second consecutive pass**.
 3. **Race and fault-injection not exercised at all** this pass (last run pass 22).
 4. `go test -race ./internal/model/` fails on `TestAggregateRecurrenceCapBounded` — a pass-21 absolute
