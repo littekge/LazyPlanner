@@ -112,7 +112,12 @@ Session startup reads the ledger's last entry (a few lines) and flags any living
 - **The duplicate detector will have false positives.** If ignored, the duplication half degrades to the honor system; feeding it into a scheduled pass is a mitigation, not a cure.
 - **The check itself needs maintaining.** A drifting citation format rots it quietly — hence one specified format.
 
-## Open items
+## Settled decisions (2026-07-26)
 
-- The 25% growth threshold is a starting value, tunable as a single constant.
-- Whether the duplicate-span report is worth automating initially, or whether the first release-time compaction should be done by hand to calibrate what it should flag.
+- **Growth threshold: 25%**, expressed as a single named constant so it is trivially tunable.
+- **The duplicate-span detector is NOT built initially.** The first release-time compaction is done **by hand**, to learn what a useful signal actually looks like before automating one. A badly-tuned detector is worse than none: it produces false positives, gets ignored, and takes the credibility of the working checks down with it.
+
+Two consequences follow, and the implementation must reflect them:
+
+- `/cleanup`'s mechanical scope is initially **confirm docs-refs is green, then append word counts to the ledger** — there is no report to run yet.
+- Release compaction step 1 (resolve duplicate spans) is a **manual review** for now. Whether to automate it is revisited after the first by-hand pass, informed by what that pass actually found.
