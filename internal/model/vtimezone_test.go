@@ -5,6 +5,10 @@ import (
 	"strings"
 	"testing"
 	"time"
+	// Embed the IANA database in the test binary. internal/model does not import it
+	// (only cmd/lazyplanner does), so on a host without system zoneinfo every zone
+	// lookup below would fail and skip its way to a vacuous green.
+	_ "time/tzdata"
 
 	"github.com/emersion/go-ical"
 )
@@ -89,6 +93,11 @@ func TestBuildVTimezoneFixedZone(t *testing.T) {
 	if got := comp.Children[0].Props.Get("TZOFFSETTO").Value; got != "+0530" {
 		t.Errorf("TZOFFSETTO = %q, want +0530", got)
 	}
+	// The lone rule must be dated in the far past, not at the anchor: an onset of
+	// 20260825T000000 would leave anything earlier that day uncovered.
+	if got := comp.Children[0].Props.Get("DTSTART").Value; got != vtimezoneEpochOnset {
+		t.Errorf("DTSTART = %q, want the far-past onset %q", got, vtimezoneEpochOnset)
+	}
 }
 
 // Southern hemisphere: DST starts in the second half of the year.
@@ -110,14 +119,16 @@ func TestBuildVTimezoneSouthernHemisphere(t *testing.T) {
 // VTIMEZONE go-ical's encoder would reject.
 func TestBuildVTimezoneIsUsable(t *testing.T) {
 	for _, name := range []string{"America/New_York", "Europe/Berlin", "Asia/Kolkata", "Australia/Sydney"} {
-		loc, err := time.LoadLocation(name)
-		if err != nil {
-			t.Skip(err)
-		}
-		comp := BuildVTimezone(loc, time.Date(2026, 8, 25, 0, 0, 0, 0, loc))
-		if comp == nil || !timezoneUsable(comp) {
-			t.Errorf("%s: generated VTIMEZONE is not usable", name)
-		}
+		t.Run(name, func(t *testing.T) {
+			loc, err := time.LoadLocation(name)
+			if err != nil {
+				t.Skip(err)
+			}
+			comp := BuildVTimezone(loc, time.Date(2026, 8, 25, 0, 0, 0, 0, loc))
+			if comp == nil || !timezoneUsable(comp) {
+				t.Errorf("%s: generated VTIMEZONE is not usable", name)
+			}
+		})
 	}
 }
 
@@ -148,7 +159,7 @@ func TestBuildVTimezoneEncodesConformantLines(t *testing.T) {
 
 	for _, want := range []string{
 		"TZID:America/New_York",
-		"DTSTART:20280312T020000",
+		"DTSTART:20260308T020000",
 		"TZOFFSETFROM:-0500",
 		"TZOFFSETTO:-0400",
 		"RRULE:FREQ=YEARLY;BYMONTH=3;BYDAY=2SU",
@@ -179,10 +190,11 @@ func TestBuildVTimezoneObservanceAnchors(t *testing.T) {
 		t.Fatal("BuildVTimezone returned nil for a named DST zone")
 	}
 	want := map[string]struct{ dtstart, from, to, rrule string }{
-		// The probe window ends two years after the anchor, so the most recent
-		// transition of each kind is the 2028 spring-forward and 2027 fall-back.
-		ical.CompTimezoneDaylight: {"20280312T020000", "-0500", "-0400", "FREQ=YEARLY;BYMONTH=3;BYDAY=2SU"},
-		ical.CompTimezoneStandard: {"20271107T020000", "-0400", "-0500", "FREQ=YEARLY;BYMONTH=11;BYDAY=1SU"},
+		// The window ends at the anchor, so each observance is the most recent
+		// transition of its kind *behind* 2026-08-25: the March 2026 spring-forward
+		// the anchor itself is living under, and the November 2025 fall-back.
+		ical.CompTimezoneDaylight: {"20260308T020000", "-0500", "-0400", "FREQ=YEARLY;BYMONTH=3;BYDAY=2SU"},
+		ical.CompTimezoneStandard: {"20251102T020000", "-0400", "-0500", "FREQ=YEARLY;BYMONTH=11;BYDAY=1SU"},
 	}
 	for _, sub := range comp.Children {
 		w, ok := want[sub.Name]
@@ -213,40 +225,88 @@ func TestBuildVTimezoneObservanceAnchors(t *testing.T) {
 // wrong offset passes every presence check and still misplaces the onset by an hour.
 func TestBuildVTimezoneObservanceOnsetIsTheRealTransition(t *testing.T) {
 	for _, name := range []string{"America/New_York", "Europe/Berlin", "Australia/Sydney"} {
-		loc, err := time.LoadLocation(name)
-		if err != nil {
-			t.Skip(err)
-		}
-		comp := BuildVTimezone(loc, time.Date(2026, 8, 25, 0, 0, 0, 0, loc))
-		if comp == nil {
-			t.Fatalf("nil for %s", name)
-		}
-		for _, sub := range comp.Children {
-			offFrom := parseICalUTCOffset(t, sub.Props.Get(ical.PropTimezoneOffsetFrom).Value)
-			offTo := parseICalUTCOffset(t, sub.Props.Get(ical.PropTimezoneOffsetTo).Value)
-			onset, err := time.ParseInLocation(vtimezoneDateTimeLayout,
-				sub.Props.Get(ical.PropDateTimeStart).Value, time.FixedZone("", offFrom))
+		t.Run(name, func(t *testing.T) {
+			loc, err := time.LoadLocation(name)
 			if err != nil {
-				t.Fatalf("%s %s: parsing DTSTART: %v", name, sub.Name, err)
+				t.Skip(err)
 			}
-			if _, got := onset.Add(-time.Second).In(loc).Zone(); got != offFrom {
-				t.Errorf("%s %s: offset one second before onset = %d, want TZOFFSETFROM %d",
-					name, sub.Name, got, offFrom)
+			comp := BuildVTimezone(loc, time.Date(2026, 8, 25, 0, 0, 0, 0, loc))
+			if comp == nil {
+				t.Fatalf("nil for %s", name)
 			}
-			if _, got := onset.In(loc).Zone(); got != offTo {
-				t.Errorf("%s %s: offset at onset = %d, want TZOFFSETTO %d",
-					name, sub.Name, got, offTo)
+			for _, sub := range comp.Children {
+				offFrom := parseICalUTCOffset(t, sub.Props.Get(ical.PropTimezoneOffsetFrom).Value)
+				offTo := parseICalUTCOffset(t, sub.Props.Get(ical.PropTimezoneOffsetTo).Value)
+				onset := parseObservanceOnset(t, sub, offFrom)
+				if _, got := onset.Add(-time.Second).In(loc).Zone(); got != offFrom {
+					t.Errorf("%s %s: offset one second before onset = %d, want TZOFFSETFROM %d",
+						name, sub.Name, got, offFrom)
+				}
+				if _, got := onset.In(loc).Zone(); got != offTo {
+					t.Errorf("%s %s: offset at onset = %d, want TZOFFSETTO %d",
+						name, sub.Name, got, offTo)
+				}
 			}
-		}
+		})
 	}
+}
+
+// An observance RRULE expands forward from its DTSTART and never backwards, so an
+// onset dated after the anchor leaves a strict reader with no rule in effect for the
+// very event the VTIMEZONE was emitted to describe. Every onset must sit at or before
+// the anchor. Anchors are swept across the year because which side of a transition
+// the anchor falls on is exactly what decides this.
+func TestBuildVTimezoneOnsetIsAtOrBeforeAnchor(t *testing.T) {
+	for _, name := range []string{
+		"America/New_York", "Europe/Berlin", "Australia/Sydney",
+		"America/Santiago", "Asia/Kolkata", "Pacific/Auckland",
+	} {
+		t.Run(name, func(t *testing.T) {
+			loc, err := time.LoadLocation(name)
+			if err != nil {
+				t.Skip(err)
+			}
+			for month := time.January; month <= time.December; month++ {
+				anchor := time.Date(2026, month, 15, 12, 0, 0, 0, loc)
+				comp := BuildVTimezone(loc, anchor)
+				if comp == nil {
+					t.Fatalf("nil for %s", name)
+				}
+				for _, sub := range comp.Children {
+					offFrom := parseICalUTCOffset(t, sub.Props.Get(ical.PropTimezoneOffsetFrom).Value)
+					onset := parseObservanceOnset(t, sub, offFrom)
+					if onset.After(anchor) {
+						t.Errorf("%s anchored %s: %s onset %s is after the anchor — no rule covers the anchor",
+							name, anchor.Format(time.RFC3339), sub.Name, onset.Format(time.RFC3339))
+					}
+				}
+			}
+		})
+	}
+}
+
+// parseObservanceOnset resolves an observance's floating DTSTART at its TZOFFSETFROM,
+// the way a conforming reader does, yielding the absolute instant of the onset.
+func parseObservanceOnset(t *testing.T, sub *ical.Component, offFrom int) time.Time {
+	t.Helper()
+	p := sub.Props.Get(ical.PropDateTimeStart)
+	if p == nil {
+		t.Fatalf("%s missing DTSTART", sub.Name)
+	}
+	onset, err := time.ParseInLocation(vtimezoneDateTimeLayout, p.Value, time.FixedZone("", offFrom))
+	if err != nil {
+		t.Fatalf("%s: parsing DTSTART %q: %v", sub.Name, p.Value, err)
+	}
+	return onset
 }
 
 func parseICalUTCOffset(t *testing.T, s string) int {
 	t.Helper()
-	var sign, hh, mm int
-	if _, err := fmt.Sscanf(s[1:], "%2d%2d", &hh, &mm); err != nil {
-		t.Fatalf("parsing UTC offset %q: %v", s, err)
+	// "+HHMM" / "-HHMM"; RFC 5545 also allows a trailing SS, which we never emit.
+	if len(s) != 5 {
+		t.Fatalf("UTC offset %q is not the 5-character +HHMM form", s)
 	}
+	var sign, hh, mm int
 	switch s[0] {
 	case '+':
 		sign = 1
@@ -254,6 +314,9 @@ func parseICalUTCOffset(t *testing.T, s string) int {
 		sign = -1
 	default:
 		t.Fatalf("UTC offset %q has no sign", s)
+	}
+	if _, err := fmt.Sscanf(s[1:], "%2d%2d", &hh, &mm); err != nil {
+		t.Fatalf("parsing UTC offset %q: %v", s, err)
 	}
 	return sign * (hh*3600 + mm*60)
 }

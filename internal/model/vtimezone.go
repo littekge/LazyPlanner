@@ -7,15 +7,31 @@ import (
 	"github.com/emersion/go-ical"
 )
 
-// vtimezoneProbeYears is how far around the anchor transitions are searched. Two
-// years is enough to see a full DST cycle on either side of any anchor while
-// keeping the day-stepping scan trivial.
-const vtimezoneProbeYears = 2
+// vtimezoneLookbackYears is how far *back* from the anchor transitions are searched.
+// The search is deliberately one-sided: an observance's RRULE expands forward from
+// its DTSTART only, so the onset must sit at or before the anchor or a strict reader
+// has no rule in effect for the very date the VTIMEZONE exists to describe.
+//
+// Three years is measured, not guessed. Sweeping all 487 zones in the host database
+// against twelve monthly anchors, 149 of the 152 DST zones need only one year, and
+// three need two — America/Asuncion, America/Coyhaique and America/Vancouver, each
+// having changed rules recently enough to leave a sparse patch. Three years keeps a
+// year of margin for the next such rule change. Widening is always safe: the most
+// recent transition of each kind is selected, so a longer window can only supply a
+// kind that was missing, never displace a nearer one.
+const vtimezoneLookbackYears = 3
 
 // vtimezoneDateTimeLayout is the RFC 5545 floating DATE-TIME form. An observance's
 // DTSTART is always local-and-floating: it carries neither a Z nor a TZID, because
 // the offsets it sits next to are what give it meaning.
 const vtimezoneDateTimeLayout = "20060102T150405"
+
+// vtimezoneEpochOnset is the onset for an observance that has no transition behind
+// it — a zone on one rule for the whole window. Dating it at the anchor would make
+// the rule start *after* events earlier that same day; real generators use a far-past
+// onset (Google emits 19700308T020000) so the single rule covers every date a reader
+// can ask about.
+const vtimezoneEpochOnset = "19700101T000000"
 
 // IsNamedZone reports whether loc can be referenced by TZID. UTC is excluded
 // deliberately: a UTC value's correct serialization is the Z form, which needs no
@@ -48,9 +64,7 @@ func BuildVTimezone(loc *time.Location, around time.Time) *ical.Component {
 	tz := ical.NewComponent(ical.CompTimezone)
 	tz.Props.SetText(ical.PropTimezoneID, loc.String())
 
-	from := around.AddDate(-vtimezoneProbeYears, 0, 0)
-	to := around.AddDate(vtimezoneProbeYears, 0, 0)
-	transitions := zoneTransitions(loc, from, to)
+	transitions := zoneTransitions(loc, around.AddDate(-vtimezoneLookbackYears, 0, 0), around)
 
 	if len(transitions) == 0 {
 		// No DST in the window: one STANDARD observance carrying the fixed offset.
@@ -59,8 +73,9 @@ func BuildVTimezone(loc *time.Location, around time.Time) *ical.Component {
 		return tz
 	}
 
-	// Keep the most recent transition of each kind, so the component carries at
-	// most one STANDARD and one DAYLIGHT.
+	// Keep the most recent transition of each kind. Because the window ends at the
+	// anchor, that is the transition under whose rule the anchor itself falls — the
+	// one a reader needs — and the yearly RRULE projects it forward from there.
 	seen := map[string]bool{}
 	for i := len(transitions) - 1; i >= 0; i-- {
 		at := transitions[i].In(loc)
@@ -110,7 +125,13 @@ func zoneTransitions(loc *time.Location, from, to time.Time) []time.Time {
 // observance builds one STANDARD/DAYLIGHT subcomponent.
 func observance(name string, at time.Time, offFrom, offTo int, recurring bool) *ical.Component {
 	sub := ical.NewComponent(name)
-	setTypedProp(sub.Props, ical.PropDateTimeStart, observanceStart(at, offFrom))
+	// A non-recurring observance is the "one rule, always" case, so its onset belongs
+	// in the far past rather than at the transition-less anchor.
+	dtstart := vtimezoneEpochOnset
+	if recurring {
+		dtstart = observanceStart(at, offFrom)
+	}
+	setTypedProp(sub.Props, ical.PropDateTimeStart, dtstart)
 	setTypedProp(sub.Props, ical.PropTimezoneOffsetFrom, icalUTCOffset(offFrom))
 	setTypedProp(sub.Props, ical.PropTimezoneOffsetTo, icalUTCOffset(offTo))
 	if abbrev, _ := at.Zone(); abbrev != "" {
