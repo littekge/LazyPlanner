@@ -4,6 +4,32 @@
 
 ---
 
+## 2026-07-27 — Fix the CI flake: an absolute wall-clock budget becomes a growth ratio
+
+**v1.5.0 released successfully** (owner merged and tagged; the Release workflow attached all 8 assets,
+`linux_amd64` checksum-verified and smoke-tested reporting `LazyPlanner v1.5.0`). The red mark the owner
+saw was the separate **CI** workflow, not the release.
+
+- **CI had been intermittently red for days on a test, not a defect.** `TestAggregateRecurrenceCapBounded`
+  asserted an **absolute 800ms** per input size; a shared GitHub runner measured **804ms** — a 0.5%
+  overshoot — and failed. Absolute wall-clock thresholds encode the machine, not the invariant.
+- **Converted to the growth-ratio style**, exactly as `COVERAGE.md` item 7 had prescribed since pass 23.
+  The test's own comment already stated the real property ("250 events must not take ~5× as long as
+  50"), so the assertion now matches the claim: best-of-3 **interleaved** across sizes (so a CPU dip has
+  to hit the same size three times to skew it), ratio thresholded at 3.0× against ~1.0 observed.
+- **Kept a deliberately loose 10s absolute backstop** for the one regression a ratio structurally cannot
+  see — both sizes hanging — at ~37× the observed cost, so it cannot flake.
+- **Mutation-verified**: dropping the shared `StepBudget` yields **5.02×** (5.9s vs 29.9s) and fails,
+  matching the predicted per-N scaling. The ratio form catches the bug more decisively than the absolute
+  bound did.
+- **Bonus, and the other half of ledger item 7**: `go test -race ./internal/model/` now passes for the
+  first time. It was unusable because race's ~7× overhead blew the absolute bound; a ratio is invariant
+  to a uniform slowdown.
+- Honest note: my 2026-07-26 wall-clock change made this test ~27% slower (211ms → 268ms locally), which
+  narrowed an already-marginal margin — but CI was failing on this test before that change too
+  (2026-07-25 and 07-26 runs), so it was a latent flake, not a regression I introduced.
+- Files: `internal/model/aggregate_cap_test.go` (test-only, no product code), `docs/audit/COVERAGE.md`.
+
 ## 2026-07-26 — Pass 24 cancelled mid-run; its 4 fixable defects fixed, 1 left open
 
 The `/audit` workflow was launched unbounded, cancelled, resumed, and then exhausted the session's usage

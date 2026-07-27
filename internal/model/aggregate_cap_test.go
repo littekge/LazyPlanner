@@ -1,6 +1,8 @@
 package model_test
 
 import (
+	"math"
+	"runtime"
 	"strings"
 	"testing"
 	"time"
@@ -36,12 +38,23 @@ func TestAggregateRecurrenceCapBounded(t *testing.T) {
 	from := time.Date(2026, 1, 1, 0, 0, 0, 0, time.UTC)
 	to := time.Date(2026, 2, 1, 0, 0, 0, 0, time.UTC)
 
-	// The bound is by budget, not by event count: expanding 250 events must not
-	// take ~5× as long as 50. If cost still scaled with N, 250 far-anchored
-	// SECONDLY events would take ~25s; the shared budget holds it well under the
-	// ceiling. A generous threshold keeps the guard robust on slow CI/Pi hardware
-	// while still catching a regression that reintroduces the per-N multiplication.
-	const budgetBoundMs = 800
+	// The property is a GROWTH RATIO, not a duration. Without the shared budget
+	// cost scales with N, so 250 far-anchored SECONDLY events cost ~5× the
+	// 50-event case; with it both cost the same and the ratio sits near 1.
+	//
+	// This used to assert an absolute 800ms per size, which is the wrong shape for
+	// the claim and made the test a CI flake: a shared runner measured 804ms — a
+	// 0.5% overshoot — and failed a run that had found nothing wrong. Absolute
+	// wall-clock thresholds encode the machine, not the invariant.
+	const (
+		maxGrowthRatio = 3.0 // observed ~1.0 bounded, ~5.0 if per-N scaling returns
+		// A deliberately loose backstop: a ratio cannot see a regression that makes
+		// BOTH sizes hang, so keep an absolute ceiling far above any real machine
+		// (~270ms observed here, so ~37× margin) purely to catch catastrophe.
+		sanityCeiling = 10 * time.Second
+	)
+
+	parsed := map[int]*model.Parsed{}
 	for _, n := range []int{50, 250} {
 		p, err := model.Decode([]byte(floodICS(n)), time.UTC)
 		if err != nil {
@@ -50,16 +63,42 @@ func TestAggregateRecurrenceCapBounded(t *testing.T) {
 		if len(p.Events) != n {
 			t.Fatalf("n=%d: got %d events, want %d", n, len(p.Events), n)
 		}
-		start := time.Now()
-		occs, err := p.EventOccurrences(from, to)
-		elapsed := time.Since(start)
-		if err != nil {
-			t.Fatalf("n=%d EventOccurrences: %v", n, err)
+		parsed[n] = p
+	}
+
+	// Best-of-3, interleaved across sizes: a CPU-frequency dip or a noisy
+	// neighbour then has to hit the same size three times to skew the ratio,
+	// rather than landing once on a single timed run.
+	best := map[int]time.Duration{50: math.MaxInt64, 250: math.MaxInt64}
+	for round := 0; round < 3; round++ {
+		for _, n := range []int{50, 250} {
+			runtime.GC()
+			start := time.Now()
+			occs, err := parsed[n].EventOccurrences(from, to)
+			elapsed := time.Since(start)
+			if err != nil {
+				t.Fatalf("n=%d EventOccurrences: %v", n, err)
+			}
+			if len(occs) != 0 {
+				t.Fatalf("n=%d: the flood fixture must collect nothing, got %d occurrences", n, len(occs))
+			}
+			if elapsed < best[n] {
+				best[n] = elapsed
+			}
 		}
-		t.Logf("n=%d: EventOccurrences took %v, returned %d occurrences", n, elapsed, len(occs))
-		if elapsed > budgetBoundMs*time.Millisecond {
-			t.Fatalf("n=%d: aggregate expansion took %v (> %dms) — the shared StepBudget is not bounding the sum across events",
-				n, elapsed, budgetBoundMs)
+	}
+
+	ratio := float64(best[250]) / float64(best[50])
+	t.Logf("best-of-3: n=50 %v, n=250 %v — growth ratio %.2f× (bounded ≈1, per-N scaling ≈5)",
+		best[50], best[250], ratio)
+
+	if ratio > maxGrowthRatio {
+		t.Fatalf("expansion grew %.2f× for 5× the events (> %.1f×) — the shared StepBudget is not bounding the sum across events",
+			ratio, maxGrowthRatio)
+	}
+	for _, n := range []int{50, 250} {
+		if best[n] > sanityCeiling {
+			t.Fatalf("n=%d: aggregate expansion took %v, past the %v catastrophe backstop", n, best[n], sanityCeiling)
 		}
 	}
 }

@@ -1,5 +1,6 @@
 # Build output — `go build` emits binaries; keep them out of the repo.
 /lazyplanner
+/Lazyplanner
 /cmd/lazyplanner/lazyplanner
 /dist/
 

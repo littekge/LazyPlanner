@@ -374,9 +374,15 @@ month/day-view gap-day probe, two all-day grab gap-day probes).
    calendar views, judged too wide for a pre-release fix.
 5. `internal/caldav` write paths — unswept for the bare-write class, **second consecutive pass**.
 6. **Race and fault-injection not exercised at all** this pass (last run pass 22).
-7. `go test -race ./internal/model/` fails on `TestAggregateRecurrenceCapBounded` — a pass-21 absolute
-   wall-clock budget that `-race` overhead exceeds. Pre-existing (fails at `ba274c1`), not a data race,
-   not part of the official gate. Convert to the growth-ratio style adopted this pass.
+7. ~~`go test -race ./internal/model/` fails on `TestAggregateRecurrenceCapBounded` — a pass-21 absolute
+   wall-clock budget that `-race` overhead exceeds.~~ **RESOLVED (2026-07-27)** — converted to the
+   growth-ratio style as this item prescribed. It was also failing the **normal** gate on shared CI
+   runners (one run measured 804ms against the 800ms bound, a 0.5% overshoot), so CI had been
+   intermittently red for days on findings that did not exist. The test now asserts the property it
+   actually claims — 5× the events must not cost ~5× the time — via a best-of-3 interleaved growth
+   ratio, with a deliberately loose 10s catastrophe backstop for the one regression a ratio cannot see
+   (both sizes hanging). Verified by mutation: dropping the shared budget gives 5.02× (5.9s vs 29.9s)
+   and fails. `go test -race ./internal/model/` now passes.
 8. A full refresh still mints ~4 budgets (bounded constant, no longer day-scaled). Write-side `safeAfter`
    has no aggregate budget — bulk grab over N recurring items is N × 1M steps, the same class on the
    write path. Two pathological events still exhaust a redraw's 2M ceiling and starve later events.
