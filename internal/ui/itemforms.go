@@ -30,20 +30,20 @@ func recurAnchor(date time.Time, timeText string, loc *time.Location) time.Time 
 // todoFields holds references to a task form's inputs so values are read
 // directly (labels change as the ▸ caret moves, so label lookup won't work).
 type todoFields struct {
-	summary, desc, dueDate, dueTime, tags *tview.InputField
-	priority                              *tview.DropDown
-	completed                             *tview.Checkbox
-	repeat                                *tview.DropDown      // nil when the Repeat field is hidden
-	repeatChoices                         *model.RepeatChoices // paired with repeat
+	summary, desc, location, dueDate, dueTime, tags *tview.InputField
+	priority                                        *tview.DropDown
+	completed                                       *tview.Checkbox
+	repeat                                          *tview.DropDown      // nil when the Repeat field is hidden
+	repeatChoices                                   *model.RepeatChoices // paired with repeat
 }
 
 // newTodoForm builds the task field set, pre-filled from td (nil = a blank create
 // form). When choices is non-nil a Repeat dropdown is shown, seeded from it.
 func (a *app) newTodoForm(td *model.Todo, choices *model.RepeatChoices) (*caretForm, *todoFields) {
-	summary, desc, tags, dueDate, dueTime := "", "", "", "", ""
+	summary, desc, location, tags, dueDate, dueTime := "", "", "", "", "", ""
 	prio, completed := 0, false
 	if td != nil {
-		summary, desc = td.Summary, td.Description
+		summary, desc, location = td.Summary, td.Description, td.Location
 		tags = strings.Join(td.Categories, ", ")
 		prio, completed = td.Priority, td.Completed()
 		if td.HasDue {
@@ -57,6 +57,11 @@ func (a *app) newTodoForm(td *model.Todo, choices *model.RepeatChoices) (*caretF
 	fields := &todoFields{}
 	fields.summary = f.addInput("Summary", summary, 0)
 	fields.desc = f.addInput("Description", desc, 0)
+	// LOCATION is legal on a VTODO, quick-add's @token sets it, and the Detail pane
+	// shows it — but the form had no field for it, so readTodoDraft returned an
+	// empty Location and applyTodo's setTextOrDel DELETED the property. Opening the
+	// form and pressing Save, changing nothing, silently dropped the location.
+	fields.location = f.addInput("Location", location, 0)
 	fields.dueDate = f.addInput("Due date (YYYY-MM-DD)", dueDate, 12)
 	fields.dueTime = f.addInput("Due time (HH:MM)", dueTime, 8)
 	if choices != nil {
@@ -93,6 +98,7 @@ func (a *app) readTodoDraft(f *todoFields) (model.TodoDraft, error) {
 	d := model.TodoDraft{
 		Summary:     f.summary.GetText(),
 		Description: f.desc.GetText(),
+		Location:    f.location.GetText(),
 		Priority:    prio, // dropdown index maps directly: 0 = none, 1..9 = priority
 		Categories:  splitTags(f.tags.GetText()),
 		Completed:   f.completed.IsChecked(),

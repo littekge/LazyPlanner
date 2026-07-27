@@ -21,13 +21,18 @@ func draftFromTodo(td *model.Todo) model.TodoDraft {
 	return model.TodoDraft{
 		Summary:     td.Summary,
 		Description: td.Description,
-		HasDue:      td.HasDue,
-		Due:         td.Due,
-		DueAllDay:   td.DueAllDay,
-		Priority:    td.Priority,
-		Categories:  td.Categories,
-		ParentUID:   td.ParentUID,
-		Completed:   td.Completed(),
+		// Every field the draft omits is DELETED by applyTodo's setTextOrDel, so a
+		// quick-set of one field erases any it forgets to carry. Location was the
+		// one it forgot: `sp` on a task created with quick-add's @token dropped the
+		// location silently (iron rule — editing a known field preserves the rest).
+		Location:   td.Location,
+		HasDue:     td.HasDue,
+		Due:        td.Due,
+		DueAllDay:  td.DueAllDay,
+		Priority:   td.Priority,
+		Categories: td.Categories,
+		ParentUID:  td.ParentUID,
+		Completed:  td.Completed(),
 	}
 }
 
