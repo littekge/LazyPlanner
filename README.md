@@ -43,6 +43,8 @@ password_command = "bw get password lazyplanner-work"
 
 Each account needs a unique `name`. **One account is active at a time**; switch between them in-app with `:account` (see [Usage](#usage)) — there is no merged multi-account view. A single-account config is just one `[[account]]` block.
 
+`url` must match the origin your server actually advertises. LazyPlanner refuses to send a request — which carries your app password — to any host other than the one in `url`, so if your server sits behind a reverse proxy that returns links under a different hostname, point `url` at that public name. You'll see an error naming both origins if they disagree.
+
 > **Upgrading from a pre-1.1 config?** The old single `[server]` section was replaced by `[[account]]` blocks. Rename `[server]` to `[[account]]` and add a `name`; the connection fields are otherwise unchanged, and your existing cache is reused (its id still derives from the URL + username). LazyPlanner refuses to start with a leftover `[server]` section and tells you this.
 
 Authentication is always a NextCloud **app password** (Settings → Security → Devices & sessions), never your account password. `password_command` (its stdout is used as the secret) keeps the password out of the file — e.g. `bw get password …` with Bitwarden/Vaultwarden; it runs via `sh -c`, so pipes, quoting, and shell expansion all work as expected. If the file is group/other-readable, LazyPlanner warns you to `chmod 600` it — that check is **Unix-only**; Windows has no equivalent permissions warning.

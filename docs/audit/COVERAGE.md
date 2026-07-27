@@ -372,6 +372,12 @@ month/day-view gap-day probe, two all-day grab gap-day probes).
    zones "tomorrow" can resolve to today and a day window is shifted an hour at its edges. Not
    arc-introduced; fixing it means reworking `DayStart` + `AddDate(0,0,1)` day-window semantics across the
    calendar views, judged too wide for a pre-release fix.
+   **Concrete evidence** (pass-24 skeptic probes, recovered from the cancelled run's worktrees and
+   preserved under `audit-pass24-preserved/worktree-repros/`): in `America/Havana`, `dayItems(Mar 8)`
+   returns `header="Saturday, March 7, 2026"` over the window `[Mar-07 23:00, Mar-08 23:00)` — the March 8
+   cell is *labelled March 7* — and an event on the gap day is **absent from the month grid** entirely.
+   Calendar-grid arrow navigation also lands on `2026-03-07T23:00-05:00` as "the next day". The probes
+   assert nothing (they log), so they pass; they are diagnostics for this item, not a separate finding.
 5. `internal/caldav` write paths — unswept for the bare-write class, **second consecutive pass**.
 6. **Race and fault-injection not exercised at all** this pass (last run pass 22).
 7. ~~`go test -race ./internal/model/` fails on `TestAggregateRecurrenceCapBounded` — a pass-21 absolute

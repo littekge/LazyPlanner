@@ -4,6 +4,31 @@
 
 ---
 
+## 2026-07-27 — Session cleanup: sweep the cancelled audit's worktrees, close two doc gaps
+
+- **Swept three leftover git worktrees** (`wt-sk1`, `wt-sk3`, `wt3`) left by the cancelled pass-24 run's
+  skeptic agents, all detached at `61bb158`. Each held untracked probe files, so they were preserved to
+  `audit-pass24-preserved/worktree-repros/` and **run against HEAD before deletion** rather than
+  discarded on the assumption they were noise. All three compile-and-pass (one, `zzsk3b_gap_test.go`,
+  never compiled — a killed agent's half-written probe). No new finding.
+- **They were not worthless, though**: their logs are the best concrete evidence yet for ledger item 4
+  (day bucketing unsafe in DST-gap zones) — in `America/Havana`, `dayItems(Mar 8)` returns
+  `header="Saturday, March 7, 2026"` over `[Mar-07 23:00, Mar-08 23:00)`, and an event on the gap day is
+  absent from the month grid entirely. Item 4 now records that detail and points at the preserved probes.
+- **Two doc-currency gaps closed**, both from the pass-24 caldav fix:
+  - `main.md` recorded the same-origin href rule only inside the pass-24 *ledger narrative* — history,
+    not design. It is a settled decision with an accepted cost, so it now sits in Settled Decisions
+    (Sync & conflicts) beside the read-only-calendar rule, per main.md's charter.
+  - `README.md` said nothing about it, but it is user-visible: a reverse-proxied server that advertises a
+    different hostname than `url` will now error. The Configuration section says so and explains the fix.
+- No stray branches (`git branch --merged ai-workspace` clean; only `ai-workspace` and `main` exist).
+  The two root binaries are gitignored build output — `Lazyplanner` (capital) was added to `.gitignore`
+  earlier this session after `git add -A` swept it into a commit; verified no binary exists anywhere in
+  the pushed history.
+- `notes.md` left **empty** — every task this session completed. The one open finding is a recorded
+  residual (`COVERAGE.md` item 13), not mid-arc state.
+- Files: `main.md`, `README.md`, `docs/audit/COVERAGE.md`, `log.md`.
+
 ## 2026-07-27 — Fix the CI flake: an absolute wall-clock budget becomes a growth ratio
 
 **v1.5.0 released successfully** (owner merged and tagged; the Release workflow attached all 8 assets,
