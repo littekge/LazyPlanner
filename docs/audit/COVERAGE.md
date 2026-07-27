@@ -293,7 +293,34 @@ commits. Full detail: `docs/audit/passes/PASS-23.md` § Resolution.
 - **Conflict-resolution store paths** — `never` → `recent`; UI orchestration half still uncovered.
 - **Sidecar parse** — `never` → `recent`; salvage + quarantine + byte-lossless stash.
 
-### Carried residual → Pass 24 targets
+### Pass 24 (2026-07-26) — CANCELLED mid-run; 5 defects reproduced, 4 fixed
+
+Full report: `passes/PASS-24.md`. The run was launched unbounded, exhausted the session budget, and never
+reached its verify/canary/synthesis stages — so **no adversarial verification and no mutation canaries
+were run this pass**. Every finding below nonetheless shipped a reproduction that was executed directly,
+observed failing, observed passing after the fix, and mutation-checked by hand.
+
+- **HIGH — `internal/caldav`**: a protocol-relative href (`//evil.host/x.ics`) replaced the endpoint's
+  authority in `Client.resolve`, shipping the Basic-auth app password and the whole calendar body to a
+  foreign host while reporting success. Fixed `c63dacf` (origin check at the resolve chokepoint + an
+  ingest drop). First look at this surface after two passes flagged it unswept — `never`/`stale` rows
+  remain high-yield.
+- **MED — `internal/sync`**: a tombstone never converged when the resource was already gone server-side
+  (412 on the conditional DELETE), wedging the delete and disabling the CTag short-circuit forever.
+  Fixed `f3c1f5b` by giving `pushDelete` the `unfetched` map reconcile already used.
+- **MED — `internal/ui`**: `sd` did not re-anchor a recurring todo's day-pinning rule. Not a new class —
+  an existing guardrail's sweep list missing a door. Fixed `bb7be2d`; guardrail updated.
+- **MED — `internal/ui`**: a task's LOCATION erased by a quick-set and by a no-op form save (iron rule).
+  Fixed `bb543c6`; the task form gained the Location field the event form always had.
+- **MED — `internal/model`, OPEN**: see carried item 13.
+
+Four further probes passed and are recorded as no-finding (EXDATE+COUNT via the real Space path, a
+month/day-view gap-day probe, two all-day grab gap-day probes).
+
+**Convergence: no claim possible.** Criteria 2, 3 and 5 all need evidence this pass never produced.
+`more_passes_recommended`.
+
+### Carried residual → Pass 25 targets
 
 1. ~~UNVERIFIED PRODUCT-BUG LEAD — highest value.~~ **RESOLVED (2026-07-26)** — located by recovering the
    killed agent's transcript, not by re-auditing. It was **three linked recurrence-anchor defects, not
@@ -367,6 +394,21 @@ commits. Full detail: `docs/audit/passes/PASS-23.md` § Resolution.
    hardening pass must not "restore" the lock as an improvement; the reasoning is pinned in
    `TestUnsalvageableSidecarTreatsStateAsUnknown`.
 12. Surfaces deliberately skipped: ~37 of ~53 inventoried surfaces unexamined this pass.
+13. **OPEN (MED, pre-existing) — a timed recurring todo bakes a DST gap into its anchor, permanently.**
+    A `FREQ=DAILY` todo due `TZID=America/New_York:20260307T023000` advances to 01:30 on 2026-03-08
+    (02:30 does not exist), and that shifted time is written back as the new anchor, so every later
+    occurrence inherits it — 01:30 on 03-09, 03-10, 03-11. Persisted and pushed. **Verified
+    byte-identical at `08d75c3`, so not arc-introduced.** Structural, not a missing guard:
+    `AdvanceRecurringTodo` re-anchors on the *resolved instant* and the stored anchor is the only memory
+    of the authored wall clock, so a real fix means carrying the anchor as a wall clock through
+    `componentRecurrenceSet` / `AdvanceRecurringTodo` / the anchor writers. Too wide to land immediately
+    before v1.5.0. Executable repro: `docs/audit/repros/pass24-M4-dstgap-timed-anchor_test.go.txt`.
+14. **Pass 24 never ran adversarial verification or mutation canaries** (it was cancelled mid-run), and
+    its race, data-loss, spec-diff and input-edge targets produced no verified results. The
+    canary-escape-rate signal has no reading for this pass.
+15. **The audit workflow's cost is findings-driven and uncapped**: `12 + 4F` agents with the defaults,
+    so six high-yield targets produced ~43 findings and 185 agents. Bound the next run
+    (`maxTargets`/`skeptics`) or add a per-target findings cap to `.claude/workflows/hardening-audit.js`.
 
 ### Note for the next pass
 

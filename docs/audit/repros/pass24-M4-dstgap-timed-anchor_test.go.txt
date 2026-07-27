@@ -1,0 +1,69 @@
+package model
+
+import (
+	"fmt"
+	"strings"
+	"testing"
+	"time"
+
+	"github.com/emersion/go-ical"
+)
+
+// A timed recurring todo whose wall-clock time falls inside a spring-forward gap
+// must not have that gap silently baked into its stored anchor. The next
+// occurrence is unrepresentable at the authored wall clock, so it normalizes to
+// an earlier instant; writing that back as the new DUE shifts every later
+// occurrence by an hour, permanently and silently, and pushes the shift to the
+// server.
+//
+// The all-day twin is TestAdvanceRecurringTodoDoesNotSkipDSTGapDay; this is the
+// timed variant.
+func TestAdvanceRecurringTodoTimedKeepsWallClockAcrossSpringForward(t *testing.T) {
+	ny := mustZone(t, "America/New_York")
+
+	// 2026-03-08 02:00 -> 03:00 in America/New_York, so 02:30 does not exist.
+	gap := time.Date(2026, 3, 8, 2, 30, 0, 0, ny)
+	if gap.Hour() == 2 {
+		t.Fatalf("fixture premise broken: 2026-03-08 02:30 exists in America/New_York (%s)", gap.Format(time.RFC3339))
+	}
+
+	ics := strings.Join([]string{
+		"BEGIN:VCALENDAR",
+		"VERSION:2.0",
+		"PRODID:-//LazyPlanner//test//EN",
+		"BEGIN:VTODO",
+		"UID:dst-timed",
+		"DTSTAMP:20260101T000000Z",
+		"SUMMARY:Take meds",
+		"DUE;TZID=America/New_York:20260307T023000",
+		"RRULE:FREQ=DAILY",
+		"END:VTODO",
+		"END:VCALENDAR",
+		"",
+	}, "\r\n")
+
+	cur, err := Decode([]byte(ics), ny)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	// Complete the todo four times: across the transition and three days past it.
+	// Every stored DUE must stay at the authored 02:30 wall clock.
+	want := []string{"20260308T023000", "20260309T023000", "20260310T023000", "20260311T023000"}
+	for i, w := range want {
+		now := cur.Todos[0].Due.In(ny)
+		out, done, err := AdvanceRecurringTodo(cur, "dst-timed", now, ny)
+		if err != nil {
+			t.Fatalf("advance %d: %v", i, err)
+		}
+		if done {
+			t.Fatalf("advance %d: unbounded daily series reported exhausted", i)
+		}
+		due := propOf(t, out, ical.PropDue)
+		got := fmt.Sprintf("%s (TZID=%s)", due.Value, due.Params.Get(ical.ParamTimezoneID))
+		if due.Value != w {
+			t.Errorf("advance %d: stored DUE = %s, want %s (TZID=America/New_York)", i, got, w)
+		}
+		cur = out
+	}
+}

@@ -4,6 +4,96 @@
 
 ---
 
+## 2026-07-26 — Pass 24 cancelled mid-run; its 4 fixable defects fixed, 1 left open
+
+The `/audit` workflow was launched unbounded, cancelled, resumed, and then exhausted the session's usage
+budget mid-flight. Rather than resume a third time, the remaining budget went on **fixing what it had
+already found**. Full report: `docs/audit/passes/PASS-24.md`.
+
+**Why it got so large, recorded so it isn't repeated.** The workflow's agent count is findings-driven and
+uncapped — `12 + 4F` with the defaults, since every finding spawns 3 refuters plus a repro agent. Six
+`never`/`stale` targets produced ~43 raw findings and **185 agents** against a session guideline of 15.
+Nothing about the workflow changed; `F` did. Bound the next run or cap findings per target
+(`COVERAGE.md` item 15). Launching it unbounded when the owner's budget was known to be tight was my
+error, not the tool's.
+
+**What the pass had established before dying.** Its Plan phase ranked the *same-day* wall-clock/zone work
+as `never`-audited and made it target #1 — the feared fresh-code blind spot did not materialize. It left
+ten reproduction files in the working tree; these were moved out of the repo (they were failing tests one
+`git add -A` away from a commit), re-run individually, and triaged: **5 reproduced, 4 probes passed** and
+are recorded as no-finding.
+
+**Not protocol-grade.** The run never reached adversarial verification or mutation canaries, so PROTOCOL
+rule 3 was not satisfied and the canary-escape signal has no reading this pass. What each fix does carry:
+a repro executed and observed failing at `61bb158`, observed passing after, and mutation-checked by hand.
+
+### HIGH — an href could move an authenticated write off the endpoint's origin (`c63dacf`)
+
+- RFC 3986 reads a leading `//` as an authority, so a server-supplied `//evil.host/x.ics` is a
+  protocol-relative URL, not a path. `Client.resolve`'s `ResolveReference` replaced the endpoint's host.
+- Measured: `PutObject` delivered the account's **Basic-auth app password and the full calendar body** to
+  a foreign host, returned that host's ETag with `err=nil` — so the store marked the resource cleanly
+  pushed — while the honest endpoint got zero requests. `DeleteObject` and MKCALENDAR share the shape,
+  and a poisoned href persists in the sidecar so every later write re-targets that host.
+- Fixed in two layers: same-origin enforcement at the `resolve` chokepoint (which also protects hrefs
+  already poisoned in a sidecar) and an ingest drop in `DownloadAll`. Each kills a different subset of
+  the guards. The permissive side is guarded too — an absolute *same-origin* URL must still work — and
+  that guard was mutation-checked by making resolve reject everything.
+- Accepted cost: a server advertising hrefs on a different origin than the configured endpoint now errors
+  rather than following them. Correct default for a credential-bearing request.
+
+### MED — a tombstone never converged when the resource was already gone (`f3c1f5b`)
+
+- Resource deleted remotely, then locally; the conditional DELETE gets 412 (RFC 7232). `pushDelete`
+  conflated "couldn't fetch the server version" with "it's genuinely gone", so over three syncs the
+  tombstone stayed pending, and the accompanying skip suppressed the CTag cache — the calendar
+  re-downloaded in full forever and never stopped reporting local changes.
+- Reconcile already draws that distinction with its `unfetched` map; `pushDelete` never received it. The
+  "mirror a guard onto every sibling path" rule — the guard existed one function away.
+- The mutation check proves the two cases are genuinely distinguished, not coincidentally passing:
+  forcing degraded→gone fails the pass-14 conflict guard, forcing gone→degraded fails the new one.
+
+### MED — `sd` did not re-anchor a recurring todo's day-pinning rule (`bb7be2d`)
+
+- Moving a Monday-pinned weekly todo to Wednesday left `BYDAY=MO`, so the next Space advance snapped back
+  to Monday and the change silently undid itself.
+- **Not a new class** — the existing "re-anchor a day-pinning `BY*`" guardrail reached through a door its
+  sweep list never named. The fix lives in `applyTodoField` (the quick-set chokepoint) so future field
+  mutations inherit it, and is gated on the calendar day actually changing, because
+  `reanchoredRecurrence` blocks a *Custom rule (kept)* whether or not the day moved — an ungated call
+  would refuse a legitimate time-only `sd`. Both sides guarded and mutation-checked.
+- `CLAUDE.md`'s guardrail updated in the same increment (protocol rule 9): sweep list gains `sd`, plus
+  "enumerate the doors, not the features" and the day-change gate. Marked "Reopened once".
+
+### MED — a task's LOCATION erased by a quick-set and by a no-op form save (`bb543c6`)
+
+- Iron-rule violation. `TodoDraft` carries `Location` and `applyTodo` writes it, but `draftFromTodo`
+  omitted it and the task form had **no Location input at all**, so `setTextOrDel` deleted the property.
+  The event form has had the field all along.
+- Quick-add's `@token` sets LOCATION on tasks and the Detail pane shows it, so this was reachable in
+  ordinary use and the docs already promised it survived. The task form now has the field, which makes
+  main.md's "the full form edits every field" true rather than adding a feature.
+
+### OPEN — a timed recurring todo bakes a DST gap into its anchor (`COVERAGE.md` item 13)
+
+- A `FREQ=DAILY` todo due `TZID=America/New_York:20260307T023000` advances to 01:30 on 03-08 (02:30 does
+  not exist) and **writes that shifted time back as the new anchor**, so 03-09/10/11 all inherit 01:30.
+  Persisted and pushed.
+- **Verified byte-identical at `08d75c3`, so not arc-introduced** — that check is what decided the
+  triage. Structural rather than a missing guard: `AdvanceRecurringTodo` re-anchors on the resolved
+  instant and the stored anchor is the only memory of the authored wall clock, so storing the snapped
+  instant drifts the other way and storing the nominal wall clock as text still round-trips through a
+  `time.Time` in a zone where it doesn't exist. A real fix carries the anchor as a wall clock through
+  `componentRecurrenceSet` / `AdvanceRecurringTodo` / the anchor writers — too wide immediately before
+  the release.
+- Executable repro kept in-repo at `docs/audit/repros/pass24-M4-dstgap-timed-anchor_test.go.txt` (`.txt`
+  so it cannot break the build), with `docs/audit/repros/README.md` explaining the convention.
+
+Files: `internal/caldav/{mkcalendar,client}.go`, `internal/sync/sync.go`, `internal/ui/{quickfield,itemforms}.go`,
+`CLAUDE.md`, `main.md`, `docs/audit/{COVERAGE.md,passes/PASS-24.md,repros/}`. Guards:
+`internal/caldav/hrefhost_test.go`, `internal/sync/tombstone412_alreadygone_test.go`,
+`internal/ui/{sd_recur_reanchor,todo_location_preserve}_test.go`. Gate green on every commit.
+
 ## 2026-07-26 — Fix both TZID-arc regressions; both were wider than recorded
 
 Picked up the two open regressions `notes.md` carried. Both were fixed repro-first with a green full
