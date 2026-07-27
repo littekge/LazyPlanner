@@ -49,6 +49,28 @@ func (a *app) applyTodoField(uid, label string, mut func(*model.TodoDraft)) {
 	}
 	draft := draftFromTodo(td)
 	mut(&draft)
+	// A quick-set that moves a recurring todo's due moves the whole SERIES anchor
+	// (the single-live-instance model makes DUE the rule's anchor), so a day-pinning
+	// rule — weekly BYDAY, monthly nth-weekday — has to re-anchor with it or the
+	// next Space advance snaps back to the old day and the user's change silently
+	// undoes itself. Grab already enforces this; `sd` reached the same anchor
+	// through a different door and did not.
+	//
+	// It lives here rather than in setDuePrompt so ANY mutation that shifts the due
+	// is covered, including ones added later — the guardrail's "any new one" clause.
+	//
+	// Gated on the calendar day actually changing: reanchoredRecurrence reports
+	// blocked for a Custom-kept rule whether or not the day moved, so calling it
+	// unconditionally would refuse a legitimate time-only set ("sd 3pm") on a rule
+	// it merely cannot re-anchor.
+	if td.Recurring && td.HasDue && draft.HasDue && !model.SameDay(td.Due.In(a.loc), draft.Due.In(a.loc)) {
+		recur, blocked := model.ReanchoredRecurrenceTodo(td, td.Due, draft.Due)
+		if blocked {
+			a.flash("Can't shift the day of this custom repeat rule — edit the rule instead")
+			return
+		}
+		draft.Recur = recur
+	}
 	obj, err := model.EditTodo(loc.Object, uid, draft, a.now, a.loc)
 	if err != nil {
 		a.flashErr("Set", err)
