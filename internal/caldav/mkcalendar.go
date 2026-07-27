@@ -108,13 +108,55 @@ func (c *Client) DeleteCalendar(ctx context.Context, path string) error {
 }
 
 // resolve turns a server path (or absolute URL) into an absolute URL string
-// against the client's endpoint.
+// against the client's endpoint, refusing any reference that would move the
+// request off that endpoint's origin.
+//
+// This is the single chokepoint every authenticated request passes through, and
+// the check has to live here rather than at the call sites: an href is
+// *untrusted server input*, and RFC 3986 reads a leading "//" as the start of an
+// authority. So a multistatus href of "//evil.host/x.ics" is a protocol-relative
+// URL, not a path, and ResolveReference dutifully replaces the endpoint's host
+// with it. The result was that PutObject shipped the account's Basic-auth app
+// password and the full calendar body to a host the user never configured,
+// returned the attacker's ETag as success — so the store marked the resource
+// cleanly pushed — while the real server received nothing. DeleteObject and
+// MKCALENDAR had the same shape, and a poisoned href persists in the sidecar, so
+// every later write re-targets that host.
+//
+// Same-origin is compared on scheme and host with default ports folded in, so an
+// absolute URL the server legitimately returns for its own origin still works.
+// Deliberate, documented cost: a deployment whose server returns hrefs on a
+// *different* origin than the configured endpoint (a reverse proxy advertising
+// its public name) now errors instead of following them. That is the correct
+// default for a credential-bearing request — the error names both origins so the
+// fix is to point the endpoint at the advertised name.
 func (c *Client) resolve(ref string) (string, error) {
 	u, err := url.Parse(ref)
 	if err != nil {
 		return "", fmt.Errorf("caldav: invalid path %q: %w", ref, err)
 	}
-	return c.endpoint.ResolveReference(u).String(), nil
+	target := c.endpoint.ResolveReference(u)
+	if !sameOrigin(c.endpoint, target) {
+		return "", fmt.Errorf("caldav: refusing to address %q: it resolves to %s but the configured endpoint is %s",
+			ref, originOf(target), originOf(c.endpoint))
+	}
+	return target.String(), nil
+}
+
+// sameOrigin reports whether a and b share a scheme and host, treating an
+// omitted default port as equal to the explicit one (https://h and https://h:443
+// are the same origin).
+func sameOrigin(a, b *url.URL) bool { return originOf(a) == originOf(b) }
+
+// originOf renders a URL's scheme://host with the scheme's default port removed,
+// for comparison and for error messages.
+func originOf(u *url.URL) string {
+	host := u.Host
+	scheme := strings.ToLower(u.Scheme)
+	if p := u.Port(); (scheme == "https" && p == "443") || (scheme == "http" && p == "80") {
+		host = u.Hostname()
+	}
+	return scheme + "://" + strings.ToLower(host)
 }
 
 // responseHint returns a short, trimmed excerpt of an error response body to

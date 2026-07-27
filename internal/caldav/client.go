@@ -289,9 +289,29 @@ func (c *Client) DownloadAll(ctx context.Context, calendarPath string) ([]Object
 
 	out := make([]Object, 0, len(objs))
 	for _, o := range objs {
+		// Drop an href that carries an authority before it can be persisted.
+		// Client.resolve already refuses to send a request off-origin, so this is
+		// the second layer: without it the poisoned href is stored in the sidecar
+		// as Resource.Href and every later sync re-derives an unusable target from
+		// it. Skipping loses only a resource the server named in a way we are not
+		// willing to address at all.
+		if !addressableHref(c.endpoint, o.Path) {
+			continue
+		}
 		out = append(out, Object{Path: o.Path, ETag: o.ETag, Data: o.Data})
 	}
 	return out, nil
+}
+
+// addressableHref reports whether href can be turned into a request URL that
+// stays on the endpoint's origin — the ingest-side twin of Client.resolve's
+// check, applied to every href harvested from a multistatus response.
+func addressableHref(endpoint *url.URL, href string) bool {
+	u, err := url.Parse(href)
+	if err != nil {
+		return false
+	}
+	return sameOrigin(endpoint, endpoint.ResolveReference(u))
 }
 
 // GetObject fetches a single calendar resource fresh from the server. It is used
