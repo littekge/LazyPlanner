@@ -491,7 +491,7 @@ func reconcileCalendar(ctx context.Context, client Syncer, st *store.Store, calI
 		if err := ctx.Err(); err != nil {
 			return err
 		}
-		pushDelete(ctx, client, st, calID, sc.Path, t, serverByHref, res)
+		pushDelete(ctx, client, st, calID, sc.Path, t, serverByHref, unfetched, res)
 	}
 	return nil
 }
@@ -666,7 +666,7 @@ func pushUpdate(ctx context.Context, client Syncer, st *store.Store, calID, calP
 	res.Pushed++
 }
 
-func pushDelete(ctx context.Context, client Syncer, st *store.Store, calID, calPath string, t store.Tombstone, serverByHref map[string]caldav.Object, res *SyncResult) {
+func pushDelete(ctx context.Context, client Syncer, st *store.Store, calID, calPath string, t store.Tombstone, serverByHref map[string]caldav.Object, unfetched map[string]bool, res *SyncResult) {
 	err := client.DeleteObject(ctx, t.Href, t.ETag)
 	if errors.Is(err, caldav.ErrReadOnly) {
 		// A 403 on delete is not trusted outright (see handleWriteForbidden): re-check
@@ -687,7 +687,35 @@ func pushDelete(ctx context.Context, client Syncer, st *store.Store, calID, calP
 		// (never-silently-overwrite).
 		serverObj, ok := serverByHref[t.Href]
 		if !ok {
-			recordSkip(res, calID, t.Name, fmt.Errorf("delete-vs-server-change for %q: server version unavailable this sync", t.Name))
+			// An absent href has two very different meanings, and conflating them
+			// wedged the tombstone forever. Reconcile already draws this distinction
+			// with `unfetched`; pushDelete simply never received it.
+			if unfetched[t.Href] {
+				// Degraded download: the server listed this href but its fetch failed
+				// this pass, so the server version really is unavailable. Keep the
+				// tombstone and skip, which also suppresses the CTag cache so the next
+				// sync retries with a full download.
+				recordSkip(res, calID, t.Name, fmt.Errorf("delete-vs-server-change for %q: server version unavailable this sync", t.Name))
+				return
+			}
+			// Complete, healthy download and the href is absent: the resource is
+			// genuinely GONE on the server — deleted from the web UI or a phone, or
+			// our own earlier DELETE landed and only its response was lost. RFC 7232
+			// says a conditional request whose If-Match cannot match a non-existent
+			// resource gets 412, and real servers do exactly that, so this 412 means
+			// "already deleted", not "changed under you". There is no server change to
+			// preserve and nothing to flag: the delete has effectively happened, so
+			// converge by clearing the tombstone.
+			//
+			// Treating it as a conflict instead is what wedged it: the tombstone was
+			// kept every sync, and the accompanying skip suppressed the CTag cache, so
+			// the calendar re-downloaded in full forever and never stopped reporting
+			// local changes.
+			if err := st.ClearTombstone(ctx, calID, t.Name); err != nil {
+				recordSkip(res, calID, t.Name, err)
+				return
+			}
+			res.PushedDeletes++
 			return
 		}
 		parsed, perr := model.Parse(serverObj.Data, time.Local)
