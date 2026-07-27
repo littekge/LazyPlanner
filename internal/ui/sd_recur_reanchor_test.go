@@ -109,7 +109,17 @@ func TestSdTimeOnlyChangeIsNotBlockedOnCustomRule(t *testing.T) {
 	if td == nil || !td.Recurring {
 		t.Fatal("setup: want a recurring todo")
 	}
-	sameDayLaterTime := time.Date(2026, 7, 6, 20, 0, 0, 0, a.loc)
+	// Build the target from the todo's OWN local due day, never a hard-coded date:
+	// the fixture's DUE is authored in UTC, so at +14 (Pacific/Kiritimati) it falls
+	// on the next local day and a hard-coded "2026-07-06 20:00" would be a
+	// different day — the gate would fire, the set would be refused, and the test
+	// would fail for a reason that has nothing to do with what it is testing.
+	localDue := td.Due.In(a.loc)
+	hour := 23
+	if localDue.Hour() == hour {
+		hour = 22 // keep it a real change, whatever the fixture's local time is
+	}
+	sameDayLaterTime := time.Date(localDue.Year(), localDue.Month(), localDue.Day(), hour, 0, 0, 0, a.loc)
 
 	a.applyTodoField(uid, "set due", func(d *model.TodoDraft) {
 		d.HasDue, d.Due, d.DueAllDay = true, sameDayLaterTime, false
